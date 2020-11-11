@@ -13,7 +13,7 @@ int main() {
 			printf("#");
 		}
 		printf("\n");
-		system("sleep 0.005");
+		system("sleep 0.013");
 	}
 	return 0;
 }
