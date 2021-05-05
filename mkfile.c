@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "headfile/kbhit_input.h"
 
-enum unit{Exit, Bit, KB, MB, GB};
+enum unit{Exit = 48, Bit, KB, MB, GB};
 
 int main() {
 	FILE *fp;
@@ -19,7 +20,7 @@ int main() {
 		do {
 			system("clear");
 			printf("请选择单位：\n0:Exit\n1:Bit\n2:KB\n3:MB\n4:GB\n");
-			scanf("%d",&b);
+			b = input();
 			system("clear");
 			switch (b) {
 				case Exit:
