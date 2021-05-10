@@ -25,21 +25,24 @@ int main() {
 	while(1) {
 		b++;
 		a = b;
+		if(b <= y) continue;
 		while(1) {
-			if(a + b > h) {
-				printf("\033[2J\033[1;1H对不起，没有找到您想要的数\n");
-			}
-			if(b > a) {
-				printf("\033[2J\033[1;1H对不起，没有找到您想要的数\n");
+			if(a >= h) {
+				printf("\033[2J\033[1;1H对不起，没有找到您想要的数\033[?25h\n");
 				return 0;
 				break;
 			}
-			if(a + b > y > h || (a + b + s + y == h && a % b == y && (a - y) / b == s) || a > h) break;
+			if(b > a) {
+				printf("\033[2J\033[1;1H对不起，没有找到您想要的数\033[?25h\n");
+				return 0;
+				break;
+			}
+			if(a + b > h || (a + b + s + y == h && a % b == y && (a - y) / b == s) || a >= h) break;
 			if(a < b) continue;
 			if(n == 1) printf("\033[3;9H%3d\033[4;7H%3d\n",a,b);
 			a++;
 		}
-		if(a + b > h || (a + b + s + y == h && a % b == y && (a - y) / b == s) || b > a) break;
+		if(b > h || (a + b + s + y == h && a % b == y && (a - y) / b == s) || b > a) break;
 	}
 	printf("\033[2J\033[1;1H被除数：%d\n除数：%d\033[?25h\n",a,b);
 	return 0;
