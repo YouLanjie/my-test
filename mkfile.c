@@ -13,6 +13,7 @@ int main() {
 	double count;
 	double f = 0;
 
+	printf("\033[?25l");
 	while(1) {
 		bit = 0;
 		count = 0;
@@ -25,6 +26,7 @@ int main() {
 			switch (b) {
 				case Exit:
 					system("clear");
+					printf("\033[?25h");
 					return 0;
 					break;
 				case Bit:
@@ -66,6 +68,7 @@ int main() {
 		fp = fopen(filename,"w");
 		if(!fp) {
 			printf("错误！\n");
+			printf("\033[?25h");
 			return 0;
 		}
 		a = 0;
@@ -83,6 +86,7 @@ int main() {
 		fclose(fp);
 		system("clear");
 	}
+	printf("\033[?25h");
 	return 0;
 }
 
