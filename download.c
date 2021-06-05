@@ -11,8 +11,8 @@ int main(int argc, char * argv[]) {
 	char url[600];
 	char temp[300];
 
-	if (access("CloudMusic", 0) == EOF) {
-		if(mkdir("CloudMusic", 0777) == EOF) {
+	if (access("DownloadFile", 0) == EOF) {
+		if(mkdir("DownloadFile", 0777) == EOF) {
 			perror("\033[1;31mmkdir\033[0m");
 			return 0;
 		}
@@ -23,9 +23,15 @@ int main(int argc, char * argv[]) {
 			if (!fp) {
 				perror("\033[1;31mfope\033[0m");
 			}
-			while (fgets(temp, 300, fp) != NULL) {
+			while (fscanf(fp,"%s",temp) != EOF) {
+				fseek(fp, 1L, 1);
+				if(fgets(filename, 300, fp) == NULL) {
+					break;
+				}
 				strcpy(url, "wget ");
 				strcat(url, temp);
+				strcat(url, " -O DownloadFile/");
+				strcat(url,filename);
 				system(url);
 			}
 		}
@@ -44,11 +50,11 @@ int main(int argc, char * argv[]) {
 				printf("Please input the file name(use \'Q\' to use default name):\n");
 				scanf("%s",temp);
 				if (strcmp(temp, "q") == 0 || strcmp(temp, "Q") == 0) {
-					strcat(filename, " -O CloudMusic/");
+					strcat(filename, " -O DownloadFile/");
 					system(url);
 				}
 				else {
-					strcpy(filename, " -O CloudMusic/");
+					strcpy(filename, " -O DownloadFile/");
 					strcat(filename, temp);
 					strcat(url, filename);
 					system(url);
