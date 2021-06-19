@@ -25,7 +25,7 @@ int main(int argc,char * argv[]) {
 		printf("Welocome\ninput '1' to star\n");
 		a = input();
 		if(a == 0x31) {
-			system("ls ./data/input/ > ./data/input.txt");
+			system("dir ./data/input/ > ./data/input.txt");
 			fp = fopen("./data/input.txt","r");
 			if(!fp) {
 				perror("\033[1;31m[main]fopen\033[0m");
