@@ -57,7 +57,6 @@ int main(int argc,char * argv[]) {
 					}
 				}
 				if (error == 1) {
-					error = 0;
 					input();
 					break;
 				}
@@ -75,10 +74,16 @@ int main(int argc,char * argv[]) {
 					printf("\033[0m");
 					return 1;
 				}
-				printf("文件\'%s\'转换完成\n",b);
-				input();
+				printf("\033[1;32m文件\'%s\'转换完成\033[0m\n",b);
 			}
 			fclose(fp);
+			if (error != 1) {
+				printf("\033[1;32m所有文件转换完成\033[0m\n");
+				input();
+			}
+			else {
+				error = 0;
+			}
 		}
 	}
 	return 0;
