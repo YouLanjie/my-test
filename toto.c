@@ -6,8 +6,8 @@
 int main(int argc,char * argv[]) {
 	int a = 0x31;
 	long e = 0;
-	char name[350]="ffmpeg -i ";
-	char b[100]="test";
+	char name[450]="ffmpeg -i ";
+	char b[200]="test";
 	FILE * fp;
 
 	system("clear");
@@ -25,22 +25,25 @@ int main(int argc,char * argv[]) {
 		printf("Welocome\ninput '1' to star\n");
 		a = input();
 		if(a == 0x31) {
-			system("ls data/input/ |xargs > data/input.txt");
-			fp = fopen("data/input.txt","r");
-			if(!fp) return 0;
+			system("ls ./data/input/ > ./data/input.txt");
+			fp = fopen("./data/input.txt","r");
+			if(!fp) {
+				perror("\033[1;31m[main]fopen\033[0m");
+				return 0;
+			}
 			fseek(fp,0L,2);
 			e = ftell(fp);
 			fseek(fp,0,0);
 			while(e != ftell(fp)) {
 				strcpy(name,"ffmpeg -i ");
-				fscanf(fp,"%s",b);
-				strcat(name,"data/input/");
+				fgets(b, sizeof(b), fp);
+				strcat(name,"./data/input/");
 				strcat(name,b);
-				strcat(name," data/output/");
+				strcat(name," ./data/output/");
 				strcat(name,b);
 				strcat(name,".");
 				strcat(name,argv[1]);
-				strcat(name," >>data/output.log 2>&1");
+				strcat(name," >>./data/output.log 2>&1");
 				system(name);
 				system("echo #Done--------------------------------------------------------------------------------------- >>data/output.log");
 				printf("文件\'%s\'转换完成",b);
