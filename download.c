@@ -17,48 +17,46 @@ int main(int argc, char * argv[]) {
 			return 0;
 		}
 	}
+	if (argc > 1) {
+		fp = fopen(argv[1], "r");
+		if (!fp) {
+			perror("\033[1;31mfope\033[0m");
+		}
+		while (fscanf(fp,"%s",temp) != EOF) {
+			fseek(fp, 1L, 1);
+			if(fgets(filename, 300, fp) == NULL) {
+				break;
+			}
+			strcpy(url, "wget ");
+			strcat(url, temp);
+			strcat(url, " -O DownloadFile/");
+			strcat(url,filename);
+			system(url);
+		}
+	}
 	else {
-		if (argc > 1) {
-			fp = fopen(argv[1], "r");
-			if (!fp) {
-				perror("\033[1;31mfope\033[0m");
-			}
-			while (fscanf(fp,"%s",temp) != EOF) {
-				fseek(fp, 1L, 1);
-				if(fgets(filename, 300, fp) == NULL) {
-					break;
-				}
-				strcpy(url, "wget ");
-				strcat(url, temp);
-				strcat(url, " -O DownloadFile/");
-				strcat(url,filename);
-				system(url);
-			}
+		system("clear");
+		printf("Please input the url(use \'Q\' to exit):\n");
+		scanf("%s",temp);
+		if (strcmp(temp, "q") == 0 || strcmp(temp, "Q") == 0) {
+			system("clear");
+			printf("exit\n");
+			return 0;
 		}
 		else {
-			system("clear");
-			printf("Please input the url(use \'Q\' to exit):\n");
+			strcpy(url, "wget ");
+			strcat(url, temp);
+			printf("Please input the file name(use \'Q\' to use default name):\n");
 			scanf("%s",temp);
 			if (strcmp(temp, "q") == 0 || strcmp(temp, "Q") == 0) {
-				system("clear");
-				printf("exit\n");
-				return 0;
+				strcat(filename, " -O DownloadFile/");
+				system(url);
 			}
 			else {
-				strcpy(url, "wget ");
-				strcat(url, temp);
-				printf("Please input the file name(use \'Q\' to use default name):\n");
-				scanf("%s",temp);
-				if (strcmp(temp, "q") == 0 || strcmp(temp, "Q") == 0) {
-					strcat(filename, " -O DownloadFile/");
-					system(url);
-				}
-				else {
-					strcpy(filename, " -O DownloadFile/");
-					strcat(filename, temp);
-					strcat(url, filename);
-					system(url);
-				}
+				strcpy(filename, " -O DownloadFile/");
+				strcat(filename, temp);
+				strcat(url, filename);
+				system(url);
 			}
 		}
 	}
