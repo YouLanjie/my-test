@@ -1,13 +1,18 @@
-#include "src/headfile/head.h"
+#include "include/include.h"
 
-int main() {
+int main(int argc,char * argv[]) {
 	int a = 0;
 	int exit = 0;
 	FILE * fp;
 
+	if (argc < 2) {
+		printf("没有参数error!!!\n");
+		return -1;
+	}
+
 	Clear2
 	printf("\033[?25l");
-	fp = fopen("input.txt","r");
+	fp = fopen(argv[1],"r");
 	if (!fp) {
 		printf("错误！！！\n");
 		return 0;

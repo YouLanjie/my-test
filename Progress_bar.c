@@ -1,7 +1,4 @@
-#include <stdio.h>
-#include "headfile/kbhit_input.h"
-
-#define Clear printf("\033[2J\033[1;1H");
+#include "include/include.h"
 
 int main() {
 	int a = 0;

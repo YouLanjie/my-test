@@ -1,7 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "headfile/kbhit_input.h"
+#include "include/include.h"
 
 enum unit{Exit = 48, Bit, KB, MB, GB};
 
