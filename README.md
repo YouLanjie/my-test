@@ -29,8 +29,10 @@
 - 这些测试基本上都没有什么用... :|
 
 ## 文件的效果
+
 - MEN.c
-[!MEN.c](res/MEN恐怖如斯1.png)
-[!MEN.c](res/MEN恐怖如斯2.png)
-[!MEN.c](res/MEN恐怖如斯3.png)
+
+![MEN.c](res/MEN恐怖如斯1.png)
+![MEN.c](res/MEN恐怖如斯2.png)
+![MEN.c](res/MEN恐怖如斯3.png)
 
