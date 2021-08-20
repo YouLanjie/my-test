@@ -31,8 +31,11 @@
 ## 文件的效果
 
 - MEN.c
-
-![MEN.c](res/MEN恐怖如斯1.png)
-![MEN.c](res/MEN恐怖如斯2.png)
-![MEN.c](res/MEN恐怖如斯3.png)
+  - 程序界面
+    ![MEN.c1](res/MEN界面1.png)
+    ![MEN.c2](res/MEN界面2.png)
+  - 内存填充效果
+    ![MEN.c1](res/MEN恐怖如斯1.png)
+    ![MEN.c2](res/MEN恐怖如斯2.png)
+    ![MEN.c3](res/MEN恐怖如斯3.png)
 
