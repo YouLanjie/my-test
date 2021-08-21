@@ -1,8 +1,10 @@
 #include "include/include.h"
 
+void stop();
+
 enum unit{Exit = 48, Bit, KB, MB, GB};
 
-int main() {
+int main(int argc,char * argv[]) {
 	FILE *fp;
 	char filename[30];
 	int a = 1,b,c = 1;
@@ -10,7 +12,16 @@ int main() {
 	double count;
 	double f = 0;
 
+	signal(SIGINT,stop);
 	printf("\033[?25l");
+	if (argc == 3) {
+		printf("%s",argv[1]);
+		return 0;
+	}
+	else if(argc != 1 && argc != 3) {
+		printf("错误，要有两个参数\n格式：mkfile [Size Unit]\n");
+		return 1;
+	}
 	while(1) {
 		bit = 0;
 		count = 0;
@@ -87,3 +98,7 @@ int main() {
 	return 0;
 }
 
+void stop() {
+	printf("异常退出\033[?25h\n");
+	exit(1);
+}
