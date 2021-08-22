@@ -1,17 +1,17 @@
-#include <stdio.h>
-#include <dirent.h>
-#include <string.h>
+#include "include/include.h"
 
 int main() {
-	char dirname[100];
+	char dirname[501];
 	DIR * dp;
 	struct dirent * name;
 
 	printf("input dir name\n");
-	scanf("%s",dirname);
+	fgets(dirname,501,stdin);
+	dirname[strlen(dirname) - 1] = '\0';
 	dp = opendir(dirname);
 	if (!dp) {
-		perror("\033[1;31mError\033[0m");
+		printf("\033[1;31m[Error]\033[0m");
+		perror(dirname);
 		return 0;
 	}
 	printf("\033[1;36m类  型  ||  名  字\n==================\033[0m\n");
@@ -45,4 +45,3 @@ int main() {
 	closedir(dp);
 	return 0;
 }
-
