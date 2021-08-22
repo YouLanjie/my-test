@@ -1,5 +1,4 @@
 #include "include/include.h"
-#include <stdio.h>
 
 int main(int argc, char * argv[]) {
 	char dirname[501];
@@ -18,8 +17,9 @@ int main(int argc, char * argv[]) {
 			dp = opendir(argv[count]);
 			printf("\033[1;33m%s :\033[0m\n",argv[count]);
 			if (!dp) {
-				printf("\033[1;31m[Error]\033[0m");
-				perror(dirname);
+				perror(argv[count]);
+				printf("\033[1;36m==================\033[0m\n");
+				continue;
 			}
 			name = readdir(dp);
 			while (name) {
@@ -89,3 +89,4 @@ int main(int argc, char * argv[]) {
 	closedir(dp);
 	return 0;
 }
+
