@@ -5,7 +5,7 @@
 int conversion(char filename[150], char filename_o[150], char dirname[100]);
 
 int main(int argc,char * argv[]) {
-	int a = 0x31, i2 = 1;
+	int a = 0x31,i = 0, i2 = 1;
 	char filename[150] = "ffmpeg -i ", filename_o[150], dirname[100] = "./", type[10];
 	DIR * dp = NULL;
 	struct dirent * name;
@@ -41,7 +41,7 @@ int main(int argc,char * argv[]) {
 				return -1;
 			}
 			name = readdir(dp);
-			for (int i = 0;name != NULL && i < 10; i++) {
+			for (i = 0;name != NULL && i < 10; i++) {
 				while (name != NULL && name -> d_type != 8) {
 					name = readdir(dp);
 					i++;
@@ -71,7 +71,9 @@ int main(int argc,char * argv[]) {
 				}
 				name = readdir(dp);
 			}
-			wait(NULL);
+			while(wait(NULL) != -1);
+			strcat(dirname, "/../out/Log");
+			remove(dirname);
 			printf("\033[1;32m所有文件转换完成\033[0m\n");
 			input();
 		}
@@ -109,8 +111,6 @@ int conversion(char filename[150], char filename_o[150], char dirname[100]) {
 		printf("\033[0m");
 		exit(-1);
 	}
-	strcat(dirname, "/../out/Log");
-	remove(dirname);
 	printf("\033[1;32m文件\'%s\'转换完成\033[0m\n",filename);
 	exit(0);
 }
