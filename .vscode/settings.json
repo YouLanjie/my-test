@@ -1,6 +1,10 @@
 {
 	"files.associations": {
-		"kbhit_input.h": "c"
+		"stdio.h": "c",
+		"unistd.h": "c"
 	},
+	"editor.fontSize": 18,
+	"editor.tabSize": 8,
+	"editor.fontFamily": "'JetBrains Mono', 'Droid Sans Mono', 'monospace', monospace, 'Droid Sans Fallback'",
 	"editor.insertSpaces": false
 }

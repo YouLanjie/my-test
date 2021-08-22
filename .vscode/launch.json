@@ -8,10 +8,13 @@
 			"name": "gcc-8 - 生成和调试活动文件",
 			"type": "cppdbg",
 			"request": "launch",
-			"program": "${fileDirname}/build/${fileBasenameNoExtension}",
-			"args": [],
+			"program": "${fileDirname}/bin/${fileBasenameNoExtension}",
+			"args": [
+//				"mp3",
+//				"/home/youlanjie/Desktop/int"
+			],
 			"stopAtEntry": false,
-			"cwd": "${workspaceFolder}/build/",
+			"cwd": "${workspaceFolder}/bin/",
 			"environment": [],
 			//"console": "externalTerminal",
 			"MIMode": "gdb",
