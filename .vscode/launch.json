@@ -10,8 +10,8 @@
 			"request": "launch",
 			"program": "${fileDirname}/bin/${fileBasenameNoExtension}",
 			"args": [
-//				"mp3",
-//				"/home/youlanjie/Desktop/int"
+//				"1",
+//				"B"
 			],
 			"stopAtEntry": false,
 			"cwd": "${workspaceFolder}/bin/",
