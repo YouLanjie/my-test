@@ -95,7 +95,7 @@ int conversion(char filename[150], char filename_o[150], char dirname[100], int 
 	strcat(command, filename);
 	strcat(command,"\" \"");
 	strcat(command,filename_o);
-	strcat(command,"\" >> ");
+	strcat(command,"\" > ");
 	strcat(command,dirname);
 	strcat(command,"/../out/Log");
 	sprintf(count,"%03d",i);
