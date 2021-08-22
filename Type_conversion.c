@@ -1,8 +1,9 @@
 #include "include/include.h"
 #include <signal.h>
+#include <stdio.h>
 #include <wait.h>      //wait();
 
-int conversion(char filename[150], char filename_o[150], char dirname[100]);
+int conversion(char filename[150], char filename_o[150], char dirname[100], int i);
 
 int main(int argc,char * argv[]) {
 	int a = 0x31,i = 0, i2 = 1;
@@ -41,7 +42,7 @@ int main(int argc,char * argv[]) {
 				return -1;
 			}
 			name = readdir(dp);
-			for (i = 0;name != NULL && i < 10; i++) {
+			for (i = 0;name != NULL; i++) {
 				while (name != NULL && name -> d_type != 8) {
 					name = readdir(dp);
 					i++;
@@ -66,15 +67,13 @@ int main(int argc,char * argv[]) {
 				}while(filename_o[strlen(filename_o) - i2] != '.');
 				pid = fork();
 				if(pid == 0) {
-					conversion(filename,filename_o,dirname);
+					conversion(filename,filename_o,dirname,i);
 					exit(-1);
 				}
 				name = readdir(dp);
 			}
 			while(wait(NULL) != -1);
-			strcat(dirname, "/../out/Log");
-			remove(dirname);
-			printf("\033[1;32m所有文件转换完成\033[0m\n");
+			printf("\033[1;33m所有文件转换完成\033[0m\n");
 			input();
 		}
 	}
@@ -84,9 +83,10 @@ int main(int argc,char * argv[]) {
 	return 0;
 }
 
-int conversion(char filename[150], char filename_o[150], char dirname[100]) {
+int conversion(char filename[150], char filename_o[150], char dirname[100], int i) {
 	struct stat statbuf;
 	char command[250] = "ffmpeg -i \"";
+	char count[5] = "0";
 
 	if (access(filename_o, 0) == 0) {
 		printf("\033[1;31m[文件已存在，跳过]filename:\033[1;32m%s\033[0m\n",filename_o);
@@ -97,12 +97,15 @@ int conversion(char filename[150], char filename_o[150], char dirname[100]) {
 	strcat(command,filename_o);
 	strcat(command,"\" >> ");
 	strcat(command,dirname);
-	strcat(command,"/../out/Log 2>&1");
+	strcat(command,"/../out/Log");
+	sprintf(count,"%03d",i);
+	strcat(command,count);
+	strcat(command," 2>&1");
 	if (system(command) != 0) {
 		stat(filename_o, &statbuf);
 		if (statbuf.st_size == 0) {
 			printf("\033[1;31mfilename: %s\n",filename);
-			printf("转换错误!请从%s/../out/Log中查看记录\033[0m\n",dirname);
+			printf("转换错误!请从%s/../out/Log%s中查看记录\033[0m\n",dirname,count);
 			remove(filename_o);
 			exit(-1);
 		}
@@ -111,6 +114,9 @@ int conversion(char filename[150], char filename_o[150], char dirname[100]) {
 		printf("\033[0m");
 		exit(-1);
 	}
-	printf("\033[1;32m文件\'%s\'转换完成\033[0m\n",filename);
+	strcat(dirname, "/../out/Log");
+	strcat(dirname, count);
+	remove(dirname);
+	printf("\033[1;32m文件\033[1;33m\'%s\'\033[1;32m转换完成\033[0m\n",filename);
 	exit(0);
 }
