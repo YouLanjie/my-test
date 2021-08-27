@@ -17,7 +17,7 @@
 |        filelist.c        |             查看指定目录下的文件和文件夹             |
 |         gettime.c        |                       获取时间                       |
 |           gtk.c          |             在Linux下使用gtk做gui的测试              |
-|           MEN.c          |           吞噬你的内存（我电脑差点被作死了）         |
+|           MEM.c          |           吞噬你的内存（我电脑差点被作死了）         |
 |          mkfile.c        | 在认识dd和/dev/null前做的创建文件工具，有进度条(好用)|
 |      Progress\_bar.c     |       无聊写的进度条测试工具，可能会在后面用到       |
 |           pid.c          |       Linux下使用系统默认库使用多个进程的测试        |
@@ -33,10 +33,10 @@
 
 - MEN.c
   - 程序界面
-    ![MEN.c1](res/MEN界面1.png)
-    ![MEN.c2](res/MEN界面2.png)
+    ![MEM.c1](res/MEM界面1.png)
+    ![MEM.c2](res/MEM界面2.png)
   - 内存填充效果
-    ![MEN.c1](res/MEN恐怖如斯1.png)
-    ![MEN.c2](res/MEN恐怖如斯2.png)
-    ![MEN.c3](res/MEN恐怖如斯3.png)
+    ![MEM.c1](res/MEM恐怖如斯1.png)
+    ![MEM.c2](res/MEM恐怖如斯2.png)
+    ![MEM.c3](res/MEM恐怖如斯3.png)
 
