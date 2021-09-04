@@ -4,7 +4,7 @@
 #include <fcntl.h>
 
 /* 循环输入 */
-int kbhit() {
+int Kbhit() {
 	struct termios oldt, newt;
 	int ch;
 	int oldf;
@@ -27,15 +27,15 @@ int kbhit() {
 }
 
 /* 去除kbhit后遗症 */
-int input() {
+int Input() {
 	int a;
-	a = kbhit();
+	a = Kbhit();
 	getchar();
 	return a;
 }
 
 /* 判断有没有输入 */
-int kbhit_if() {
+int KbhitHas() {
 	struct termios oldt, newt;
 	int ch;
 	int oldf;
@@ -56,7 +56,7 @@ int kbhit_if() {
 }
 
 /* 不循环输入 */
-int kbhit2() {
+int KbhitNoTime() {
 	struct termios oldt, newt;
 	int ch;
 	int oldf;

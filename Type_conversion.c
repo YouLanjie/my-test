@@ -1,7 +1,4 @@
 #include "include/include.h"
-#include <signal.h>
-#include <stdio.h>
-#include <wait.h>      //wait();
 
 int conversion(char filename[150], char filename_o[150], char dirname[100], int i);
 
@@ -33,7 +30,7 @@ int main(int argc,char * argv[]) {
 	while(a != 0x30) {
 		Clear2
 		printf("\033[1;32mWelocome\n\033[33minput '1' to start,'0' to exit\n");
-		a = input();
+		a = Input();
 		if(a == 0x31) {
 			Clear2
 			dp = opendir(dirname);
@@ -61,10 +58,15 @@ int main(int argc,char * argv[]) {
 				mkdir(filename_o,0777);
 				strcat(filename_o, name -> d_name);
 				i2 = 1;
-				do {
-					filename_o[strlen(filename_o) - i2] = type[strlen(type) - i2];
+				while(filename_o[strlen(filename_o) - i2] != '.') {
 					i2++;
-				}while(filename_o[strlen(filename_o) - i2] != '.');
+				}
+				i2--;
+				for (unsigned long i3 = 0; i3 < strlen(type); i3++) {
+					filename_o[strlen(filename_o) - i2] = type[i3];
+					i2--;
+				}
+				filename_o[strlen(filename_o) - i2] = '\0';
 				pid = fork();
 				if(pid == 0) {
 					conversion(filename,filename_o,dirname,i);
@@ -74,7 +76,7 @@ int main(int argc,char * argv[]) {
 			}
 			while(wait(NULL) != -1);
 			printf("\033[1;33m所有文件转换完成\033[0m\n");
-			input();
+			Input();
 		}
 	}
 	if(dp) {
