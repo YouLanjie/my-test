@@ -1,12 +1,11 @@
+#include "include/include.h"
+#include <bits/getopt_core.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 
 int main(int argc, char * argv[]) {
 	FILE * fp;
+	char ch;
 	char filename[300];
 	char url[600];
 	char temp[300];
@@ -17,10 +16,24 @@ int main(int argc, char * argv[]) {
 			return 0;
 		}
 	}
-	if (argc > 1) {
-		fp = fopen(argv[1], "r");
+	opterr = 0;
+	while ((ch = getopt(argc, argv, "f:")) != -1) {
+		if (ch == '?') {
+			printf("download -h \t帮助\n         -f 文件名\t指定url信息文件，前url后文件名\n");
+			return 0;
+		}
+		if (ch == 'f') {
+			if (optopt == '?') {
+				printf("没有指定文件\n");
+				return 1;
+			}
+			strcpy(optarg, filename);
+		}
+	}
+	if (argc > 2) {
+		fp = fopen(filename, "r");
 		if (!fp) {
-			perror("\033[1;31mfope\033[0m");
+			perror("\033[1;31mfopen\033[0m");
 		}
 		while (fscanf(fp,"%s",temp) != EOF) {
 			fseek(fp, 1L, 1);
@@ -49,7 +62,7 @@ int main(int argc, char * argv[]) {
 			printf("Please input the file name(use \'Q\' to use default name):\n");
 			scanf("%s",temp);
 			if (strcmp(temp, "q") == 0 || strcmp(temp, "Q") == 0) {
-				strcat(filename, " -O DownloadFile/");
+				strcat(filename, " -P ./DownloadFile/");
 				system(url);
 			}
 			else {
@@ -62,4 +75,3 @@ int main(int argc, char * argv[]) {
 	}
 	return 0;
 }
-

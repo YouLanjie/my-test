@@ -1,5 +1,4 @@
 #include "include/include.h"
-#include <stdlib.h>
 
 void stop();
 
@@ -7,31 +6,51 @@ enum unit{Exit = 48, Bit, KB, MB, GB};
 
 int main(int argc,char * argv[]) {
 	FILE *fp;
-	char filename[30];
-	int a = 1,b,c = 1;
-	double bit;
-	double count;
-	double f = 0;
+	char filename[30], ch, type;
+	int a = 1, b, c = 1;
+	double bit = 0, count, f = 0;
 
 	signal(SIGINT,stop);
 	printf("\033[?25l");
-	if(argc != 3 && argc != 1) {
-		printf("错误，要有两个参数\n格式：mkfile [Size Unit]\033[?25h\n");
-		return -1;
+	opterr = 0;
+	bit = 0;
+	while ((ch = getopt(argc, argv, "hs:t:")) != -1) {
+		if (ch == '?' || ch == 'h') {
+			printf("mkfile -h\t帮助\nmkfile -[s 大小] -[t 单位]\033[?25h\n");
+			return 0;
+		}
+		else if (ch == 's') {
+			if (optopt == '?') {
+				printf("没有指定大小\033[?25h\n");
+				return 1;
+			}
+			bit = atof(optarg);
+		}
+		else if (ch == 't') {
+			if (bit == 0) {
+				printf("没有指定大小\033[?25h\n");
+				return 1;
+			}
+			if (optopt == '?') {
+				type = 'B';
+			}
+			else {
+				type = *optarg;
+			}
+		}
 	}
 	while(1) {
-		bit = 0;
 		count = 0;
 		c = 1;
 		do {
 			Clear2
-			if (argc == 1) {
+			if (!bit) {
 				printf("请选择单位：\n0:Exit\n1:Bit\n2:KB\n3:MB\n4:GB\n");
-				b = input();
+				b = Input();
 				Clear2
 			}
 			else {
-				switch (*argv[2]) {
+				switch (type) {
 					case 'b':
 					case 'B':
 						b = 49;
@@ -49,7 +68,6 @@ int main(int argc,char * argv[]) {
 						b = 52;
 						break;
 				}
-				bit = atof(argv[1]);
 			}
 			switch (b) {
 				case Exit:
@@ -58,7 +76,7 @@ int main(int argc,char * argv[]) {
 					return 0;
 					break;
 				case Bit:
-					if (argc == 1) {
+					if (!bit) {
 						printf("请输入一个数字(Bit):\n");
 						scanf("%lf",&bit);
 					}
@@ -67,7 +85,7 @@ int main(int argc,char * argv[]) {
 					c--;
 					break;
 				case KB:
-					if (argc == 1) {
+					if (!bit) {
 						printf("请输入一个数字(Kb):\n");
 						scanf("%lf",&bit);
 					}
@@ -77,7 +95,7 @@ int main(int argc,char * argv[]) {
 					c--;
 					break;
 				case MB:
-					if (argc == 1) {
+					if (!bit) {
 						printf("请输入一个数字(Mb):\n");
 						scanf("%lf",&bit);
 					}
@@ -87,7 +105,7 @@ int main(int argc,char * argv[]) {
 					c--;
 					break;
 				case GB:
-					if (argc == 1) {
+					if (!bit) {
 						printf("请输入一个数字(Gb):\n");
 						scanf("%lf",&bit);
 					}
@@ -127,7 +145,8 @@ int main(int argc,char * argv[]) {
 		}
 		printf("\033[2;1H创建完成！\n");
 		fclose(fp);
-		if (argc == 1) {
+		if (argc < 3) {
+			bit = 0;
 			Clear2
 		}
 		else {
