@@ -10,7 +10,7 @@ int main(int argc,char * argv[]) {
 	struct dirent * name;  //文件夹指针
 	pid_t pid;
 
-	while ((opt = getopt(argc, argv, "t:d:h")) != -1) {
+	while (opt = getopt(argc, argv, "t:d:h") != -1) {
 		switch (opt) {
 			case '?':
 				printf("\033[30m参数错误:\033[0m%c",opt);
