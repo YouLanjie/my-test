@@ -14,7 +14,7 @@ int main(int argc,char * argv[]) {
 	printf("\033[?25l");
 	opterr = 0;
 	bit = 0;
-	while ((ch = getopt(argc, argv, "hs:t:")) != -1) {
+	while (ch = getopt(argc, argv, "hs:t:") != -1) {
 		if (ch == '?' || ch == 'h') {
 			printf("mkfile -h\t帮助\nmkfile -[s 大小] -[t 单位]\033[?25h\n");
 			return 0;
