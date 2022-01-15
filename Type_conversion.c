@@ -3,14 +3,14 @@
 int conversion(char filename[150], char filename_o[150], char dirname[100], int i);    //转换函数
 
 int main(int argc,char * argv[]) {
-	char opt = NULL;
+	int opt;
 	int a = 0x31,i = 0, i2 = 1;
-	char filename[150] = "ffmpeg -i ", filename_o[150], dirname[100] = "./", type[10] = NULL;
+	char filename[150] = "ffmpeg -i ", filename_o[150], dirname[100] = "./", type[10];
 	DIR * dp = NULL;
 	struct dirent * name;  //文件夹指针
 	pid_t pid;
 
-	while (opt = getopt(argc, argv, "t:d:h") != -1) {
+	while ((opt = getopt(argc, argv, "t:d:h?")) != -1) {
 		switch (opt) {
 			case '?':
 				printf("\033[30m参数错误:\033[0m%c",opt);
@@ -21,16 +21,16 @@ int main(int argc,char * argv[]) {
 				return 0;
 				break;
 			case 't':
-				if (strcmp(optarg,'?') == 0) ｛
+				if (strcmp(optarg,"?") == 0) {
 					printf("Error!!!请指定类型(mp3,m4a,mp4,gif,jpg,png)\n");
 					scanf("%s", type);
 					getchar();
-				｝
+				}
 				else {
-					strcpy(type,otptarg);
+					strcpy(type,optarg);
 				}
 			case 'd':
-				if(strcmp(optarg,'?') == 0) {
+				if(strcmp(optarg,"?") == 0) {
 					printf("请指定文件夹\n");
 					scanf("%s", dirname);
 					getchar();
