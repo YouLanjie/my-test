@@ -5,30 +5,23 @@ int conversion(char filename[150], char filename_o[150], char dirname[100], int 
 int main(int argc,char * argv[]) {
 	int opt;
 	int a = 0x31,i = 0, i2 = 1;
-	char filename[150] = "ffmpeg -i ", filename_o[150], dirname[100] = "./", type[10];
+	char filename[150] = "ffmpeg -i ", filename_o[150], dirname[100] = "./", type[10]= "NULL";
 	DIR * dp = NULL;
 	struct dirent * name;  //文件夹指针
 	pid_t pid;
 
-	while ((opt = getopt(argc, argv, "t:d:h?")) != -1) {
+	while ((opt = getopt(argc, argv, "t:d:h")) != -1) {
 		switch (opt) {
-			case '?':
-				printf("\033[30m参数错误:\033[0m%c",opt);
-				return 0;
-				break;
-			case 'h':
-				printf("本程序基于ffmpeg，转换格式时需要安装ffmpeg\n参数：Type_conversion -[t 目标格式] -[d 文件夹] -[h]帮助\n");
-				return 0;
-				break;
 			case 't':
 				if (strcmp(optarg,"?") == 0) {
-					printf("Error!!!请指定类型(mp3,m4a,mp4,gif,jpg,png)\n");
+					printf("请指定类型(mp3,m4a,mp4,gif,jpg,png)\n");
 					scanf("%s", type);
 					getchar();
 				}
 				else {
 					strcpy(type,optarg);
 				}
+				break;
 			case 'd':
 				if(strcmp(optarg,"?") == 0) {
 					printf("请指定文件夹\n");
@@ -38,11 +31,28 @@ int main(int argc,char * argv[]) {
 				else {
 					strcpy(dirname,optarg);
 				}
+				break;
+			case '?':
+			case 'h':
+			defalut:
+				printf("本程序基于ffmpeg，转换格式时需要安装ffmpeg\n参数：Type_conversion -[t 目标格式] -[d 文件夹] -[h]帮助\n");
+				return 0;
+				break;
 		}
+	}
+	if (strcmp(dirname,"./") == 0) {
+		printf("请指定文件夹\n");
+		scanf("%s", dirname);
+		getchar();
+	}
+	if (strcmp(type,"NULL") == 0) {
+		printf("请指定类型(mp3,m4a,mp4,gif,jpg,png)\n");
+		scanf("%s", type);
+		getchar();
 	}
 	while(a != 0x30) {
 		Clear2
-		printf("\033[1;32m欢迎使用批量格式转换小程序\n\033[33m按下 1 键开始,按 0 退出\n");
+		printf("\033[1;32m欢迎使用批量格式转换小程序\n\033[31m原文件夹:\033[36m%s\t\033[31m目标格式:\033[36m%s\n\033[33m按下 1 键开始,按 0 退出\n",dirname,type);
 		a = getch();
 		if(a == 0x31) {
 			Clear2
@@ -79,7 +89,6 @@ int main(int argc,char * argv[]) {
 					filename_o[strlen(filename_o) - i2] = type[i3];
 					i2--;
 				}
-				filename_o[strlen(filename_o) - i2] = '\0';
 				pid = fork();
 				if(pid == 0) {
 					conversion(filename,filename_o,dirname,i);
