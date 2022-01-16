@@ -11,7 +11,7 @@ int main() {
 	while(1) {
 		Clear
 		printf("请选择计算程序：\n0:Exit\n1:boom\n");
-		i = input();
+		i = getch();
 		Clear
 		switch (i) {
 			case Exit:
@@ -46,7 +46,7 @@ void boom() {
 	printf("是否显示破解进度？（1 = Yes）：");
 	scanf("%d",&n);
 	printf("\033[2J\033[1;1H\033[?25l循环破解\n");
-	if(h <= h && h <= y) {
+	if(h <= s && h <= y) {
 		printf("\033[2J\033[1;1Herror!!!\033[?25h\n");
 		return;
 	}
@@ -75,6 +75,6 @@ void boom() {
 	}
 	printf("\033[2J\033[1;1H被除数：%d\n除数：%d\n",a,b);
 	getchar();
-	input();
+	getch();
 	return;
 }

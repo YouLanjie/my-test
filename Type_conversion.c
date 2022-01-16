@@ -43,7 +43,7 @@ int main(int argc,char * argv[]) {
 	while(a != 0x30) {
 		Clear2
 		printf("\033[1;32m欢迎使用批量格式转换小程序\n\033[33m按下 1 键开始,按 0 退出\n");
-		a = Input();
+		a = getch();
 		if(a == 0x31) {
 			Clear2
 			dp = opendir(dirname);
@@ -89,7 +89,7 @@ int main(int argc,char * argv[]) {
 			}
 			while(wait(NULL) != -1);
 			printf("\033[1;33m所有文件转换完成\033[0m\n");
-			Input();
+			getch();
 		}
 	}
 	if(dp) {

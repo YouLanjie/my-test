@@ -8,7 +8,7 @@
 int main(int argc, char * argv[]) {
 	pid_t pid;
 	FILE * fp;
-	char ch;
+	int ch;
 	char filename[300];
 	char url[600];
 	char temp[300];

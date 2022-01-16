@@ -3,39 +3,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-/* 循环输入 */
-int Kbhit() {
-	struct termios oldt, newt;
-	int ch;
-	int oldf;
-	do {
-		tcgetattr(STDIN_FILENO, &oldt);
-		newt = oldt;
-		newt.c_lflag &= ~(ICANON | ECHO);
-		tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-		oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
-		fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
-		ch = getchar();
-		tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
-		fcntl(STDIN_FILENO, F_SETFL, oldf);
-		if(ch != EOF) {
-			ungetc(ch, stdin);
-			return ch;                      //有键入字符返回键入字符
-		}
-	} while (ch == EOF);                            //如果没有键入字符则重来一次
-	return 0;
-}
-
-/* 去除kbhit后遗症 */
-int Input() {
-	int a;
-	a = Kbhit();
-	getchar();
-	return a;
-}
-
 /* 判断有没有输入 */
-int KbhitHas() {
+int kbhit() {
 	struct termios oldt, newt;
 	int ch;
 	int oldf;
@@ -56,7 +25,7 @@ int KbhitHas() {
 }
 
 /* 不循环输入 */
-int KbhitNoTime() {
+int kbhitGetchar() {
 	struct termios oldt, newt;
 	int ch;
 	int oldf;
@@ -76,10 +45,22 @@ int KbhitNoTime() {
 	return 0;
 }
 
-/*
-这个kbhit函数用于input输入
-在调用的时候将返回值赋值给一个int变量
-可用那个变量判断
-输入字符时毫无延迟
-*/
+int getch() {
+	struct termios tm, tm_old;
+	int fd = 0, ch;
+ 
+	if (tcgetattr(fd, &tm) < 0) {                   //保存现在的终端设置
+		return -1;
+	}
+	tm_old = tm;
+	cfmakeraw(&tm);                                 //更改终端设置为原始模式，该模式下所有的输入数据以字节为单位被处理
+	if (tcsetattr(fd, TCSANOW, &tm) < 0) {          //设置上更改之后的设置
+		return -1;
+	}
+	ch = getchar();
+	if (tcsetattr(fd, TCSANOW, &tm_old) < 0) {      //更改设置为最初的样子
+		return -1;
+	}
+	return ch;
+}
 

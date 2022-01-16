@@ -18,7 +18,7 @@ int main(int argc,char * argv[]) {
 		return 0;
 	}
 	while (!exit) {
-		exit = kbhit_if();
+		exit = kbhit();
 		a = fgetc(fp);
 		if(a == EOF) {
 			fseek(fp,0L,0);

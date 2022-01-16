@@ -2,9 +2,6 @@
 #include <errno.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/socket.h>
 
 #define MAXLINE 4096
@@ -20,7 +17,7 @@ int main() {
 	Clear2
 	signal(SIGINT, stop);
 	printf("No.1 server\nor\nNo.2 client\n?");
-	if (Input() == '1') {
+	if (getch() == '1') {
 		Clear2
 		server();
 	}
@@ -89,7 +86,7 @@ void server(){
 	Clear2
 	while(!pid){
 		printf("\033[s\033[13;1H\033[1;31m读（子）%d\033[0m\n\033[u",pid);
-		KbhitNoTime();
+		kbhitGetchar();
 		// 读取客户端发来的信息，会阻塞
 		ssize_t len = read(connect_fd, recbuf, sizeof(recbuf));
 		if(len < 0){
@@ -99,7 +96,7 @@ void server(){
 			exit(-6);
 		}
 		printf("\033[s\033[14;1H接收：\n%s\n\033[u", recbuf);
-		KbhitNoTime();
+		kbhitGetchar();
 		if(a) {
 			exit(0);
 		}
@@ -158,7 +155,7 @@ void client(){
 	system("clear");
 	while(!pid){
 		printf("\033[s\033[13;1H\033[1;31m读（子）%d\033[0m\n\033[u",pid);
-		KbhitNoTime();
+		kbhitGetchar();
 		//从服务器接收信息
 		ssize_t len = read(sockfd, recbuf, sizeof(recbuf));
 		if(len < 0){
@@ -168,7 +165,7 @@ void client(){
 			exit(0);
 		}
 		printf("\033[s\033[14;40H接收：\n%s\n\033[u", recbuf);
-		KbhitNoTime();
+		kbhitGetchar();
 		if (a) {
 			exit(0);
 		}

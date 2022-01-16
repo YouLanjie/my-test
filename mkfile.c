@@ -6,7 +6,8 @@ enum unit{Exit = 48, Bit, KB, MB, GB};
 
 int main(int argc,char * argv[]) {
 	FILE *fp;
-	char filename[30], ch, type;
+	char filename[30], type;
+	int ch;
 	int a = 1, b, c = 1;
 	double bit = 0, count, f = 0;
 
@@ -14,7 +15,7 @@ int main(int argc,char * argv[]) {
 	printf("\033[?25l");
 	opterr = 0;
 	bit = 0;
-	while (ch = getopt(argc, argv, "hs:t:") != -1) {
+	while ((ch = getopt(argc, argv, "hs:t:")) != -1) {
 		if (ch == '?' || ch == 'h') {
 			printf("mkfile -h\t帮助\nmkfile -[s 大小] -[t 单位]\033[?25h\n");
 			return 0;
@@ -46,7 +47,7 @@ int main(int argc,char * argv[]) {
 			Clear2
 			if (!bit) {
 				printf("请选择单位：\n0:Exit\n1:Bit\n2:KB\n3:MB\n4:GB\n");
-				b = Input();
+				b = getch();
 				Clear2
 			}
 			else {

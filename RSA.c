@@ -1,9 +1,6 @@
 #include "include/include.h"
 #include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <time.h>
-#include <unistd.h>
 
 int eular(int n);
 int mgcd(int a,int b);
@@ -17,7 +14,7 @@ int main() {
 	signal(SIGINT, stop);
 	Clear2
 	printf("\033[1;1H这是一个使用RSA不对称加密算法的测试程序\n请选择模式\n纯手动---1\n半自动---2\n");
-	i = Input();
+	i = getch();
 	Clear2
 	if (i == '1') {
 		do {
@@ -27,12 +24,12 @@ int main() {
 			Clear2
 			if (!mgcd(e,eular(n))) {
 				printf("\033[1;31me与φ(n)不互质！\033[0mn=%d\nφ(n)=%d\n",n,eular(n));
-				Input();
+				getch();
 				Clear2
 			}
 			if ((k * eular(n) + 1) % e != 0) {
 				printf("\033[1;31me与k乘φ(n)的积加1的和不能整除！\033[0mn=%d\nk * φ(n) + 1=%d\n",n,k * eular(n) + 1);
-				Input();
+				getch();
 				Clear2
 			}
 		}while (!mgcd(e,eular(n)) || (k * eular(n) + 1) % e != 0);
@@ -69,13 +66,13 @@ int main() {
 	d = ( k * eular(n) + 1 ) / e;
 	Clear2
 	printf("最终参数：\ne=%d\nd=%d\nn=%d\n注意！加密的数字不能够超过n", e, d, n);
-	Input();
+	getch();
 	i = 0;
 	while (i != 0x1B) {
 		Clear2
 		m = c = i = 0;
 		printf("加密或解密？\n加密---1\n解密---2\n");
-		i = Input();
+		i = getch();
 		Clear2
 		if (i == '1') {
 			printf("请输入任意整数值(m)用于加密\n");
@@ -98,7 +95,7 @@ int main() {
 		else if (i == 0x1B) {
 			return 0;
 		}
-		i = Input();
+		i = getch();
 		Clear2
 	}
 	return 0;

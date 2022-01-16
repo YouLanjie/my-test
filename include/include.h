@@ -30,10 +30,11 @@
 #endif
 
 /* kbhit */
-int Kbhit();
-int Input();
-int KbhitHas();
-int KbhitNoTime();
+#ifdef __linux
+int getch();
+int kbhit();
+int kbhitGetchar();
+#endif
 
 /* menu */
 void Menu(char title[50], short p, short a);
