@@ -1,4 +1,5 @@
 #include "include/include.h"
+#include <stdio.h>
 
 int conversion(char filename[150], char filename_o[150], char dirname[100], int i);    //转换函数
 
@@ -34,7 +35,7 @@ int main(int argc,char * argv[]) {
 				break;
 			case '?':
 			case 'h':
-			defalut:
+			default:
 				printf("本程序基于ffmpeg，转换格式时需要安装ffmpeg\n参数：Type_conversion -[t 目标格式] -[d 文件夹] -[h]帮助\n");
 				return 0;
 				break;
@@ -85,7 +86,7 @@ int main(int argc,char * argv[]) {
 					i2++;
 				}
 				i2--;
-				for (unsigned long i3 = 0; i3 < strlen(type); i3++) {
+				for (unsigned long i3 = 0; i3 <= strlen(type); i3++) {
 					filename_o[strlen(filename_o) - i2] = type[i3];
 					i2--;
 				}
