@@ -1,14 +1,12 @@
 #include <stdio.h>
-#include <stdlib.h>
+#include <stdlib.h>       //包含system函数
 
 int main() {
-	unsigned short a = 1;
-
-	system("clear");
+	system("clear");                              //清屏
 	printf("Number | Hex | Char\n");
-	while(a < 260) {
-		printf("%3d | 0x%x | %c\n",a,a,a);
-		a++;
+	for (unsigned short a = 0; a < 260; a++) {
+		printf("%3d | 0x%03x | %c\n",a,a,a);  //循环打印输出
 	}
 	return 0;
 }
+
