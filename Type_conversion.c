@@ -1,11 +1,11 @@
 #include "include/include.h"
-#include <stdio.h>
 
 int conversion(char filename[150], char filename_o[150], char dirname[100], int i);    //转换函数
 
 int main(int argc,char * argv[]) {
 	int opt;
 	int a = 0x31,i = 0, i2 = 1;
+	unsigned long i4;
 	char filename[150] = "ffmpeg -i ", filename_o[150], dirname[100] = "./", type[10]= "NULL";
 	DIR * dp = NULL;
 	struct dirent * name;  //文件夹指针
@@ -81,14 +81,16 @@ int main(int argc,char * argv[]) {
 				strcat(filename_o, "../out/");
 				mkdir(filename_o,0777);
 				strcat(filename_o, name -> d_name);
+				i4 = strlen(filename_o);
 				i2 = 1;
-				while(filename_o[strlen(filename_o) - i2] != '.') {
+				while(filename_o[i4 - i2] != '.') {
 					i2++;
 				}
 				i2--;
 				for (unsigned long i3 = 0; i3 <= strlen(type); i3++) {
-					filename_o[strlen(filename_o) - i2] = type[i3];
+					filename_o[i4 - i2] = type[i3];
 					i2--;
+					printf("%s\n",filename_o);
 				}
 				pid = fork();
 				if(pid == 0) {
