@@ -90,7 +90,6 @@ int main(int argc,char * argv[]) {
 				for (unsigned long i3 = 0; i3 <= strlen(type); i3++) {
 					filename_o[i4 - i2] = type[i3];
 					i2--;
-					printf("%s\n",filename_o);
 				}
 				pid = fork();
 				if(pid == 0) {
