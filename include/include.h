@@ -19,8 +19,7 @@
 #include <dirent.h>
 #include <sys/ioctl.h>
 
-#include "../tool/kbhit.c"
-#include "../tool/menu.c"
+#include "tools.c"
 
 #ifndef Clear
 	#define Clear printf("\033[2J\033[1;1H");
@@ -37,8 +36,8 @@ int kbhitGetchar();
 #endif
 
 /* menu */
-void Menu(char title[50], short p, short a);
-void Menu2(char title[50]);
+void Menu(char title[], short p, short a);
+void Menu2(char title[]);
 
 /* pid */
 /* #include <sys/types.h> */
