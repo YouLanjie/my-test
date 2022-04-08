@@ -10,41 +10,57 @@
 /* system() srand() rand() malloc() free() exit() */
 #include <unistd.h>
 /* pause() */
-#include <sys/stat.h>
-/* pass */
-#include <sys/types.h>
-/* pass */
 #include <string.h>
 /* strcat() strcmp() strcpy() */
 #include <dirent.h>
-#include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <signal.h>
+/* signal() */
 
 #include "tools.c"
 
-#ifndef Clear
-	#define Clear printf("\033[2J\033[1;1H");
+/* 预定义Linux要用到的东西 */
+#ifdef __linux
+	#include <sys/ioctl.h>
+	#include <wait.h>
+	#include <pthread.h>
+	#ifndef Clear
+		#define Clear printf("\033[2J\033[1;1H");
+	#endif
+	#ifndef Clear2
+		#define Clear2 system("clear");
+	#endif
+	#ifndef fontColorSet
+		#define fontColorSet(a,b) printf("\033[%d;%dm",a, b)
+	#endif
+	#ifndef gotoxy
+		#define gotoxy(x,y) printf("\033[%d;%dH",x, y)
+	#endif
+	/* kbhit */
+	int getch();
+	int kbhit();
 #endif
-#ifndef Clear2
-	#define Clear2 system("clear");
+/* 预定义windows要用到的东西 */
+#ifdef _WIN32
+	#include <windows.h>
+	#include <conio.h>
+	#ifndef Clear
+		#define Clear gotoxy(0, 0); for (int i = 0;i < 50; i++) { printf("                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "); } gotoxy(0, 0);
+		#define Clear2 gotoxy(0, 0); for (int i = 0;i < 50; i++) { printf("                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "); } gotoxy(0, 0);
+	#endif
+	#ifndef fontColorSet
+		#define fontColorSet(a,b) (a + b)
+	#endif
+	void gotoxy(int x,int y);
 #endif
 
 /* kbhit */
-#ifdef __linux
-int getch();
-int kbhit();
 int kbhitGetchar();
-#endif
 
 /* menu */
 void Menu(char title[], short p, short a);
 void Menu2(char title[]);
-
-/* pid */
-/* #include <sys/types.h> */
-/* pid_t */
-#include <signal.h>
-/* signal() */
-#include <wait.h>
 
 #endif
 
