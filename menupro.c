@@ -89,12 +89,15 @@ int menupro(char *title, char *text[], int tl) {
 					}
 				}
 				else if (input == 'B') {
-					if (count < 5 && count + 6 * (currentPage - 1) < tl - 2) {
+					if (count < 5 && count + 6 * (currentPage - 1) <= tl - 2) {
 						count += 2;
 					}
 					else if (currentPage < allPages){
 						count -= 4;
 						currentPage++;
+						if (count + 6 * (currentPage - 1) > tl) {
+							count -= 1;
+						}
 					}
 				}
 				else if (input == 'C') {
@@ -131,7 +134,7 @@ int menupro(char *title, char *text[], int tl) {
 			}
 		}
 		else if (input == 's' || input == 'S') {
-			if (count < 5 && count + 6 * (currentPage - 1) < tl - 2) {
+			if (count < 5 && count + 6 * (currentPage - 1) <= tl - 2) {
 				count += 2;
 			}
 			else if (currentPage < allPages){

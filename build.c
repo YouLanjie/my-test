@@ -41,7 +41,7 @@ int main() {
 			break;
 		}
 		if (name -> d_name[strlen(name -> d_name) - 2] == '.' && name -> d_name[strlen(name -> d_name) - 1] == 'c') {
-			strcpy(filename, "gcc ");
+			strcpy(filename, "gcc -g ");
 			strcat(filename, name -> d_name);
 			strcat(filename, " -o bin/");
 			strcat(filename, name -> d_name);

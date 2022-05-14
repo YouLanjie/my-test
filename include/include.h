@@ -59,8 +59,9 @@
 int kbhitGetchar();
 
 /* menu */
-void Menu(char title[], short p, short a);
-void Menu2(char title[]);
+int Menu(char *title, char *text[], int tl, int list);
+void Menu2(char title[], short p, short a);
+void Menu3(char title[]);
 
 #endif
 
