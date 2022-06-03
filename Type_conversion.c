@@ -1,12 +1,12 @@
 #include "include/include.h"
 
-int conversion(char filename[150], char filename_o[150], char dirname[100], int i);    //转换函数
+int conversion(char inputF[150], char outputF[150], char dirname[100], int i);    //转换函数
 
 int main(int argc,char * argv[]) {
 	int opt;
 	int a = 0x31,i = 0, i2 = 1;
 	unsigned long i4;
-	char filename[150] = "ffmpeg -i ", filename_o[150], dirname[100] = "./", type[10]= "NULL";
+	char inputF[150], outputF[150], dirname[100] = "./", type[10]= "NULL";
 	DIR * dp = NULL;
 	struct dirent * name;  //文件夹指针
 	pid_t pid;
@@ -74,26 +74,26 @@ int main(int argc,char * argv[]) {
 				if (name == NULL) {
 					break;
 				}
-				strcpy(filename, dirname);
-				strcat(filename, "/");
-				strcpy(filename_o, filename);
-				strcat(filename, name -> d_name);
-				strcat(filename_o, "../out/");
-				mkdir(filename_o,0777);
-				strcat(filename_o, name -> d_name);
-				i4 = strlen(filename_o);
+				strcpy(inputF, dirname);
+				strcat(inputF, "/");
+				strcpy(outputF, inputF);
+				strcat(inputF, name -> d_name);
+				strcat(outputF, "../out/");
+				mkdir(outputF,0777);
+				strcat(outputF, name -> d_name);
+				i4 = strlen(outputF);
 				i2 = 1;
-				while(filename_o[i4 - i2] != '.') {
+				while(outputF[i4 - i2] != '.') {
 					i2++;
 				}
 				i2--;
 				for (unsigned long i3 = 0; i3 <= strlen(type); i3++) {
-					filename_o[i4 - i2] = type[i3];
+					outputF[i4 - i2] = type[i3];
 					i2--;
 				}
 				pid = fork();
 				if(pid == 0) {
-					conversion(filename,filename_o,dirname,i);
+					conversion(inputF,outputF,dirname,i);
 					exit(-1);
 				}
 				name = readdir(dp);
@@ -109,18 +109,18 @@ int main(int argc,char * argv[]) {
 	return 0;
 }
 
-int conversion(char filename[150], char filename_o[150], char dirname[100], int i) {
+int conversion(char inputF[150], char outputF[150], char dirname[100], int i) {
 	struct stat statbuf;
 	char command[250] = "ffmpeg -i \"";
 	char count[5] = "0";
 
-	if (access(filename_o, 0) == 0) {
-		printf("\033[1;31m[文件已存在，跳过]filename:\033[1;32m%s\033[0m\n",filename_o);
+	if (access(outputF, 0) == 0) {
+		printf("\033[1;31m[文件已存在，跳过]filename:\033[1;32m%s\033[0m\n",outputF);
 		exit(1);
 	}
-	strcat(command, filename);
+	strcat(command, inputF);
 	strcat(command,"\" \"");
-	strcat(command,filename_o);
+	strcat(command,outputF);
 	strcat(command,"\" > ");
 	strcat(command,dirname);
 	strcat(command,"/../out/Log");
@@ -128,21 +128,21 @@ int conversion(char filename[150], char filename_o[150], char dirname[100], int 
 	strcat(command,count);
 	strcat(command," 2>&1");
 	if (system(command) != 0) {
-		stat(filename_o, &statbuf);
+		stat(outputF, &statbuf);
 		if (statbuf.st_size == 0) {
-			printf("\033[1;31mfilename: %s\n",filename);
+			printf("\033[1;31mfilename: %s\n",inputF);
 			printf("转换错误!请从%s/../out/Log%s中查看记录\033[0m\n",dirname,count);
-			remove(filename_o);
+			remove(outputF);
 			exit(-1);
 		}
 		printf("\033[1;31m[system]: \033[1;31m%s\033[1;32m\n",command);
-		perror(filename);
+		perror(inputF);
 		printf("\033[0m");
 		exit(-1);
 	}
 	strcat(dirname, "/../out/Log");
 	strcat(dirname, count);
 	remove(dirname);
-	printf("\033[1;32m文件\033[1;33m\'%s\'\033[1;32m转换完成\033[0m\n",filename);
+	printf("\033[1;32m文件\033[1;33m\'%s\'\033[1;32m转换完成\033[0m\n",inputF);
 	exit(0);
 }
