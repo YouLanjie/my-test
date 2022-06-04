@@ -1,8 +1,10 @@
 #include "include/include.h"
 
 #define Files 2
+#define CC "clang"
+// #define CC "gcc"
 
-char unbuild[Files][50] = {
+char unbuild[Files][50] = {  //不编译的文件列表
 	"build.c",
 	"gtk.c",
 };
@@ -41,7 +43,8 @@ int main() {
 			break;
 		}
 		if (name -> d_name[strlen(name -> d_name) - 2] == '.' && name -> d_name[strlen(name -> d_name) - 1] == 'c') {
-			strcpy(filename, "gcc -g ");
+			strcpy(filename, CC);
+			strcat(filename, " -g ");
 			strcat(filename, name -> d_name);
 			strcat(filename, " -o bin/");
 			strcat(filename, name -> d_name);
