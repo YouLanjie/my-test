@@ -1,5 +1,4 @@
 #include "include/include.h"
-#include <stdio.h>
 
 struct Command {
 	char command[45];        //命令
