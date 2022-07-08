@@ -52,7 +52,7 @@ int main(int argc, char * argv[]) {
 }
 
 int backup() {
-	CONFIG = "./backpu.conf";
+	CONFIG = "./backup.conf";
 	return install();
 }
 
