@@ -29,6 +29,7 @@ int main(int argc, char * argv[]) {
 				break;
 			case 'b':
 				stat = backup();
+				stat = stat | delete();
 				break;
 			case 'i':
 				stat = install();
