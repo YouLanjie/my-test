@@ -52,35 +52,8 @@ int main(int argc, char * argv[]) {
 }
 
 int backup() {
-	//system("echo \"backup:spacevim\"");
-	//if (access("/mnt/UserData/MyFiles/Backup/System/Arch/spacevim.tar.gz", 0) != 0) {
-	//	system("cd ~/ && tar -czf UserData/MyFiles/Backup/System/Arch/spacevim.tar.gz .SpaceVim .SpaceVim.d .cache/vimfiles/ .vim .config/nvim");
-	//}
-	//======================================
-	system("echo \"backup:chrome\"");
-	if (access("/mnt/UserData/MyFiles/Backup/System/Arch/chrome.tar.gz", 0) != 0) {
-		system("cd ~/ && tar -czf UserData/MyFiles/Backup/System/Arch/chrome.tar.gz .config/google-chrome .cache/google-chrome");
-	}
-	//======================================
-	system("echo \"backup:gpg\"");
-	if (access("/mnt/UserData/MyFiles/Backup/System/Arch/gpg.tar.gz", 0) != 0) {
-		system("cd ~/ && tar -czf UserData/MyFiles/Backup/System/Arch/gpg.tar.gz .ssh .gnupg");
-	}
-	//======================================
-	system("echo \"backup:config\"");
-	if (access("/mnt/UserData/MyFiles/Backup/System/Arch/config.tar.gz", 0) != 0) {
-		system("cd ~/ && tar -czf UserData/MyFiles/Backup/System/Arch/config.tar.gz .config/nvim .vim .config/fish .config/omf .local/share/omf .gitconfig .zshrc .oh-my-zsh .pam_environment .config/Kvantum .local/share/aurorae .local/share/plasma .config/i3 .config/picom .config/alacritty .config/polybar .local/share/fonts .config/ranger .config/gtk-2.0 .config/gtk-3.0 .config/gtk-4.0 .config/hmcl .config/kdeconnect .config/Kvantum .config/latte .config/obs-studio .config/uTools .local/share/color-schemes .config/rofi .config/conky");
-	}
-	//======================================
-	system("echo \"backup:root config\"");
-	if (access("/mnt/UserData/MyFiles/Backup/System/Arch/other.tar.gz", 0) != 0) {
-		system("cd / && tar -czf mnt/UserData/MyFiles/Backup/System/Arch/other.tar.gz etc/hosts etc/pacman.d/mirrorlist etc/pacman.conf");
-	}
-	system("echo \"backup:root config2\"");
-	if (access("/mnt/UserData/MyFiles/Backup/System/Arch/other2.tar.gz", 0) != 0) {
-		system("cd / && tar -czf mnt/UserData/MyFiles/Backup/System/Arch/other2.tar.gz usr/share/sddm/themes boot/grub/themes");
-	}
-	return 0;
+	CONFIG = "./backpu.conf";
+	return install();
 }
 
 int delete() {
