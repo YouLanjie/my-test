@@ -29,21 +29,21 @@ int main() {
 	//  getch();
 
 	printf("\ncolor(in front of):\n");
-	for (int i = 31; i <= 37; i++) {
+	for (int i = 30; i <= 37; i++) {
 		printf("\033[%dm\\033[%dm This is text \033[0m\n", i, i);
 	}
 
 	if (b == 'y' || b == 'Y') {
 		printf("\ncolor(background):\n");
-		for (int i = 41; i <= 47; i++) {
+		for (int i = 40; i <= 47; i++) {
 			printf("\033[%dm\\033[%dm This is text \033[0m\n", i, i);
 		}
 	}
 
 	if (e == 'y' || e == 'Y') {
 		printf("color(ALL):\n");
-		for (int i = 31; i <= 37; i++) {
-			for (int i2 = 41; i2 <= 47; i2++) {
+		for (int i = 30; i <= 37; i++) {
+			for (int i2 = 40; i2 <= 47; i2++) {
 				printf("\033[%d;%dm\\033[%d;%dm\033[0m\t", i, i2, i, i2);
 			}
 			printf("\n");
@@ -55,21 +55,21 @@ int main() {
 		for (int i = 0; i <= 8; i++) {
 			printf("\n\033[%dm\\033[%dm\033[0m\n", i, i);
 			printf("color(in front of):\n");
-			for (int i2 = 31; i2 <= 37; i2++) {
+			for (int i2 = 30; i2 <= 37; i2++) {
 				printf("\033[%d;%dm\\033[%d;%dm\033[0m\t", i, i2, i, i2);
 			}
 			printf("\n");
 			if (c == 'y' || c == 'Y') {
 				printf("color(background):\n");
-				for (int i2 = 41; i2 <= 47; i2++) {
+				for (int i2 = 40; i2 <= 47; i2++) {
 					printf("\033[%d;%dm\\033[%d;%dm\033[0m\t", i, i2, i, i2);
 				}
 				printf("\n");
 			}
 			if (d == 'y' || d == 'Y') {
 				printf("color(ALL):\n");
-				for (int i2 = 31; i2 <= 37; i2++) {
-					for (int i3 = 41; i3 <= 47; i3++) {
+				for (int i2 = 30; i2 <= 37; i2++) {
+					for (int i3 = 40; i3 <= 47; i3++) {
 						printf("\033[%d;%d;%dm\\033[%d;%d;%dm\033[0m\t", i, i2, i3, i, i2, i3);
 					}
 					printf("\n");
