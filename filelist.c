@@ -1,4 +1,4 @@
-#include "include/include.h"
+#include "include/tools.h"
 
 int main(int argc, char * argv[]) {
 	char dirname[501];

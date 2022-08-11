@@ -1,8 +1,8 @@
-#include "include/include.h"
+#include "include/tools.h"
 
 #define Files 2
-#define CC "clang"
-// #define CC "gcc"
+//  #define CC "clang"
+#define CC "gcc"
 
 char unbuild[Files][50] = {  //不编译的文件列表
 	"build.c",
@@ -44,15 +44,16 @@ int main() {
 		}
 		if (name -> d_name[strlen(name -> d_name) - 2] == '.' && name -> d_name[strlen(name -> d_name) - 1] == 'c') {
 			strcpy(filename, CC);
-			strcat(filename, " -g ");
+			strcat(filename, " ");
 			strcat(filename, name -> d_name);
+			strcat(filename, " -g -Wall -L lib -ltools ");
 			strcat(filename, " -o bin/");
 			strcat(filename, name -> d_name);
 			filename[strlen(filename) - 2] = '\0';
 			if (strcmp(name -> d_name, "RSA.c") == 0) {
 				strcat(filename, " -lm");
 			}
-			printf("command: \'%s\'\n", filename);
+			printf("\033[1;33mcommand: \033[1;32m\'%s\'\033[0m\n", filename);
 			system(filename);
 		}
 		name = readdir(dp);

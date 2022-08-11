@@ -1,4 +1,4 @@
-#include "include/include.h"
+#include "include/tools.h"
 
 struct Command {
 	char command[45];        //命令

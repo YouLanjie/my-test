@@ -1,7 +1,6 @@
-#include "include/include.h"
+#include "include/tools.h"
 
 int main() {
-	int a = 0;
 	double f = 0,i = 0;
 
 	printf("\033[?25l");
