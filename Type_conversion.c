@@ -1,4 +1,5 @@
 #include "include/tools.h"
+#include <stdio.h>
 
 int conversion(char inputF[150], char outputF[150], char dirname[100], int i);    //转换函数
 
@@ -52,11 +53,10 @@ int main(int argc,char * argv[]) {
 		getchar();
 	}
 	while(a != 0x30) {
-		Clear2
-		printf("\033[1;32m欢迎使用批量格式转换小程序\n\033[31m原文件夹:\033[36m%s\t\033[31m目标格式:\033[36m%s\n\033[33m按下 1 键开始,按 0 退出\n",dirname,type);
+		printf("\033[1;32m欢迎使用批量格式转换小程序\n\033[31m原文件夹:\033[36m%s\t\033[31m目标格式:\033[36m%s\n\033[33m按下 1 键开始,按 0 退出\033[0m\n",dirname,type);
 		a = getch();
+		printf("\033[33m开始转换...\033[0m\n");
 		if(a == 0x31) {
-			Clear2
 			dp = opendir(dirname);
 			if (!dp) {
 				perror(dirname);
