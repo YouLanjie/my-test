@@ -2,35 +2,44 @@
 
 void stop();
 
-enum unit{Exit = 48, Bit, KB, MB, GB};
+enum unit{Exit = 48, Bit, KiB, MiB, GiB, KB, MB, GB};
 
 int main(int argc,char * argv[]) {
-	FILE *fp;
-	char filename[30], type;
-	int ch;
-	int a = 1, b, c = 1;
-	double bit = 0, count, f = 0;
+	FILE   * fp;              /* 文件指针 */
+	char     filename[30],    /* 文件名 */
+	         type;            /* 单位 */
+	int      a   = 1,
+	         b,               /* 输入 */
+	         c   = 1,
+	         ch  = 0;
+	double   bit = 0,         /* 比特值 */
+	         count,           /* 填充的字符数 */
+	         f   = 0;         /* 已填充的字符占字符总数的百分比 */
+	menuData data;            /* 使用工具库中的菜单 */
+
+	menuDataInit(&data);
+	data.title = "创建文件";
+	data.addText(&data, "1.Bit", "2.KiB", "3.MiB", "4.GiB", "5.KB", "6.MB", "7.GB", "0.Exit", NULL);
 
 	signal(SIGINT,stop);
 	printf("\033[?25l");
 	opterr = 0;
-	bit = 0;
-	while ((ch = getopt(argc, argv, "hs:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "hs:t:")) != -1) {    /* 获取参数 */
 		if (ch == '?' || ch == 'h') {
 			printf("mkfile -h\t帮助\nmkfile -[s 大小] -[t 单位]\033[?25h\n");
 			return 0;
 		}
-		else if (ch == 's') {
+		else if (ch == 's') {    /* size大小 */
 			if (optopt == '?') {
 				printf("没有指定大小\033[?25h\n");
-				return 1;
+				return -1;
 			}
-			bit = atof(optarg);
+			bit = atof(optarg);    /* 字符转数字 */
 		}
-		else if (ch == 't') {
+		else if (ch == 't') {    /* type单位类型 */
 			if (bit == 0) {
 				printf("没有指定大小\033[?25h\n");
-				return 1;
+				return -1;
 			}
 			if (optopt == '?') {
 				type = 'B';
@@ -40,78 +49,83 @@ int main(int argc,char * argv[]) {
 			}
 		}
 	}
-	while(1) {
+
+	while(1) {    /* 用户选择 */
 		count = 0;
 		c = 1;
-		do {
-			Clear2
-			if (!bit) {
-				printf("请选择单位：\n0:Exit\n1:Bit\n2:KB\n3:MB\n4:GB\n");
-				b = getch();
+		do {    /* 限制界面在主界面 */
+			if (!bit) {    /* 如果比特数为0 */
+				Clear2
+				b = data.menuShow(&data);    /* 获取类型 */
 				Clear2
 			}
 			else {
-				switch (type) {
+				switch (type) {    /* 转换为输入 */
 					case 'b':
 					case 'B':
-						b = 49;
+						b = '1';
 						break;
 					case 'k':
 					case 'K':
-						b = 50;
+						b = '2';
 						break;
 					case 'm':
 					case 'M':
-						b = 51;
+						b = '3';
 						break;
 					case 'g':
 					case 'G':
-						b = 52;
+						b = '4';
 						break;
 				}
 			}
 			switch (b) {
-				case Exit:
+				case Exit:    /* 退出 */
+				case 'q':
 					Clear2
 					printf("\033[?25h");
 					return 0;
 					break;
-				case Bit:
+				case Bit:    /* 比特 */
 					if (!bit) {
-						printf("请输入一个数字(Bit):\n");
+						printf("请输入一个数字(Bit)，回车确定:\n");
 						scanf("%lf",&bit);
+						getch();
 					}
 					sprintf(filename,"%.1lf",bit);
 					strcat(filename,"Bit");
 					c--;
 					break;
-				case KB:
+				case KiB:
 					if (!bit) {
-						printf("请输入一个数字(Kb):\n");
+						printf("请输入一个数字(KiB)，回车确定:\n");
 						scanf("%lf",&bit);
+						getch();
 					}
 					sprintf(filename,"%.1lf",bit);
-					strcat(filename,"KB");
+					strcat(filename,"KiB");
 					bit = bit * 1024;
 					c--;
 					break;
-				case MB:
+				case MiB:
 					if (!bit) {
-						printf("请输入一个数字(Mb):\n");
+						printf("请输入一个数字(MiB)，回车确定:\n");
 						scanf("%lf",&bit);
+						getch();
 					}
 					sprintf(filename,"%.1lf",bit);
-					strcat(filename,"MB");
+					strcat(filename,"MiB");
 					bit = bit * 1024 * 1024;
 					c--;
 					break;
-				case GB:
+				case GiB:
 					if (!bit) {
-						printf("请输入一个数字(Gb):\n");
+						printf("请输入一个数字(GiB)，回车确定:\n");
 						scanf("%lf",&bit);
+						getch();
 					}
 					sprintf(filename,"%.1lf",bit);
-					strcat(filename,"GB");
+					strcat(filename,"GiB");
 					bit = bit * 1024 * 1024 * 1024;
 					c--;
 					break;
@@ -119,23 +133,22 @@ int main(int argc,char * argv[]) {
 					break;
 			}
 		}while(c);
-		Clear2
+
 		fp = fopen(filename,"w");
 		if(!fp) {
 			printf("错误！\n");
 			printf("\033[?25h");
 			return 0;
 		}
+
 		a = 0;
 		f = 0;
-		printf("\033[1;1H填充完成度:[\033[1;63H]\n");
+		printf("填充完成度:[\033[51C]\n");
 		for(count = 0; count <= bit && count < 53687091200 && bit < 53687091200; count++) {
 			f = (count / bit);
 			while (f * 100 > a) {
 				a++;
-			}
-			for(int i = 0; (int)(f * 100) == a && i <= a; i++) {
-				printf("\033[1;%dH=>\033[1;12H[\033[1;64H%d%%\n",(i / 2) + 12,i);
+				printf("\033[A\033[%dC=>\n\033[A\033[64C%3d%%\n",(a / 2) + 11,a);
 			}
 			if((int)(f * 100) == a) {
 				a++;
@@ -144,11 +157,11 @@ int main(int argc,char * argv[]) {
 				fputs("\n",fp);
 			}
 		}
-		printf("\033[2;1H创建完成！\n");
+		printf("创建完成！\n");
 		fclose(fp);
 		if (argc < 3) {
 			bit = 0;
-			Clear2
+			getch();
 		}
 		else {
 			printf("\033[?25h");

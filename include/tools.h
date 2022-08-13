@@ -73,7 +73,7 @@ struct Text {
 	void       (* function);    /* 调用的函数 */
 	int         * var;          /* 调整的变量值 */
 	int           number;       /* 编号 */
-	int           cfg;          /* 类型 */
+	int           cfg;          /* 类型: 0.默认 1.仅显示主界面 2.显示帮助 3.显示设置 4.仅显示帮助，无输入处理 */
 	int           foot;         /* 调整宽度 */
 	struct Text * nextText;     /* 下一条例（链表） */
 };                                  /* 条例结构体 */
