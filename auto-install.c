@@ -1,4 +1,5 @@
 #include "include/tools.h"
+#include <stdio.h>
 
 // #define USER               youlanjie
 // #define SHELL              /usr/bin/zsh
@@ -22,32 +23,40 @@ int main(int argc, char * argv[]) {
 	}
 	while ((opt = getopt(argc, argv, "hbirdf:")) != -1) {
 		switch (opt) {
-			case '?':
-			case 'h':
+		case 'b':
+			stat = backup();
+			stat = stat | delete();
+			break;
+		case 'i':
+			stat = install();
+			break;
+		case 'd':
+		case 'r':
+			stat = delete();
+			break;
+		case 'f':
+			if (strcmp(optarg,"?") == 0) {
 				help();
-				return 0;
-				break;
-			case 'b':
-				stat = backup();
-				stat = stat | delete();
-				break;
-			case 'i':
-				stat = install();
-				break;
-			case 'd':
-			case 'r':
-				stat = delete();
-				break;
-			case 'f':
-				if (strcmp(optarg,"?") == 0) {
-					help();
-					return -1;
-				}
-				else {
-					CONFIG = optarg;
-				}
-				break;
+				return -1;
+			}
+			else {
+				CONFIG = optarg;
+			}
+			break;
+		case '?':
+		case 'h':
+			help();
+			return 0;
+			break;
+		default:
+			help();
+			return -1;
+			break;
 		}
+	}
+	if (argc == 1) {
+		help();
+		return -1;
 	}
 	return stat;
 }
@@ -80,23 +89,36 @@ int delete() {
 }
 
 int install() {
-	char command[1024];
+	char command[1048576];
+	int stat = 0;
 
 	while (1) {
 		switch (readconfig(command)) {
 			case -1:
-				printf("错误,文件异常\n");
+				printf("\033[0;1;33mError: 文件异常\033[0m");
+				printf("\033[0;1;33mError: [perror]: \033[0;1;32m");
+				fflush(stdout);
+				perror(command);
+				fflush(stderr);
+				printf("\033[0m\n");
 				return -1;
 				break;
 			case 1:
 				return 0;
 				break;
 		}
-		printf("command: %s\n", command);
+		printf("\033[0;1;33m-------------------------Command Begin-------------------------\n\033[0;1;33mCommand:\n\033[0;1;32m%s\033[0m", command);
+		fflush(stdout);
 		// sleep(1);
-		if (system(command) != 0) {
-			printf("Command");
+		stat = system(command);
+		if (stat != 0) {
+			printf("\033[0;1;33mError: [command]:\n\033[0;1;32m%s\033[0m\n", command);
+			printf("\033[0;1;33mError: [return ]: \033[0;1;32m%d\033[0m\n", stat);
+			printf("\033[0;1;33mError: [perror ]:\n\033[0;1;32m");
+			fflush(stdout);
 			perror(command);
+			fflush(stderr);
+			printf("\033[0m\n");
 			return -1;
 		}
 		else {
@@ -109,7 +131,7 @@ int install() {
 }
 
 int readconfig(char *command) {
-	char ch[100];
+	char ch[1024];
 	FILE *fp;
 
 	if (access(CONFIG, 0) == 0) {
@@ -126,21 +148,17 @@ int readconfig(char *command) {
 	if (feof(fp) != 0) {
 		return 1;
 	}
-	fgets(ch, 100, fp);
-	while (ch[0] != '{' && feof(fp) == 0) fgets(ch, 100, fp);
+	fgets(ch, 1024, fp);
+	while (ch[0] != '{' && feof(fp) == 0) fgets(ch, 1024, fp);
 	if (feof(fp) != 0) {
 		return 1;
 	}
-	fgets(ch, 100, fp);
+	fgets(ch, 1024, fp);
 	strcpy(command, ch);
-	fgets(ch, 100, fp);
+	fgets(ch, 1024, fp);
 	while (ch[0] != '{' && ch[0] != '}' && feof(fp) == 0) {
-		if (ch[0] == '#' || ch[0] == '%') {
-			fgets(ch, 100, fp);
-			continue;
-		}
 		strcat(command, ch);
-		fgets(ch, 100, fp);
+		fgets(ch, 1024, fp);
 	}
 	fclose(fp);
 	return 0;
