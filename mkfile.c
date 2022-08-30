@@ -5,32 +5,32 @@ void stop();
 enum unit{Exit = 48, Bit, KiB, MiB, GiB, KB, MB, GB};
 
 int main(int argc,char * argv[]) {
-	FILE   * fp;              /* 文件指针 */
-	char     filename[30],    /* 文件名 */
-	         type;            /* 单位 */
+	FILE   * fp;                       /* 文件指针 */
+	char     filename[30],             /* 文件名 */
+	         type;                     /* 单位 */
 	int      a   = 1,
-	         b,               /* 输入 */
+	         b,                        /* 输入 */
 	         c   = 1,
 	         ch  = 0;
-	double   bit = 0,         /* 比特值 */
-	         count,           /* 填充的字符数 */
-	         f   = 0;         /* 已填充的字符占字符总数的百分比 */
-	menuData data;            /* 使用工具库中的菜单 */
+	double   bit = 0,                  /* 比特值 */
+	         count,                    /* 填充的字符数 */
+	         f   = 0;                  /* 已填充的字符占字符总数的百分比 */
+	menuData data = menuDataInit();    /* 使用工具库中的菜单 */
 
-	menuDataInit(&data);
 	data.title = "创建文件";
 	data.addText(&data, "1.Bit", "2.KiB", "3.MiB", "4.GiB", "5.KB", "6.MB", "7.GB", "0.Exit", NULL);
 
 	signal(SIGINT,stop);
-	printf("\033[?25l");
 	opterr = 0;
 	while ((ch = getopt(argc, argv, "hs:t:")) != -1) {    /* 获取参数 */
 		if (ch == '?' || ch == 'h') {
+			endwin();
 			printf("mkfile -h\t帮助\nmkfile -[s 大小] -[t 单位]\033[?25h\n");
 			return 0;
 		}
 		else if (ch == 's') {    /* size大小 */
 			if (optopt == '?') {
+				endwin();
 				printf("没有指定大小\033[?25h\n");
 				return -1;
 			}
@@ -38,6 +38,7 @@ int main(int argc,char * argv[]) {
 		}
 		else if (ch == 't') {    /* type单位类型 */
 			if (bit == 0) {
+				endwin();
 				printf("没有指定大小\033[?25h\n");
 				return -1;
 			}
@@ -51,6 +52,7 @@ int main(int argc,char * argv[]) {
 	}
 
 	while(1) {    /* 用户选择 */
+		menuDataInit();
 		count = 0;
 		c = 1;
 		do {    /* 限制界面在主界面 */
@@ -79,18 +81,16 @@ int main(int argc,char * argv[]) {
 						break;
 				}
 			}
+			endwin();
 			switch (b) {
 				case Exit:    /* 退出 */
 				case 'q':
-					Clear2
-					printf("\033[?25h");
 					return 0;
 					break;
 				case Bit:    /* 比特 */
 					if (!bit) {
 						printf("请输入一个数字(Bit)，回车确定:\n");
 						scanf("%lf",&bit);
-						getch();
 					}
 					sprintf(filename,"%.1lf",bit);
 					strcat(filename,"Bit");
@@ -100,7 +100,6 @@ int main(int argc,char * argv[]) {
 					if (!bit) {
 						printf("请输入一个数字(KiB)，回车确定:\n");
 						scanf("%lf",&bit);
-						getch();
 					}
 					sprintf(filename,"%.1lf",bit);
 					strcat(filename,"KiB");
@@ -111,7 +110,6 @@ int main(int argc,char * argv[]) {
 					if (!bit) {
 						printf("请输入一个数字(MiB)，回车确定:\n");
 						scanf("%lf",&bit);
-						getch();
 					}
 					sprintf(filename,"%.1lf",bit);
 					strcat(filename,"MiB");
@@ -122,7 +120,6 @@ int main(int argc,char * argv[]) {
 					if (!bit) {
 						printf("请输入一个数字(GiB)，回车确定:\n");
 						scanf("%lf",&bit);
-						getch();
 					}
 					sprintf(filename,"%.1lf",bit);
 					strcat(filename,"GiB");
@@ -137,7 +134,6 @@ int main(int argc,char * argv[]) {
 		fp = fopen(filename,"w");
 		if(!fp) {
 			printf("错误！\n");
-			printf("\033[?25h");
 			return 0;
 		}
 
@@ -149,6 +145,7 @@ int main(int argc,char * argv[]) {
 			while (f * 100 > a) {
 				a++;
 				printf("\033[A\033[%dC=>\n\033[A\033[64C%3d%%\n",(a / 2) + 11,a);
+				kbhitGetchar();
 			}
 			if((int)(f * 100) == a) {
 				a++;
@@ -158,21 +155,20 @@ int main(int argc,char * argv[]) {
 			}
 		}
 		printf("创建完成！\n");
+		kbhitGetchar();
 		fclose(fp);
 		if (argc < 3) {
 			bit = 0;
-			getch();
 		}
 		else {
-			printf("\033[?25h");
 			return 0;
 		}
 	}
-	printf("\033[?25h");
 	return 0;
 }
 
 void stop() {
-	printf("异常退出\033[?25h\n");
+	endwin();
+	printf("异常退出\n");
 	exit(1);
 }

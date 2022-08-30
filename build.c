@@ -46,7 +46,7 @@ int main() {
 			strcpy(filename, CC);
 			strcat(filename, " ");
 			strcat(filename, name -> d_name);
-			strcat(filename, " -g -Wall -L lib -ltools ");
+			strcat(filename, " -g -Wall -L lib -ltools -lncurses");
 			strcat(filename, " -o bin/");
 			strcat(filename, name -> d_name);
 			filename[strlen(filename) - 2] = '\0';

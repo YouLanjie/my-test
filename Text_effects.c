@@ -4,16 +4,16 @@ int main() {
 	int a = 0, b = 0, c = 0, d = 0, e = 0;
 
 	printf("print ALL?\n");
-	a = getch();
+	a = getch_old();
 	printf("print background colors?\n");
-	b = getch();
+	b = getch_old();
 	printf("print all colors?\n");
-	e = getch();
+	e = getch_old();
 	if (a == 'y' || a == 'Y') {
 		printf("print ALL and background colors?\n");
-		c = getch();
+		c = getch_old();
 		printf("print all colors in ALL?\n");
-		d = getch();
+		d = getch_old();
 	}
 
 	printf("\ntext:\n");
