@@ -9,13 +9,13 @@ int main() {
 
 	printf("\033[?25l");
 	while(1) {
-		Clear
+		Clear2;
 		printf("请选择计算程序：\n0:Exit\n1:boom\n");
 		i = getch();
-		Clear
+		Clear2;
 		switch (i) {
 			case Exit:
-				Clear
+				Clear2;
 				printf("\033[?25h");
 				return 0;
 				break;

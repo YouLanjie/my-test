@@ -4,11 +4,11 @@ int main() {
 	double f = 0,i = 0;
 
 	printf("\033[?25l");
-	Clear
+	Clear2;
 	printf("Please input a number:");
 	scanf("%lf",&i);
 	getchar();
-	Clear
+	Clear2;
 	printf("\033[1;1H进度条:[\033[1;59H]\n");
 	for(double count = 0; count < i ; count++) {
 		f = count / i * 100;
@@ -17,6 +17,6 @@ int main() {
 	printf("\033[2;1HTest is over.\nInput enter return.\n");
 	getch();
 	printf("\033[?25h");
-	Clear
+	Clear2;
 	return 0;
 }

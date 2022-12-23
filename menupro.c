@@ -12,7 +12,7 @@ int main() {
 		"6.ok ok...",
 		"7.next page"
 	};
-	Clear2
+	Clear3;
 	printf("chose %d\n", menupro("test", text, 7));
 	return 0;
 }
@@ -28,7 +28,7 @@ int menupro(char *title, char *text[], int tl) {
 	int input = 1, currentPage = 1, count = 1, allPages = (tl - 1) / 6 + 1;
 
 	while (input != 0x30 && input != 0x1B) {
-		Clear2
+		Clear3;
 #ifdef __linux
 		ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
 		winSizeCol = size.ws_col;
@@ -72,11 +72,11 @@ int menupro(char *title, char *text[], int tl) {
 				printf("> %s", text[i - 1 +  6 * (currentPage - 1)]);
 #endif
 			}
-			kbhitGetchar();
+			ctools_kbhitGetchar();
 		}
-		input = getch();
+		input = ctools_getch();
 		if (input == 0x1B) {
-			if (kbhit()) {
+			if (ctools_kbhit()) {
 				getchar();
 				input = getchar();
 				if (input == 'A') {
@@ -120,7 +120,7 @@ int menupro(char *title, char *text[], int tl) {
 				}
 			}
 			else {
-				Clear2
+				Clear3;
 				return 0;
 			}
 		}
@@ -164,11 +164,11 @@ int menupro(char *title, char *text[], int tl) {
 			}
 		}
 		else if (input == 'q' || input == 'Q') {
-			Clear
+			Clear3;
 			return 0;
 		}
 		else {
-			Clear2
+			Clear3;
 			return count + 6 * (currentPage - 1);
 		}
 	}

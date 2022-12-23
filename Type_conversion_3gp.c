@@ -2,13 +2,13 @@
 #include <stdio.h>
 #include <sys/time.h>
 
-int conversion(char inputF[150], char outputF[150], char dirname[100], int i);	//转换函数
+int conversion(char inputF[1500], char outputF[1500], char dirname[1000], int i);	//转换函数
 
 int main(int argc, char *argv[])
 {
-	char             inputF[150],            /* 输入文件名 */
-	                 outputF[150],           /* 输出文件名 */
-	                 dirname[100] = "./",    /* 目录文件名 */
+	char             inputF[1500],            /* 输入文件名 */
+	                 outputF[1500],           /* 输出文件名 */
+	                 dirname[1000] = "./",    /* 目录文件名 */
 	                 type[10] = "NULL";      /* 文件后缀名 */
 	int              opt,
 	                 a = 0x31,     /* 输入 */
@@ -82,7 +82,7 @@ int main(int argc, char *argv[])
 			if (name == NULL) {
 				break;
 			}
-			for (i = 0; name != NULL && (name->d_type == 8 || name->d_type == 10); i++) {
+			for (i = 0; name != NULL && i < 150; i++) {
 				while (name != NULL && name->d_type != 8 && name->d_type != 10) {	/* 获取文件名 */
 					name = readdir(dp);
 					i++;
@@ -106,6 +106,11 @@ int main(int argc, char *argv[])
 				for (unsigned long i3 = 0; i3 <= strlen(type); i3++) {
 					outputF[i4 - i2] = type[i3];
 					i2--;
+				}
+				if ((i + 1) % 7 == 0) {
+					printf("\n\033[1;33mInfo: \033[1;32m进程较多，等待后再开始\033[0m\n\n");
+					fflush(stdout);
+					while (wait(NULL) != -1) ;
 				}
 				pid = fork();
 				if (pid == 0) {
@@ -143,11 +148,11 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
-int conversion(char inputF[150], char outputF[150], char dirname[100], int i)
+int conversion(char inputF[1500], char outputF[1500], char dirname[1000], int i)
 {
 	struct stat statbuf;
 	struct timeval time, time2;
-	char command[250] = "ffmpeg -i \"";
+	char command[2500] = "ffmpeg -i \"";
 	char outputLog[30];
 	char count[5] = "0";
 
@@ -157,7 +162,7 @@ int conversion(char inputF[150], char outputF[150], char dirname[100], int i)
 		exit(1);
 	}
 	strcat(command, inputF);
-	strcat(command, "\" \"");
+	strcat(command, "\" -r 12 -b:v 400k -s 352x288 -ab 12.2k -ac 1 -ar 8000 \"");
 	strcat(command, outputF);
 	strcat(command, "\" > ");
 

@@ -10,7 +10,7 @@ int main(int argc,char * argv[]) {
 		return -1;
 	}
 
-	Clear2
+	Clear3;
 	printf("\033[?25l");
 	fp = fopen(argv[1],"r");
 	if (!fp) {
@@ -18,12 +18,12 @@ int main(int argc,char * argv[]) {
 		return 0;
 	}
 	while (!exit) {
-		exit = kbhit();
+		exit = ctools_kbhit();
 		a = fgetc(fp);
 		if(a == EOF) {
 			fseek(fp,0L,0);
 			system("sleep 0.023");
-			Clear
+			Clear2;
 		}
 		else {
 			printf("%c",a);

@@ -14,18 +14,18 @@ void stop();
 int a = 0;
 
 int main() {
-	Clear2
+	Clear3;
 	signal(SIGINT, stop);
 	printf("No.1 server\nor\nNo.2 client\n?");
 	if (getch() == '1') {
-		Clear2
+		Clear3;
 		server();
 	}
 	else {
-		Clear2
+		Clear3;
 		client();
 	}
-	Clear2
+	Clear3;
 	return 0;
 }
 
@@ -83,10 +83,10 @@ void server(){
 		perror("进程创建错误!");
 		exit(-5);
 	}
-	Clear2
+	Clear3;
 	while(!pid){
 		printf("\033[s\033[13;1H\033[1;31m读（子）%d\033[0m\n\033[u",pid);
-		kbhitGetchar();
+		ctools_kbhitGetchar();
 		// 读取客户端发来的信息，会阻塞
 		ssize_t len = read(connect_fd, recbuf, sizeof(recbuf));
 		if(len < 0){
@@ -96,7 +96,7 @@ void server(){
 			exit(-6);
 		}
 		printf("\033[s\033[14;1H接收：\n%s\n\033[u", recbuf);
-		kbhitGetchar();
+		ctools_kbhitGetchar();
 		if(a) {
 			exit(0);
 		}
@@ -155,7 +155,7 @@ void client(){
 	system("clear");
 	while(!pid){
 		printf("\033[s\033[13;1H\033[1;31m读（子）%d\033[0m\n\033[u",pid);
-		kbhitGetchar();
+		ctools_kbhitGetchar();
 		//从服务器接收信息
 		ssize_t len = read(sockfd, recbuf, sizeof(recbuf));
 		if(len < 0){
@@ -165,7 +165,7 @@ void client(){
 			exit(0);
 		}
 		printf("\033[s\033[14;40H接收：\n%s\n\033[u", recbuf);
-		kbhitGetchar();
+		ctools_kbhitGetchar();
 		if (a) {
 			exit(0);
 		}
