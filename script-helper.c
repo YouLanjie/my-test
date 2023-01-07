@@ -225,7 +225,7 @@ int finish() {
 }
 
 void help() {
-	printf("Usage: script-helper <options> <file>\n");
+	printf("Usage: script-helper <options>\n");
 	printf("	-f  指定脚本文件\n");
 	printf("	-d  执行脚本\n");
 	printf("	-r  重置脚本\n");
