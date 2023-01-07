@@ -97,6 +97,23 @@ int reset() {
 	long size = 0L;
 	FILE *fp;
 
+	if (access(CONFIG, 0) == 0) {
+		fp = fopen(CONFIG, "r+");
+	} else {
+		perror("CONFIG");
+		printf("\033[0;1;33mError: 文件异常\033[0m\n");
+		printf("\033[0;1;33mError: \033[0;32m%s\033[0m\n",CONFIG);
+		return -1;
+	}
+	if (!fp) {
+		perror("CONFIG");
+		printf("\033[0;1;33mError: 文件异常\033[0m\n");
+		printf("\033[0;1;33mError: \033[0;32m%s\033[0m\n",CONFIG);
+		return -1;
+	}
+	if (feof(fp) != 0) {
+		return 1;
+	}
 	fp = fopen(CONFIG, "r+");
 	while (feof(fp) == 0) {
 		fgets(ch, 100, fp);
@@ -122,12 +139,7 @@ int run() {
 		switch (readconfig(command)) {
 			case -1:
 				printf("\033[0;1;33mError: 文件异常\033[0m\n");
-				printf("\033[0;32mError: %s\033[0m\n",CONFIG);
-				printf("\033[0;1;33mError: \033[0;1;32m");
-				fflush(stdout);
-				perror(command);
-				fflush(stderr);
-				printf("\033[0m\n");
+				printf("\033[0;1;33mError: \033[0;32m%s\033[0m\n",CONFIG);
 				return -1;
 				break;
 			case 1:
