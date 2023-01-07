@@ -1,52 +1,50 @@
 #include "include/tools.h"
-#include <stdio.h>
 
 // #define USER               youlanjie
 // #define SHELL              /usr/bin/zsh
 // #define CONFIG             "install.conf"
 
-int backup();                   /* 备份配置文件 */
-int delete();                   /* 移除安装进度配置 */
-int install();                  /* 安装软件进行配置 */
-int readconfig(char *);         /* 读取文件信息 */
-int clean();                    /* 增加完成注释 */
-void help();                    /* 打印帮助信息 */
+//  #define COMMAND_FLAG  "# SCRIPT HELPER ENABLE"
+#define COMMAND_START "# COMMAND START\n"
+#define COMMAND_DID   "# COMMAND DID  \n"
+#define COMMAND_END   "# COMMAND END  \n"
 
-char *CONFIG;
+int reset();               /* 重置脚本 */
+int run();                 /* 执行脚本 */
+int readconfig(char *);    /* 读取文件信息 */
+int finish();              /* 增加完成注释 */
+void help();               /* 打印帮助信息 */
+
+char *CONFIG = NULL;
 
 int main(int argc, char * argv[]) {
-	int opt, stat = 0;
+	int opt   = 0,
+	    stat  = 0;
 
 	if (argc == 1) {
 		help();
 		return -1;
 	}
-	while ((opt = getopt(argc, argv, "hbirdf:")) != -1) {
+	while ((opt = getopt(argc, argv, "hf:dr")) != -1) {
 		switch (opt) {
-		case 'b':
-			stat = backup();
-			stat = stat | delete();
-			break;
-		case 'i':
-			stat = install();
-			break;
-		case 'd':
-		case 'r':
-			stat = delete();
-			break;
-		case 'f':
-			if (strcmp(optarg,"?") == 0) {
-				help();
-				return -1;
-			}
-			else {
-				CONFIG = optarg;
-			}
-			break;
-		case '?':
 		case 'h':
 			help();
 			return 0;
+			break;
+		case 'f':
+			if (strcmp(optarg, "?") != 0) {
+				CONFIG = optarg;
+			}
+			break;
+		case 'd':
+			if (stat == 0) {
+				stat += 1;
+			} else {
+				stat += 2;
+			}
+			break;
+		case 'r':
+			stat += 2;
 			break;
 		default:
 			help();
@@ -54,27 +52,55 @@ int main(int argc, char * argv[]) {
 			break;
 		}
 	}
-	if (argc == 1) {
+	if (argc == 1 || stat == 0 || CONFIG == NULL) {
+		if (CONFIG == NULL) {
+			printf("没有指定文件\n");
+		} else if (stat == 0) {
+			printf("没有指定有效动作-d或-r\n");
+		}
 		help();
 		return -1;
+	} else {
+		switch (stat) {
+		case 1:
+			stat = run();
+			break;
+		case 2:
+			stat = reset();
+			break;
+		case 3:
+			stat = run();
+			if (stat) {
+				return stat;
+			} else {
+				stat = reset();
+			}
+			break;
+		case 4:
+			stat = reset();
+			if (stat) {
+				return stat;
+			} else {
+				stat = run();
+			}
+			break;
+		default:
+			return -1;
+			break;
+		}
 	}
 	return stat;
 }
 
-int backup() {
-	CONFIG = "./backup.conf";
-	return install();
-}
-
-int delete() {
+int reset() {
 	char ch[100];
-	long size;
+	long size = 0L;
 	FILE *fp;
 
 	fp = fopen(CONFIG, "r+");
 	while (feof(fp) == 0) {
 		fgets(ch, 100, fp);
-		while ((ch[0] != '#' || ch[1] != '{') && feof(fp) == 0) {
+		while (strcmp(ch, COMMAND_DID) != 0 && feof(fp) == 0) {
 			size = ftell(fp);
 			fgets(ch, 100, fp);
 		}
@@ -82,21 +108,22 @@ int delete() {
 			return 0;
 		}
 		fseek(fp, size, 0);
-		fputs("{%", fp);
+		fputs(COMMAND_START, fp);
 	}
 	fclose(fp);
 	return 0;
 }
 
-int install() {
+int run() {
 	char command[1048576];
 	int stat = 0;
 
 	while (1) {
 		switch (readconfig(command)) {
 			case -1:
-				printf("\033[0;1;33mError: 文件异常\033[0m");
-				printf("\033[0;1;33mError: [perror]: \033[0;1;32m");
+				printf("\033[0;1;33mError: 文件异常\033[0m\n");
+				printf("\033[0;32mError: %s\033[0m\n",CONFIG);
+				printf("\033[0;1;33mError: \033[0;1;32m");
 				fflush(stdout);
 				perror(command);
 				fflush(stderr);
@@ -120,9 +147,8 @@ int install() {
 			fflush(stderr);
 			printf("\033[0m\n");
 			return -1;
-		}
-		else {
-			if (clean() == -1) {
+		} else {
+			if (finish() == -1) {
 				return -1;
 			}
 		}
@@ -136,8 +162,7 @@ int readconfig(char *command) {
 
 	if (access(CONFIG, 0) == 0) {
 		fp = fopen(CONFIG, "r+");
-	}
-	else {
+	} else {
 		perror("CONFIG");
 		return -1;
 	}
@@ -149,14 +174,16 @@ int readconfig(char *command) {
 		return 1;
 	}
 	fgets(ch, 1024, fp);
-	while (ch[0] != '{' && feof(fp) == 0) fgets(ch, 1024, fp);
+	while (strcmp(ch, COMMAND_START) != 0 && feof(fp) == 0) {
+		fgets(ch, 1024, fp);
+	}
 	if (feof(fp) != 0) {
 		return 1;
 	}
 	fgets(ch, 1024, fp);
 	strcpy(command, ch);
 	fgets(ch, 1024, fp);
-	while (ch[0] != '{' && ch[0] != '}' && feof(fp) == 0) {
+	while (strcmp(ch, COMMAND_START) != 0 && strcmp(ch, COMMAND_END) != 0 && feof(fp) == 0) {
 		strcat(command, ch);
 		fgets(ch, 1024, fp);
 	}
@@ -164,29 +191,33 @@ int readconfig(char *command) {
 	return 0;
 }
 
-int clean() {
+int finish() {
 	char ch[100];
-	long size;
+	long size = 0L;
 	FILE *fp;
 
 	fp = fopen(CONFIG, "r+");
 	fgets(ch, 100, fp);
-	while (ch[0] != '{' && feof(fp) == 0) {
+	while (strcmp(ch, COMMAND_START) != 0 && feof(fp) == 0) {
 		size = ftell(fp);
 		fgets(ch, 100, fp);
 	}
 	if (feof(fp) != 0) {
-		perror("Clean");
+		perror("Add commit");
 		return -1;
 	}
 	fseek(fp, size, 0);
-	fputs("#{", fp);
+	fputs(COMMAND_DID, fp);
 	fclose(fp);
 	return 0;
 }
 
 void help() {
-	printf("hello!\ninstall -b「备份」 -i「安装」 -[rd]「重新配置」 -f「指定配置文件」 -h「打印帮助信息并退出」\n");
+	printf("Usage: script-helper <options> <file>\n");
+	printf("	-f  指定脚本文件\n");
+	printf("	-d  执行脚本\n");
+	printf("	-r  重置脚本\n");
+	printf("	-h  打印帮助信息并退出\n");
 	return;
 }
 
