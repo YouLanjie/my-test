@@ -5,7 +5,7 @@
 // #define CONFIG             "install.conf"
 
 //  #define COMMAND_FLAG  "# SCRIPT HELPER ENABLE"
-#define COMMAND_START "# COMMAND START\n"
+#define COMMAND_START "# COMMAND BEGIN\n"
 #define COMMAND_DID   "# COMMAND DID  \n"
 #define COMMAND_END   "# COMMAND END  \n"
 
