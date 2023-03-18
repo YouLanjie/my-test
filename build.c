@@ -1,7 +1,7 @@
 #include "include/tools.h"
 
 #define Files 2
-//  #define CC "clang"
+// #define CC "clang"
 #define CC "gcc"
 
 char unbuild[Files][50] = {  //不编译的文件列表
@@ -28,7 +28,7 @@ int main() {
 		while (1) { //选取特定的文件
 			if (name == NULL || name -> d_type == 8) { /* 是普通文件时 */
 				for (int i = 0; i < Files; i++) {
-					if (strcmp(name -> d_name, unbuild[i]) == 0) {
+					if (name != NULL && strcmp(name->d_name, unbuild[i]) == 0) {
 						name = readdir(dp);
 						break;
 					}

@@ -101,10 +101,11 @@ extern void Menu3(char title[]);
 /* 
  * 新菜单
  */
+#define Text ctools_menu_t_text
 struct Text {
 	char        * text;         /* 条例内容 */
 	char        * describe;     /* 描述/帮助信息 */
-	void       (* function);    /* 调用的函数 */
+	void       (* function)();  /* 调用的函数 */
 	int         * var;          /* 调整的变量值 */
 	int           number;       /* 编号 */
 	int           cfg;          /* 类型：1数值，2开关 */
@@ -120,6 +121,7 @@ typedef struct{
 	struct Text * focus;    /* 选中的条例 */
 	int           cfg;      /* 菜单类型: 0.默认 1.仅显示主界面 2.显示帮助 3.显示设置 4.仅显示帮助，无输入处理 */
 } ctools_menu_t;                /* 菜单类/结构体 */
+#undef Text
 
 /* 初始化ncurse，设置语言、颜色对 */
 extern void ctools_menu_Init();
