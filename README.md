@@ -37,6 +37,7 @@
 | bit.c                      | 验证dwm使用位运算标记工作区的原理                                          |
 | chinese.c                  | 辨别输入的内容是中文还是英文                                               |
 | input_to_hex.c             | 将输入的内容拆分成多个字符并使用十六进制显示，方便查找快捷键对应的输入字符 |
+| fork.c                     | 将使用fork创建新的进程执行命令，方便后台执行程序                           |
 
 > 注：文件名前带有'\*'的为不再改动（不维护）的文件
 
@@ -44,10 +45,19 @@
 
 ## 编译命令
 
+请使用命令
+
+```shell
+git submodule init
+git submodule update
+```
+
+下载子模块仓库，否则会有部分程序无法编译
+
 请在根目录运行以下命令编译大部分程序：
 
 ```shell
-ls -1|grep ".c$"|sed "/build.c\|gtk.c/d"|sed "s/^\(.*\).c$/gcc \1\.c -L lib -ltools -o bin\/\1/"
+ls -1|grep ".c$"|sed "/build.c\|gtk.c/d"|sed "s/^\(.*\).c$/gcc \1\.c `find ./include/lib -name "*.c"|sed ":a;N;s/\n/ /g;b a"` -L lib -ltools -o bin\/\1/"
 ```
 
 或者编译 `build.c` 程序，再通过执行build文件编译大部分程序
