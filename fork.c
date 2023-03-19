@@ -15,7 +15,7 @@ int main(int argc, char *argv[])
 {
 	int PID;
 	if (argc < 2) {
-		printf("Useg:\n./argv[0] \"command\"\n");
+		printf("Useg:\n./%s \"command\"\n", argv[0]);
 		return -1;
 	} else {
 		PID = fork();
