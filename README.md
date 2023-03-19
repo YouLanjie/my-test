@@ -57,7 +57,7 @@ git submodule update
 请在根目录运行以下命令编译大部分程序：
 
 ```shell
-ls -1|grep ".c$"|sed "/build.c\|gtk.c/d"|sed "s/^\(.*\).c$/gcc \1\.c `find ./include/lib -name "*.c"|sed ":a;N;s/\n/ /g;b a"` -L lib -ltools -o bin\/\1/"
+ls -1|grep ".c$"|sed "/build.c\|gtk.c/d"|sed "s/^\(.*\).c$/gcc \1\.c $(find ./include/lib -name "*.c"|sed ":a;N;s/\n/ /g;b a"|sed 's/\//\\\//g') -lncurses -lm -o bin\/\1/"|sh
 ```
 
 或者编译 `build.c` 程序，再通过执行build文件编译大部分程序
