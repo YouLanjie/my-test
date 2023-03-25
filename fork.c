@@ -9,29 +9,29 @@
  */
 
 
-#include "include/tools.h"
+#include "include/head.h"
 
-int main(int argc, char *argv[])
+int shell_f(void)
 {
 	int PID;
-	if (argc < 2) {
-		printf("Useg:\n./%s \"command\"\n", argv[0]);
-		return -1;
+
+	char cmd[CMD_MAX_LEN] = "exit";
+	printf("shell command > ");
+	getchar();
+	fgets(cmd, CMD_MAX_LEN, stdin);
+
+	PID = fork();
+	if (PID != 0) {
+		printf("Pid of the child: %d\n", PID);
+		return 0;
 	} else {
-		PID = fork();
-		if (PID != 0) {
-			printf("This is the pid of the child:%d\n", PID);
-			return 0;
-		} else {
-			usleep(500000);
-			printf("This is a tips form the child\n");
-			printf("The command is:\n%s\n", argv[1]);
-			system(argv[1]);
-			return 0;
-		}
+		usleep(500000);
+		printf("\033[1;33mExec: %s\033[0m\n", cmd);
+		system(cmd);
+		exit(0);
 	}
 	printf("Maybe someting is worng?\nThat is not good.Check your self.\n");
-	return 1;
+	exit(1);
 }
 
 

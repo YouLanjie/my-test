@@ -9,14 +9,14 @@
  */
 
 
-#include <ctools.h>
+#include "include/head.h"
 
 static void * running();
 static int  run_status = 1;
 static int  pthread_num = 1;
 static int  hide        = 0;
 
-int main() {
+int CPU() {
 	int num = 0;
 	pthread_t pid;
 	printf("请输入线程数：\n");
