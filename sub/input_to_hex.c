@@ -15,7 +15,8 @@ int input_to_hex(void)
 {
 	char ch[10];
 	printf("请输入:\n");
-	scanf("%s", ch);
+	getchar();
+	fgets(ch, 10, stdin);
 	for (int i = 0; i < 10; ++i) {
 		if (ch[i] < '!') {
 			printf("ch[%d]:\033[1;32m0x\033[1;33m%x\033[0m\n", i, ch[i]);
