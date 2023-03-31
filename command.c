@@ -22,14 +22,15 @@ static int quit();
 static int shell();
 
 struct Cmd Command_list[] = {
-	{"help",    "Print all command and describe.",        help,    &Command_list[1]},
-	{"man",     "Print the help manual for echo command", NULL,    &Command_list[2]},
-	{"version", "menu program v0.0.1 alpha",              NULL,    &Command_list[3]},
-	{"quit",    "Exit the program.",                      quit,    &Command_list[4]},
-	{"exit",    "Exit the program.",                      quit,    &Command_list[5]},
-	{"CPU",     "Using your cpu.",                        CPU,     &Command_list[6]},
-	{"shell",   "Run shell.",                             shell,   &Command_list[7]},
-	{"fork",    "Run shell by fork.",                     shell_f, NULL},
+	{"help",    "Print all command and describe.",        help,         &Command_list[1]},
+	{"man",     "Print the help manual for echo command", NULL,         &Command_list[2]},
+	{"version", "menu program v0.0.1 alpha",              NULL,         &Command_list[3]},
+	{"quit",    "Exit the program.",                      quit,         &Command_list[4]},
+	{"exit",    "Exit the program.",                      quit,         &Command_list[5]},
+	{"CPU",     "Using your cpu.",                        CPU,          &Command_list[6]},
+	{"shell",   "Run shell.",                             shell,        &Command_list[7]},
+	{"fork",    "Run shell by fork.",                     shell_f,      &Command_list[8]},
+	{"hex",     "Print the input by hex.",                input_to_hex, NULL},
 };
 
 int main(void)

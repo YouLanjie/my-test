@@ -17,6 +17,7 @@
 
 int CPU();
 int shell_f();
+int input_to_hex();
 
 #endif
 

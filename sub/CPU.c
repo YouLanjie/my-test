@@ -9,7 +9,7 @@
  */
 
 
-#include "include/head.h"
+#include "../include/head.h"
 
 static void * running();
 static int  run_status = 1;
