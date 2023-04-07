@@ -10,72 +10,44 @@
 
 #include "include/head.h"
 
-struct Cmd {
-	char *name;
-	char *describe;
-	int (*v)();
-	struct Cmd *next;
-};
-
-static int help();
-static int quit();
-static int shell();
+static Arg version();
+static Arg shell();
 
 struct Cmd Command_list[] = {
-	{"help",    "Print all command and describe.",        help,         &Command_list[1]},
-	{"man",     "Print the help manual for echo command", NULL,         &Command_list[2]},
-	{"version", "menu program v0.0.1 alpha",              NULL,         &Command_list[3]},
-	{"quit",    "Exit the program.",                      quit,         &Command_list[4]},
-	{"exit",    "Exit the program.",                      quit,         &Command_list[5]},
-	{"CPU",     "Using your cpu.",                        CPU,          &Command_list[6]},
-	{"shell",   "Run shell.",                             shell,        &Command_list[7]},
-	{"fork",    "Run shell by fork.",                     shell_f,      &Command_list[8]},
-	{"hex",     "Print the input by hex.",                input_to_hex, NULL},
+	{"version", "打印程序版本",             version,      &Command_list[1]},
+	{"CPU",     "Using your cpu.",        CPU,          &Command_list[2]},
+	{"shell",   "Run shell.",             shell,        &Command_list[3]},
+	{"fork",    "Run shell by fork.",     shell_f,      &Command_list[4]},
+	{"hex",     "Print the input by hex.",input_to_hex, NULL},
 };
 
 int main(void)
 {
-	char cmd[CMD_MAX_LEN] = "help";
-	struct Cmd *tmp;
-	while (1) {
-		printf("\033[1;32mPlease input a command >\033[0m ");
-		scanf("%s", cmd);
-		tmp = Command_list;
-		while (tmp != NULL) {
-			if (strcmp(cmd, tmp->name) == 0) {
-				printf("%s -- %s\n", tmp->name, tmp->describe);
-				if (tmp->v != NULL) {
-					tmp->v();
-				}
-				break;
-			}
-			tmp = tmp->next;
-		}
-		if (tmp == NULL) {
-			printf("Someting is wrong.  --  \033[1;31m:(\033[0m\n"
-			       "Try input `help`\n");
-		}
-	}
+	char cmd[CMD_MAX_LEN] = "set version=menu program v0.0.1 alpha, powder by C-head";
+	cmd_list_set(Command_list);
+	/* cmd_run("set version=menu program v0.0.1 alpha, powder by C-head"); */
+	cmd_run(cmd);
+	cmd_tui();
 	return 0;
 }
 
-static int help()
+static Arg version()
 {
-	struct Cmd *p = Command_list;
-	printf("\033[1;33mCommand list:\033[0m\n");
-	while (p != NULL) {
-		printf("%s -- %s\n", p->name, p->describe);
-		p = p->next;
+	Arg arg = {.num = 0};
+	arg = cmd_run("get version");
+	if (arg.num != -1 && arg.ch != NULL) {
+		printf("Version:\n"
+		       "%s\n",
+		       arg.ch);
+	} else {
+		printf("Version:\n"
+		       "Error...No message....\n");
 	}
-	return 0;
+	arg.num = 0;
+	return arg;
 }
 
-static int quit()
-{
-	exit(0);
-}
-
-static int shell()
+static Arg shell()
 {
 	char cmd[CMD_MAX_LEN] = "exit";
 	printf("shell command > ");
@@ -83,6 +55,7 @@ static int shell()
 	fgets(cmd, CMD_MAX_LEN, stdin);
 	printf("\033[1;33mExec: %s\033[0m\n", cmd);
 	system(cmd);
-	return 0;
+	Arg arg = {.num = 0};
+	return arg;
 }
 

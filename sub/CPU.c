@@ -16,7 +16,8 @@ static int  run_status = 1;
 static int  pthread_num = 1;
 static int  hide        = 0;
 
-int CPU() {
+Arg CPU() {
+	Arg arg = {.num = 0};
 	int num = 0;
 	pthread_t pid;
 	printf("请输入线程数：\n");
@@ -25,7 +26,8 @@ int CPU() {
 
 	if (num <= 0 || num > 225) {
 		perror("Error!线程数为负数或过大!\n");
-		return -1;
+		arg.num = -2;
+		return arg;
 	}
 
 	printf("隐藏?：\n");
@@ -45,7 +47,7 @@ int CPU() {
 	       "若想退出程序，请按下回车\n");
 	getchar();
 	run_status = 0;
-	return 0;
+	return arg;
 }
 
 static void * running()

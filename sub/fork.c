@@ -11,7 +11,7 @@
 
 #include "../include/head.h"
 
-int shell_f(void)
+Arg shell_f(void)
 {
 	int PID;
 
@@ -23,7 +23,8 @@ int shell_f(void)
 	PID = fork();
 	if (PID != 0) {
 		printf("Pid of the child: %d\n", PID);
-		return 0;
+		Arg arg = {.num = 0};
+		return arg;
 	} else {
 		usleep(500000);
 		printf("\033[1;33mExec: %s\033[0m\n", cmd);

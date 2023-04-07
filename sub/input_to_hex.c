@@ -11,7 +11,7 @@
 
 #include "../include/head.h"
 
-int input_to_hex(void)
+Arg input_to_hex(void)
 {
 	char ch[10];
 	printf("请输入:\n");
@@ -24,7 +24,8 @@ int input_to_hex(void)
 			printf("ch[%d]:\033[1;32m0x\033[1;33m%x\033[0m\t%c\n", i, ch[i], ch[i]);
 		}
 	}
-	return 0;
+	Arg arg = {.num = 0};
+	return arg;
 }
 
 
