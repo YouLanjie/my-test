@@ -57,13 +57,13 @@ run() {
 
 		if [[ -e "$o_dir/out" ]] {
 			if [[ ! -d "$o_dir/out" ]] {
-				Warn "存在输出文件，为防止出错，退出"
+				_msg_warning "存在输出文件，为防止出错，退出"
 				exit -1
 			}
 		}
 		if [[ ! -d "$o_dir/out" ]] {
 			_msg_info "不存在输出目录，将创建" "$F_yellow"
-			mkdir "$o_dir/out" || (Warn "创建文件夹失败，退出" && exit -1)
+			mkdir "$o_dir/out" || (_msg_warning "创建文件夹失败，退出" && exit -1)
 		}
 		out=$(echo $out |sed "s/$o_dir\//$o_dir\/out\//")
 		cmd="ffmpeg -i \"$i\" $arg2 $arg \"$out\" >$logfile 2>&1"
@@ -79,7 +79,7 @@ run() {
 
 		if [[ -e $logfile ]] {
 			_msg_info "'$logfile'"
-			Warn "日志文件已存在，将会覆盖文件"
+			_msg_warning "日志文件已存在，将会覆盖文件"
 		}
 
 		_msg_info "'$i'"
@@ -88,7 +88,7 @@ run() {
 		_msg_info "$icon"
 		_msg_info "$cmd"
 		echo "$F_line"
-		{(zsh -c "$cmd" && rm "$logfile" && _msg_info "'$i' 完成转换！" "$F_yellow") || Warn "'$i' 转换出现问题！详见 '$logfile'" } &
+		{(zsh -c "$cmd" && rm "$logfile" && _msg_info "'$i' 完成转换！" "$F_yellow") || _msg_warning "'$i' 转换出现问题！详见 '$logfile'" } &
 	}
 	_msg_info "所有文件准备就绪，开始等待" "$F_yellow"
 	wait
