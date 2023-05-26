@@ -29,7 +29,7 @@ F_white='\033[37m'
 
 F_C='\033[0m'
 
-F_line="$bold$red-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*$clean"
+F_line="$F_B$F_red-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*$F_C"
 
 # Show an INFO message
 # $1: message string
