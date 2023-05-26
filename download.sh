@@ -15,45 +15,45 @@ source ./source.sh
 for i ({1..100}) {
 	clear
 
-	echo $line
-	Info "音频链接"
+	echo $F_line
+	_msg_info "音频链接" "$F_yellow"
 	read link
 
-	echo $line
-	Info "封面链接"
+	echo $F_line
+	_msg_info "封面链接" "$F_yellow"
 	read img_link
 
-	echo $line
-	Info "名称"
+	echo $F_line
+	_msg_info "名称" "$F_yellow"
 	read name
 
-	echo $line
+	echo $F_line
 	sec="yes"
-	Info "别称?"
+	_msg_info "别称?" "$F_yellow"
 	select sec ("yes" "no") {
 		if [[ $sec == "yes" ]] {
-			Info "请输入:"
+			_msg_info "请输入:" "$F_yellow"
 			read al
 		}
 		break
     	}
 
-	echo $line
-	Info "艺术家:"
+	echo $F_line
+	_msg_info "艺术家:" "$F_yellow"
 	read art
 
-	echo $line
-	Info "专辑:"
+	echo $F_line
+	_msg_info "专辑:" "$F_yellow"
 	read alb
 	
 	# 下载音频
-	echo $line
+	echo $F_line
 	cmd=$(printf "wget \"$link\" -O \"$art - %s.m4a\"\n" "$name")
 	if [[ $sec == "yes" ]] {
 		cmd=$(printf "wget \"$link\" -O \"$art - $name($al).m4a\"\n")
 		echo "Has"
 	}
-	Info2 $cmd
+	_msg_info $cmd
 	zsh -c $cmd
 
 	# 下载封面
@@ -62,7 +62,7 @@ for i ({1..100}) {
 	if [[ $sec == "yes" ]] {
 		cmd=$(printf "wget \"$img_link\" -O \"$art - $name($al).jpg\"\n")
 	}
-	Info2 $cmd
+	_msg_info $cmd
 	zsh -c $cmd
 
 	# 设置专辑
@@ -70,6 +70,6 @@ for i ({1..100}) {
 	if [[ $sec == "yes" ]] {
 		alb_f=$(printf "$art - $name($al).txt\n")
 	}
-	Info2 "echo \"$alb\" > \"$cmd\""
+	_msg_info "echo \"$alb\" > \"$cmd\""
 	echo "$alb" > "$alb_f"
 }
