@@ -1,7 +1,7 @@
 #!/usr/bin/make
 
 CC = gcc
-BIN = ./
+BIN = .
 SRC = $(shell find ./ -name "*.c")
 incl = $(shell find ./ -name "*.h")
 OBJ = $(SRC:%.c=%.o)
