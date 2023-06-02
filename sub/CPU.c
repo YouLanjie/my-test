@@ -16,8 +16,8 @@ static int  run_status = 1;
 static int  pthread_num = 1;
 static int  hide        = 0;
 
-Arg CPU() {
-	Arg arg = {.num = 0};
+union ctools_cmd_arg CPU() {
+	union ctools_cmd_arg arg = {.num = 0};
 	int num = 0;
 	pthread_t pid;
 	printf("请输入线程数：\n");

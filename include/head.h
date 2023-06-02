@@ -13,9 +13,9 @@
 
 #include "./tools.h"
 
-Arg CPU();
-Arg shell_f();
-Arg input_to_hex();
+union ctools_cmd_arg CPU();
+union ctools_cmd_arg shell_f();
+union ctools_cmd_arg input_to_hex();
 
 #endif
 

@@ -10,10 +10,10 @@
 
 #include "include/head.h"
 
-static Arg version();
-static Arg shell();
+static union ctools_cmd_arg version();
+static union ctools_cmd_arg shell();
 
-struct Cmd Command_list[] = {
+ctools_cmd_list Command_list[] = {
 	{"version", "打印程序版本",           version,      &Command_list[1]},
 	{"CPU",     "Using your cpu.",        CPU,          &Command_list[2]},
 	{"shell",   "Run shell.",             shell,        &Command_list[3]},
@@ -23,19 +23,19 @@ struct Cmd Command_list[] = {
 
 int main(void)
 {
-	char cmd[CMD_MAX_LEN] = "set version=menu program v0.0.1 alpha, powder by C-head";
-	cmd_list_set(Command_list);
+	char cmd[1024] = "set version=menu program v0.0.1 alpha, powder by C-head";
+	CT_CMD.cmd_list_set(Command_list);
 	/* cmd_run("set version=menu program v0.0.1 alpha, powder by C-head"); */
-	cmd_run(cmd);
-	cmd_tui();
+	CT_CMD.run(cmd);
+	CT_CMD.ui();
 	return 0;
 }
 
-static Arg version()
+static union ctools_cmd_arg version()
 {
-	char cmd[CMD_MAX_LEN] = "get version";
-	Arg arg = {.num = 0};
-	arg = cmd_run(cmd);
+	char cmd[1024] = "get version";
+	union ctools_cmd_arg arg = {.num = 0};
+	arg = CT_CMD.run(cmd);
 	if (arg.num != -1 && arg.ch != NULL) {
 		printf("Version:\n"
 		       "%s\n",
@@ -48,15 +48,15 @@ static Arg version()
 	return arg;
 }
 
-static Arg shell()
+static union ctools_cmd_arg shell()
 {
-	char cmd[CMD_MAX_LEN] = "exit";
+	char cmd[1024] = "exit";
 	printf("shell command > ");
 	/*getchar();*/
-	fgets(cmd, CMD_MAX_LEN, stdin);
+	fgets(cmd, 1024, stdin);
 	printf("\033[1;33mExec: %s\033[0m\n", cmd);
 	system(cmd);
-	Arg arg = {.num = 0};
+	union ctools_cmd_arg arg = {.num = 0};
 	return arg;
 }
 

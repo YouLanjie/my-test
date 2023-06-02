@@ -11,19 +11,19 @@
 
 #include "../include/head.h"
 
-Arg shell_f(void)
+union ctools_cmd_arg shell_f(void)
 {
 	int PID;
 
-	char cmd[CMD_MAX_LEN] = "exit";
+	char cmd[1024] = "exit";
 	printf("shell command > ");
 	getchar();
-	fgets(cmd, CMD_MAX_LEN, stdin);
+	fgets(cmd, 1024, stdin);
 
 	PID = fork();
 	if (PID != 0) {
 		printf("Pid of the child: %d\n", PID);
-		Arg arg = {.num = 0};
+		union ctools_cmd_arg arg = {.num = 0};
 		return arg;
 	} else {
 		usleep(500000);
