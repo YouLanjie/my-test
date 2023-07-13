@@ -14,18 +14,18 @@ void stop();
 int a = 0;
 
 int main() {
-	Clear3;
+	Clear_SYS;
 	signal(SIGINT, stop);
 	printf("No.1 server\nor\nNo.2 client\n?");
-	if (getch() == '1') {
-		Clear3;
+	if (ctools_getch() == '1') {
+		Clear_SYS;
 		server();
 	}
 	else {
-		Clear3;
+		Clear_SYS;
 		client();
 	}
-	Clear3;
+	Clear_SYS;
 	return 0;
 }
 
@@ -83,7 +83,7 @@ void server(){
 		perror("进程创建错误!");
 		exit(-5);
 	}
-	Clear3;
+	Clear_SYS;
 	while(!pid){
 		printf("\033[s\033[13;1H\033[1;31m读（子）%d\033[0m\n\033[u",pid);
 		ctools_kbhitGetchar();

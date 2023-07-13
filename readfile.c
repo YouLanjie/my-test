@@ -10,7 +10,7 @@ int main(int argc,char * argv[]) {
 		return -1;
 	}
 
-	Clear3;
+	Clear_SYS;
 	printf("\033[?25l");
 	fp = fopen(argv[1],"r");
 	if (!fp) {
@@ -23,7 +23,7 @@ int main(int argc,char * argv[]) {
 		if(a == EOF) {
 			fseek(fp,0L,0);
 			system("sleep 0.023");
-			Clear2;
+			Clear_TER;
 		}
 		else {
 			printf("%c",a);

@@ -9,13 +9,13 @@ int main() {
 
 	printf("\033[?25l");
 	while(1) {
-		Clear2;
+		Clear_TER;
 		printf("请选择计算程序：\n0:Exit\n1:boom\n");
-		i = getch();
-		Clear2;
+		i = ctools_getch();
+		Clear_TER;
 		switch (i) {
 			case Exit:
-				Clear2;
+				Clear_TER;
 				printf("\033[?25h");
 				return 0;
 				break;
@@ -75,6 +75,6 @@ void boom() {
 	}
 	printf("\033[2J\033[1;1H被除数：%d\n除数：%d\n",a,b);
 	getchar();
-	getch();
+	ctools_getch();
 	return;
 }

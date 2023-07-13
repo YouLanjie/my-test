@@ -107,16 +107,17 @@ int input(char * type, char * filename)
  * 2 通过命令行传入参数
  */
 int get_type(char * type) {
-	ctools_menu_t * data = NULL;    /* 使用工具库中的菜单 */
+	const ctools_menu *p = &CT_MENU;
+	struct ctools_menu_t *data = NULL;    /* 使用工具库中的菜单 */
 
 	if (!bit) {    /* 如果比特数为0:非命令行模式 */
-		ctools_menu_t_init(&data);
+		p->ncurses_init();
+		p->data_init(&data);
 
-		data->title = "创建文件";
-		ctools_menu_AddText(data, "1.Bit", "2.KiB", "3.MiB", "4.GiB", "5.KB", "6.MB", "7.GB", "0.Exit", NULL);
+		p->set_title(data, "创建文件");
+		p->add_text(data, "1.Bit", "2.KiB", "3.MiB", "4.GiB", "5.KB", "6.MB", "7.GB", "0.Exit", NULL);
 
-		ctools_menu_Init();
-		*type = (char)ctools_menu_Show(data);    /* 获取类型 */
+		*type = (char)p->show(data);    /* 获取类型 */
 		endwin();
 
 	} else {    /* 命令行模式 */
