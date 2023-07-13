@@ -11,6 +11,9 @@
 
 #include "ctools.h"
 
+#define INPUT_FILE_NAME "/usr/local/share/history_note/input.txt"
+#define OUTPUT_FILE_NAME "/usr/local/share/history_note/output.txt"
+
 extern ctools_config CT_CONF;
 
 /* 不同条目的内容 */
@@ -154,6 +157,40 @@ struct Note *read_note(char *filename)
 	return list;
 }
 
+#define Swich(ch) { node = list->data; while (node != NULL && strcmp(p->get_name(node), ch) != 0) {node = p->get_next(node);}}
+/*
+ * 在NCURSES显示笔记（子内容）
+ */
+static int show_subnote(struct Note *list, int number)
+{
+	const ctools_menu *m = &CT_MENU;
+	const ctools_config *p = &CT_CONF;
+	struct ctools_menu_t *menu = NULL;
+	struct ctools_CONFIG_NODE *node = NULL;
+
+	for (int i = 0; i < number && list != NULL; ++i) list = list->next;
+	if (list == NULL) return -1;
+
+	m->data_init(&menu);
+	Swich("title");
+	m->set_title(menu, p->get_str(node));
+
+	for (int i = 1; i < 10; ++i) {
+		Swich(tag_table[0][i]);
+		if (node != NULL) {
+			m->add_text(menu, (char*)tag_table[1][i]);
+			m->add_text_data(menu, "describe", p->get_str(node));
+		}
+	}
+	int input = -1;
+	while (input != 'q' && input != 0) {
+		input = m->show(menu);
+		if (input == 0) continue;
+	}
+	free(menu);
+	return 0;
+}
+
 /*
  * 在NCURSES显示笔记
  */
@@ -163,47 +200,65 @@ static int show_note(struct Note *list)
 	const ctools_config *p = &CT_CONF;
 	struct ctools_menu_t *menu = NULL;
 	struct ctools_CONFIG_NODE *node = NULL;
+	int input = -1;
+	struct Note *list2 = list;
+	char *str1 = NULL, *str2 = NULL, *str3 = NULL;
+
 	m->data_init(&menu);
 	m->set_title(menu, "笔记显示");
 	while (list != NULL) {
-		node = list->data;
-		while (node != NULL && strcmp(p->get_name(node), "title") != 0) node = p->get_next(node);
+		Swich("title");
 		m->add_text(menu, p->get_str(node));
-		node = list->data;
-		while (node != NULL && strcmp(p->get_name(node), "describe") != 0) node = p->get_next(node);
-		if (node != NULL) m->add_text_data(menu, "describe", p->get_str(node));
+		Swich("time1");
+		if (node != NULL) str1 = p->get_str(node);
+		Swich("describe");
+		if (node != NULL) str2 = p->get_str(node);
+		if (str1 == NULL) return -2;
+		if (str2 == NULL) str2 = " ";
+		str3 = malloc(sizeof(char)*(strlen(str1) + strlen(str2) + 2));
+		sprintf(str3, "%s\n%s", str1, str2);
+		m->add_text_data(menu, "describe", str3);
+		free(str3);
+		str1 = str2 = str3 = NULL;
 		list = list->next;
 	}
-	/* m->add_text_data(menu, "describe", "NULL"); */
-	m->show(menu);
+	while (input != 'q' && input != 0) {
+		input = m->show(menu);
+		if (input == 0) continue;
+		show_subnote(list2, input - 1);
+	}
 	free(menu);
 	return 0;
 }
-
+#undef Swich
 
 int main()
 {
 	const ctools_menu *m = &CT_MENU;
 	struct ctools_menu_t *menu = NULL;
 	struct Note *list = NULL;
-	int input = 0;
+	int input = -1;
 
-	list = read_note("/usr/local/share/history_note/input.txt");
-	if (list == NULL) return -1;
+	list = read_note(INPUT_FILE_NAME);
+	if (list == NULL) {
+		printf("\033[0;32m==> \033[1;31m错误！！！文件无法打开\n\033[0;32m==> \033[1;34mFile Name:\033[33m%s\033[0m\n", INPUT_FILE_NAME);
+		return -1;
+	}
 
 	m->ncurses_init();
 	def_prog_mode();
 	m->data_init(&menu);
 	m->set_title(menu, "太酷辣");
-	m->set_text(menu, "查看笔记", "查看笔记（终端）", "保存文件", NULL);
-	while (input != 'q' && input != '0') {
+	m->set_text(menu, "查看笔记", "查看笔记（终端）", "保存文件", "退出程序", NULL);
+	m->set_text_data(menu, "describe", "%s%s%s", "在ncurses内部通过套用菜单库实现显示笔记的效果", "退出Ncurses在正常的终端界面显示历史事件（按照时间顺序排序）", "将排序后的文件输出保存", "选择此项即可退出程序");
+	while (input != 'q' && input != 0 && input != 4) {
 		input = m->show(menu);
 		switch (input) {
-		case '1': {
+		case 1: {
 			show_note(list);
 			break;
 		}
-		case '2': {
+		case 2: {
 			endwin();
 			print(list);
 			printf("\033[0;32m==> \033[1;33m按下任意按键返回\033[0m\n");
@@ -211,9 +266,9 @@ int main()
 			reset_prog_mode();
 			break;
 		}
-		case '3': {
+		case 3: {
 			endwin();
-			save("/usr/local/share/history_note/output.txt", list);
+			save(OUTPUT_FILE_NAME, list);
 			printf("%s\n%s\033[0m\n",
 			       "\033[0;32m==> \033[1;33m保存成功！",
 			       "\033[0;32m==> \033[1;33m按下任意按键返回");
