@@ -108,7 +108,11 @@ static struct Note *sort_time(struct Note *pNew)
 			while (data != NULL && strcmp("time1", p->get_name(data)) != 0) data = p->get_next(data);
 			data2 = pMark->data;
 			while (data2 != NULL && strcmp("time1", p->get_name(data2)) != 0) data2 = p->get_next(data2);
-			if (data == NULL) return NULL;
+			if (data == NULL) {
+				printf("\033[0;32m==> \033[1;34m[ERROR] sort_time:\033[1;31m不存在`time1`标记！\033[0m\n");
+				/* printf("\033[0;32m==> \033[1;34m[INFO] sort_time:title:\033[33m%s\033[0m\n"); */
+				return NULL;
+			}
 			if (strcmp(p->get_str(data2), p->get_str(data)) > 0) pMark = pNew;
 			pNew = pNew->next;
 		}
@@ -135,18 +139,24 @@ static struct Note *sort_time(struct Note *pNew)
  */
 struct Note *read_note(char *filename)
 {
+	FILE *fp;
 	const ctools_config *p = &CT_CONF;
 	struct Note *list = NULL, *pNew = NULL, *pLast = NULL;
-	char *base = NULL, *last = NULL;
+	char *base = NULL, *base2 = NULL;
 
-	base = p->read(filename);
-	if (base == NULL) return NULL;
-	for (char *i = base; *i != '\0'; ++i) {    /* 分段读取 */
-		last = i;
-		for (; *i != '\0' && *i != '-'; ++i);
-		*i = '\0';
+	fp = fopen(filename, "r");
+	if (!fp) return NULL;
+	for (char i = '1'; i != '\0' && i != EOF; i = fgetc(fp)) {    /* 分段读取 */
+		base = malloc(sizeof(char)*2);
+		for (i = fgetc(fp); i != '\0' && i != EOF && i != '-'; i = fgetc(fp)) {
+			base2 = malloc(sizeof(char)*(strlen(base) + 2));
+			/* memset(base2, 0, sizeof(base2)); */
+			sprintf(base2, "%s%c", base, i);
+			free(base);
+			base = base2;
+		}
 		pNew = malloc(sizeof(struct Note));
-		pNew->data = p->runner(last);
+		pNew->data = p->runner(base);
 		pNew->next = NULL;
 		if (list == NULL) list = pNew;
 		if (pLast != NULL) pLast->next = pNew;
@@ -154,6 +164,8 @@ struct Note *read_note(char *filename)
 	}
 	pLast = pNew = NULL;
 	list = sort_time(list);
+	free(base);
+	fclose(fp);
 	return list;
 }
 
@@ -241,7 +253,7 @@ int main()
 
 	list = read_note(INPUT_FILE_NAME);
 	if (list == NULL) {
-		printf("\033[0;32m==> \033[1;31m错误！！！文件无法打开\n\033[0;32m==> \033[1;34mFile Name:\033[33m%s\033[0m\n", INPUT_FILE_NAME);
+		printf("\033[0;32m==> \033[1;34m[ERROR] main:\033[1;31m错误！！！文件无法打开或者格式错误！\n\033[0;32m==> \033[1;34m[INFO] main:File Name:\033[33m%s\033[0m\n", INPUT_FILE_NAME);
 		return -1;
 	}
 
