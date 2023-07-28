@@ -5,8 +5,8 @@
 #include <pthread.h>
 #include <sys/socket.h>
 
-#define MAXSIZE 4096
-#define PORT 8002
+#define MAXSIZE 8192
+/* #define PORT 8002 */
 
 
 int    listen_fd  = -1,         /* <fd>     监听套接字 */
@@ -17,6 +17,8 @@ char   sendbuf[MAXSIZE],    /* <ch>  接收缓冲区 */
        recbuf[MAXSIZE];     /* <ch>  发送缓冲区 */
 
 int flag_run = 0;
+int flag_file = 0;
+char filename[MAXSIZE];
 
 /*
  * 获取输入
@@ -125,6 +127,12 @@ void *get_msg()
 		       timep2->tm_sec,
 		       sendbuf
 		);
+		if (flag_file == -1) {
+			FILE *fp = fopen("socket_get_output.txt", "w");
+			if (!fp) pthread_exit(NULL);
+			fprintf(fp, "%s", recbuf);
+			fclose(fp);
+		}
 		fflush(stdout);
 		usleep(30000);
 	}
@@ -187,28 +195,52 @@ void server()
 	struct tm *timep2;
 	
 	while (strcmp(sendbuf, "/exit") != 0) {
-		time(&timep1);
-		timep2 = gmtime(&timep1);
-		printf("\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0m",
-		       1900 + timep2->tm_year,
-		       1 + timep2->tm_mon,
-		       timep2->tm_mday,
-		       8 + timep2->tm_hour,
-		       timep2->tm_min,
-		       timep2->tm_sec
-		);
-		input(sendbuf);
-		time(&timep1);
-		timep2 = gmtime(&timep1);
-		printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;37m%s\033[0m\n",
-		       1900 + timep2->tm_year,
-		       1 + timep2->tm_mon,
-		       timep2->tm_mday,
-		       8 + timep2->tm_hour,
-		       timep2->tm_min,
-		       timep2->tm_sec,
-		       sendbuf
-		);
+		if (flag_file != 1) {
+			time(&timep1);
+			timep2 = gmtime(&timep1);
+			printf("\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0m",
+			       1900 + timep2->tm_year,
+			       1 + timep2->tm_mon,
+			       timep2->tm_mday,
+			       8 + timep2->tm_hour,
+			       timep2->tm_min,
+			       timep2->tm_sec
+			       );
+			input(sendbuf);
+			time(&timep1);
+			timep2 = gmtime(&timep1);
+			printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;37m%s\033[0m\n",
+			       1900 + timep2->tm_year,
+			       1 + timep2->tm_mon,
+			       timep2->tm_mday,
+			       8 + timep2->tm_hour,
+			       timep2->tm_min,
+			       timep2->tm_sec,
+			       sendbuf
+			       );
+		} else {
+			FILE *fp = fopen(filename, "r");
+			if (!fp) return;
+			char ch[2] = "0\0";
+			memset(sendbuf, 0, sizeof(sendbuf));
+			while (ch[0] != EOF) {
+				ch[0] = fgetc(fp);
+				strcat(sendbuf, ch);
+			}
+			time(&timep1);
+			timep2 = gmtime(&timep1);
+			printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;37m%s\033[0m\n",
+			       1900 + timep2->tm_year,
+			       1 + timep2->tm_mon,
+			       timep2->tm_mday,
+			       8 + timep2->tm_hour,
+			       timep2->tm_min,
+			       timep2->tm_sec,
+			       sendbuf
+			       );
+			fclose(fp);
+			flag_file = -1;
+		}
 		if (flag_run == 0) {
 			printf("\033[0;1;33mINFO > 对方已退出，退出程序\033[0m\n");
 			break;
@@ -271,28 +303,52 @@ void client()
 	struct tm *timep2;
 
 	while(strcmp(sendbuf, "/exit") != 0) {
-		time(&timep1);
-		timep2 = gmtime(&timep1);
-		printf("\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0m",
-		       1900 + timep2->tm_year,
-		       1 + timep2->tm_mon,
-		       timep2->tm_mday,
-		       8 + timep2->tm_hour,
-		       timep2->tm_min,
-		       timep2->tm_sec
-		);
-		input(sendbuf);
-		time(&timep1);
-		timep2 = gmtime(&timep1);
-		printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;37m%s\033[0m\n",
-		       1900 + timep2->tm_year,
-		       1 + timep2->tm_mon,
-		       timep2->tm_mday,
-		       8 + timep2->tm_hour,
-		       timep2->tm_min,
-		       timep2->tm_sec,
-		       sendbuf
-		);
+		if (flag_file != 1) {
+			time(&timep1);
+			timep2 = gmtime(&timep1);
+			printf("\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0m",
+			       1900 + timep2->tm_year,
+			       1 + timep2->tm_mon,
+			       timep2->tm_mday,
+			       8 + timep2->tm_hour,
+			       timep2->tm_min,
+			       timep2->tm_sec
+			       );
+			input(sendbuf);
+			time(&timep1);
+			timep2 = gmtime(&timep1);
+			printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;37m%s\033[0m\n",
+			       1900 + timep2->tm_year,
+			       1 + timep2->tm_mon,
+			       timep2->tm_mday,
+			       8 + timep2->tm_hour,
+			       timep2->tm_min,
+			       timep2->tm_sec,
+			       sendbuf
+			       );
+		} else {
+			FILE *fp = fopen(filename, "r");
+			if (!fp) return;
+			char ch[2] = "0\0";
+			memset(sendbuf, 0, sizeof(sendbuf));
+			while (ch[0] != EOF) {
+				ch[0] = fgetc(fp);
+				strcat(sendbuf, ch);
+			}
+			time(&timep1);
+			timep2 = gmtime(&timep1);
+			printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;37m%s\033[0m\n",
+			       1900 + timep2->tm_year,
+			       1 + timep2->tm_mon,
+			       timep2->tm_mday,
+			       8 + timep2->tm_hour,
+			       timep2->tm_min,
+			       timep2->tm_sec,
+			       sendbuf
+			       );
+			fclose(fp);
+			flag_file = -1;
+		}
 		if (flag_run == 0) {
 			printf("\033[0;1;33mINFO > 对方已退出，退出程序\033[0m\n");
 			break;
@@ -307,8 +363,26 @@ void client()
 	return;
 }
 
-int main()
+int main(int argc, char *argv[])
 {
+	int ch = 0;
+	while ((ch = getopt(argc, argv, "hf:")) != -1) {    /* 获取参数 */
+		if (ch == '?' || ch == 'h') {
+			printf("usage: socket [option]\n"
+			       "option:\n"
+			       "    -f filename\n"
+			       "    -h show this help\n");
+			return 1;
+		} else if (ch == 'f') {    /* size大小 */
+			if (optopt == '?') {
+				printf("没有指定大小\033[?25h\n");
+				return -1;
+			}
+			flag_file = 1;
+			strcpy(filename, optarg);
+		}
+	}
+
 	printf("\033[0;1;33mINFO > 请选择启动模式\n"
 	       "\033[0;1;33mINFO > (1)服务器\n"
 	       "\033[0;1;33mINFO > (2)客户端\033[0m\n");
