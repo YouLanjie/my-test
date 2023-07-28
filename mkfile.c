@@ -115,7 +115,7 @@ int get_type(char * type) {
 		p->data_init(&data);
 
 		p->set_title(data, "创建文件");
-		p->add_text(data, "1.Bit", "2.KiB", "3.MiB", "4.GiB", "5.KB", "6.MB", "7.GB", "0.Exit", NULL);
+		p->set_text(data, "1.Bit", "2.KiB", "3.MiB", "4.GiB", "5.KB", "6.MB", "7.GB", "0.Exit", NULL);
 
 		*type = (char)p->show(data);    /* 获取类型 */
 		endwin();
