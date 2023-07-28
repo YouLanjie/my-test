@@ -74,6 +74,7 @@ void input(char *str)
 		fflush(stdout);
 		fflush(stdin);
 	}
+	free(str2);
 	return;
 }
 
@@ -86,6 +87,8 @@ void *get_msg()
 	fflush(stdout);
 	flag_run = 1;
 	// 读取客户端发来的信息，会阻塞
+	time_t timep1;
+	struct tm *timep2;
 	while (1) {
 		ssize_t len = read(connect_fd, recbuf, sizeof(recbuf));
 		if (len <= 0){
@@ -102,8 +105,26 @@ void *get_msg()
 		}
 		printf("\033[0m\r");
 		fflush(stdout);
-		printf("\033[0;1;33;47mOUTPUT > \033[0;30;47m%s\033[0m\r\n", recbuf);
-		printf("\033[0;1;33mINPUT  > \033[0;37m%s\033[0m", sendbuf);
+		time(&timep1);
+		timep2 = gmtime(&timep1);
+		printf("\033[0;1;33;47m%04d-%02d-%02d %02d-%02d-%02d OUTPUT > \033[0;30;47m%s\033[0m\r\n",
+		       1900 + timep2->tm_year,
+		       1 + timep2->tm_mon,
+		       timep2->tm_mday,
+		       8 + timep2->tm_hour,
+		       timep2->tm_min,
+		       timep2->tm_sec,
+		       recbuf
+		);
+		printf("\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;30;47m%s\033[0m",
+		       1900 + timep2->tm_year,
+		       1 + timep2->tm_mon,
+		       timep2->tm_mday,
+		       8 + timep2->tm_hour,
+		       timep2->tm_min,
+		       timep2->tm_sec,
+		       sendbuf
+		);
 		fflush(stdout);
 		usleep(30000);
 	}
@@ -114,10 +135,16 @@ void *get_msg()
  
 void server()
 {
+	int port = 8080;
+	printf("\033[0;1;33mINFO > 请输入服务器端口号\033[0m\n"
+	       "\033[0;1;33mINFO > [e.g. 8080] \033[0m");
+	scanf("%d", &port);
+	ctools_getch();
+
 	// 初始化套接字地址结构体
 	memset(&servaddr, 0, sizeof(servaddr));
 	servaddr.sin_family = AF_INET;                  // IPv4协议
-	servaddr.sin_port = htons(PORT);                // 设置监听端口
+	servaddr.sin_port = htons(port);                // 设置监听端口
 	servaddr.sin_addr.s_addr = htonl(INADDR_ANY);   // 表示接收任意IP的连接请求
 
 	//创建套接字
@@ -155,10 +182,33 @@ void server()
 	pthread_create(&pid, NULL, get_msg, NULL);
 
 	usleep(30000);
+
+	time_t timep1;
+	struct tm *timep2;
+	
 	while (strcmp(sendbuf, "/exit") != 0) {
-		printf("\033[0;1;33mINPUT  > \033[0m");
+		time(&timep1);
+		timep2 = gmtime(&timep1);
+		printf("\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0m",
+		       1900 + timep2->tm_year,
+		       1 + timep2->tm_mon,
+		       timep2->tm_mday,
+		       8 + timep2->tm_hour,
+		       timep2->tm_min,
+		       timep2->tm_sec
+		);
 		input(sendbuf);
-		printf("\n");
+		time(&timep1);
+		timep2 = gmtime(&timep1);
+		printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;37m%s\033[0m\n",
+		       1900 + timep2->tm_year,
+		       1 + timep2->tm_mon,
+		       timep2->tm_mday,
+		       8 + timep2->tm_hour,
+		       timep2->tm_min,
+		       timep2->tm_sec,
+		       sendbuf
+		);
 		if (flag_run == 0) {
 			printf("\033[0;1;33mINFO > 对方已退出，退出程序\033[0m\n");
 			break;
@@ -179,11 +229,21 @@ void server()
  
 void client()
 {
+	char addr[20] = "127.0.0.1";
+	printf("\033[0;1;33mINFO > 请输入服务器地址\033[0m\n"
+	       "\033[0;1;33mINFO > [e.g. 127.0.0.1] \033[0m");
+	fgets(addr, 18, stdin);
+	int port = 8080;
+	printf("\033[0;1;33mINFO > 请输入服务器端口号\033[0m\n"
+	       "\033[0;1;33mINFO > [e.g. 8080] \033[0m");
+	scanf("%d", &port);
+	ctools_getch();
+
 	//初始化服务器套接字地址
 	memset(&servaddr, 0, sizeof(servaddr));
 	servaddr.sin_family = AF_INET;//IPv4
-	servaddr.sin_port = htons(PORT);//想连接的服务器的端口
-	servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");//服务器的IP地址
+	servaddr.sin_port = htons(port);//想连接的服务器的端口
+	servaddr.sin_addr.s_addr = inet_addr(addr);//服务器的IP地址
  
 	//创建套接字
 	if((connect_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1){
@@ -205,10 +265,34 @@ void client()
 	pthread_create(&pid, NULL, get_msg, NULL);
  
 	usleep(30000);
+
+	time_t timep1;
+	time(&timep1);
+	struct tm *timep2;
+
 	while(strcmp(sendbuf, "/exit") != 0) {
-		printf("\033[0;1;33mINPUT  > \033[0m");
+		time(&timep1);
+		timep2 = gmtime(&timep1);
+		printf("\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0m",
+		       1900 + timep2->tm_year,
+		       1 + timep2->tm_mon,
+		       timep2->tm_mday,
+		       8 + timep2->tm_hour,
+		       timep2->tm_min,
+		       timep2->tm_sec
+		);
 		input(sendbuf);
-		printf("\n");
+		time(&timep1);
+		timep2 = gmtime(&timep1);
+		printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;37m%s\033[0m\n",
+		       1900 + timep2->tm_year,
+		       1 + timep2->tm_mon,
+		       timep2->tm_mday,
+		       8 + timep2->tm_hour,
+		       timep2->tm_min,
+		       timep2->tm_sec,
+		       sendbuf
+		);
 		if (flag_run == 0) {
 			printf("\033[0;1;33mINFO > 对方已退出，退出程序\033[0m\n");
 			break;
@@ -225,14 +309,12 @@ void client()
 
 int main()
 {
-	Clear_SYS;
-	printf("No.1 server\nor\nNo.2 client\n?");
+	printf("\033[0;1;33mINFO > 请选择启动模式\n"
+	       "\033[0;1;33mINFO > (1)服务器\n"
+	       "\033[0;1;33mINFO > (2)客户端\033[0m\n");
 	if (ctools_getch() == '1') {
-		Clear_SYS;
 		server();
-	}
-	else {
-		Clear_SYS;
+	} else {
 		client();
 	}
 	return 0;
