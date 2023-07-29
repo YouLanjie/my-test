@@ -22,7 +22,7 @@ msgid "获取信息错误"
 msgstr "msg get error"
 
 #: socket.c:128
-msgid " 输出  "
+msgid " 输出 "
 msgstr "OUTPUT"
 
 #: socket.c:129 socket.c:162 socket.c:166 socket.c:178
@@ -49,31 +49,43 @@ msgstr "Exit"
 msgid "切换按下回车结束消息的功能"
 msgstr "toggle allow enter end of message"
 
-#: socket.c:210
+#: socket.c:215
+msgid "查询当前的语言设置"
+msgstr "Query the current language settings"
+
+#: socket.c:216
+msgid "设置界面语言为英文"
+msgstr "Set the interface language to English"
+
+#: socket.c:217
+msgid "设置界面语言为中文"
+msgstr "Set the interface language to Chinese"
+
+#: socket.c:218
 msgid "输入消息"
 msgstr "input message"
 
-#: socket.c:211
+#: socket.c:219
 msgid "发送消息"
 msgstr "Send the message"
 
-#: socket.c:212
+#: socket.c:220
 msgid "结束消息(需要FLAG_ENTER显示为True)"
 msgstr "end of message(need FLAG_ENTER is True)"
 
-#: socket.c:213
+#: socket.c:221
 msgid "删除字符(需开启回车结束消息，否则它不会工作)"
 msgstr "delete a char(need FLAG_ENTER is True, if not it will not work)"
 
-#: socket.c:239 socket.c:286
+#: socket.c:262 socket.c:309
 msgid "创建套接字错误"
 msgstr "create socket error"
 
-#: socket.c:246
+#: socket.c:269
 msgid "绑定套接字错误"
 msgstr "bind socket error"
 
-#: socket.c:247
+#: socket.c:270
 msgid ""
 "小提示：一般情况下用`sudo lsof -i:$port`检查$port是否有进程占用$port，如果没"
 "有那么等一会可能就好了，或者更换端口"
@@ -81,62 +93,62 @@ msgstr ""
 "Tip: In general, use 'sudo lsof - i: $port' to check if there are any "
 "processes occupying the $port. If not, wait for a while or replace the port"
 
-#: socket.c:253
+#: socket.c:276
 msgid "监听端口错误"
 msgstr "listen socket error"
 
-#: socket.c:259
+#: socket.c:282
 msgid "等待客户端发起连接"
 msgstr "Waiting for the client to initiate a connection"
 
-#: socket.c:268
+#: socket.c:291
 msgid "检测到退出关键词，退出程序"
 msgstr "Detected exit keyword, exit program"
 
-#: socket.c:292
+#: socket.c:315
 msgid "监听套接字错误"
 msgstr "connect socket error"
 
-#: socket.c:319
+#: socket.c:342
 msgid "用法"
 msgstr "Usage"
 
-#: socket.c:320
+#: socket.c:343
 msgid "选项"
 msgstr "Option"
 
-#: socket.c:321
+#: socket.c:344
 msgid "使用指定的文件作为程序的输入（仅一次）"
 msgstr "Use the specified file as input to the"
 
-#: socket.c:322
+#: socket.c:345
 msgid "(早期功能，已废弃)"
 msgstr "program (only once)(obsolete)"
 
-#: socket.c:323
+#: socket.c:346
 msgid "使用服务器模式"
 msgstr "Usage server mode"
 
-#: socket.c:324
+#: socket.c:347
 msgid "使用客户端模式"
 msgstr "Usage client mode"
 
-#: socket.c:325
+#: socket.c:348
 msgid "设置目标IP地址 [默认: 127.0.0.1]"
 msgstr "Set client addr [default: 127.0.0.1]"
 
-#: socket.c:326
+#: socket.c:349
 msgid "设置目标端口号 [默认: 8080]"
 msgstr "Set port [default: 8080]"
 
-#: socket.c:327
+#: socket.c:350
 msgid "取消使用回车发送消息"
 msgstr "Cancel using carriage return to send messages"
 
-#: socket.c:394
+#: socket.c:417
 msgid "服务端"
 msgstr "Server"
 
-#: socket.c:394
+#: socket.c:417
 msgid "客户端"
 msgstr "Client"

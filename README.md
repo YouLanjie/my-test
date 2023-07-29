@@ -130,4 +130,4 @@ ls -1|grep ".c$"|sed "/build.c\|gtk.c/d"|sed "s/^\(.*\).c$/gcc \1\.c $(find ./in
   
   - 具有服务器和客户端两种方式，需要先启动服务器后再启动客户端以建立连接。
   
-  - 支持中英文显示（需在项目根目录下执行可执行文件才可显示英文）
+  - 支持中英文显示（需在使用命令`msgfmt Lang/en_US/socket.po -o Lang/en_US/LC_MESSAGES/socket.mo`后在项目根目录下执行可执行文件才可显示英文）

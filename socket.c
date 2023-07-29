@@ -125,8 +125,10 @@ void *get_msg()
 		fflush(stdout);
 		time(&timep1);
 		timep2 = gmtime(&timep1);
-		printf("\033[0;1;33;47m%04d-%02d-%02d %02d-%02d-%02d %s > \033[0;30;47m%s\033[0m\r\n", 1900 + timep2->tm_year, 1 + timep2->tm_mon, timep2->tm_mday, 8 + timep2->tm_hour, timep2->tm_min, timep2->tm_sec, gettext(" 输出  "), recbuf);
-		printf("\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d %s  > \033[0;37m%s\033[0m", 1900 + timep2->tm_year, 1 + timep2->tm_mon, timep2->tm_mday, 8 + timep2->tm_hour, timep2->tm_min, timep2->tm_sec, gettext(" 输入"), sendbuf);
+		printf("\033[0;1;33;47m"
+		       "%04d-%02d-%02d %02d-%02d-%02d %s > \033[0;30;47m%s\033[0m\r\n", 1900 + timep2->tm_year, 1 + timep2->tm_mon, timep2->tm_mday, 8 + timep2->tm_hour, timep2->tm_min, timep2->tm_sec, gettext(" 输出 "), recbuf);
+		printf("\033[0;1;33m"
+		       "%04d-%02d-%02d %02d-%02d-%02d %s  > \033[0;37m%s\033[0m", 1900 + timep2->tm_year, 1 + timep2->tm_mon, timep2->tm_mday, 8 + timep2->tm_hour, timep2->tm_min, timep2->tm_sec, gettext(" 输入"), sendbuf);
 		if (access("socket_get_output.txt", F_OK) != 0 && flag_file == -1) {
 			FILE *fp = fopen("socket_get_output.txt", "w");
 			if (!fp) pthread_exit(NULL);
@@ -199,6 +201,9 @@ int ui(void)
 			       "HELP > /help        %s\n"
 			       "HELP > /exit        %s\n"
 			       "HELP > /flag_enter  %s\n"
+			       "HELP > /lang_query  %s\n"
+			       "HELP > /lang_en     %s\n"
+			       "HELP > /lang_zh     %s\n"
 			       "HELP > <message>    %s\n"
 			       "HELP > <ESC>        %s\n"
 			       "HELP > <Enter>      %s\n"
@@ -207,11 +212,29 @@ int ui(void)
 			       gettext("显示这条帮助"),
 			       gettext("退出程序"),
 			       gettext("切换按下回车结束消息的功能"),
+			       gettext("查询当前的语言设置"),
+			       gettext("设置界面语言为英文"),
+			       gettext("设置界面语言为中文"),
 			       gettext("输入消息"),
 			       gettext("发送消息"),
 			       gettext("结束消息(需要FLAG_ENTER显示为True)"),
 			       gettext("删除字符(需开启回车结束消息，否则它不会工作)")
 			       );
+			continue;
+		} else if (strcmp(sendbuf, "/lang_zh") == 0) {
+			setlocale(LC_ALL, "zh_CN.UTF-8");
+			bindtextdomain("socket", "Lang");
+			textdomain("socket");
+			printf("\033[0;1;33mINFO > LANG: zh_CN\033[0m\n");
+			continue;
+		} else if (strcmp(sendbuf, "/lang_en") == 0) {
+			setlocale(LC_ALL, "en_US.UTF-8");
+			bindtextdomain("socket", "Lang");
+			textdomain("socket");
+			printf("\033[0;1;33mINFO > LANG: en_US\033[0m\n");
+			continue;
+		} else if (strcmp(sendbuf, "/lang_query") == 0) {
+			printf("\033[0;1;33mINFO > LANG: %s\033[0m\n", setlocale(LC_ALL, NULL));
 			continue;
 		}
 	
