@@ -72,7 +72,6 @@ void input(char *str)
 				str[strlen(str2) - 1] = '\0';
 			}
 			count--;
-			ch = 0;
 		}
 		if (ch != 0x1B && ch != 0x7F && ch != flag_enter) {
 			count++;
@@ -277,6 +276,7 @@ void server(int port)
 				       "HELP > <message>    input message\n"
 				       "HELP > <ESC>        end of message\n"
 				       "HELP > <Enter>      end of message(need FLAG_ENTER is True)"
+				       "HELP > <Backspace>  delete a char(need FLAG_ENTER is True, if not it will not work)"
 				       "\033[0m\n");
 				continue;
 			}
@@ -400,6 +400,7 @@ void client(char *addr, int port)
 			       "HELP > <message>    input message\n"
 			       "HELP > <ESC>        end of message\n"
 			       "HELP > <Enter>      end of message(need FLAG_ENTER is True)"
+			       "HELP > <Backspace>  delete a char(need FLAG_ENTER is True, if not it will not work)"
 			       "\033[0m\n");
 			continue;
 		}
