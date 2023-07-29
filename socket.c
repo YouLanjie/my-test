@@ -21,7 +21,7 @@ char   sendbuf[MAXSIZE],    /* <ch>  接收缓冲区 */
 int flag_run = 0;
 int flag_file = 0;
 int flag_enter = '\r';
-char filename[MAXSIZE];
+char filename[MAXSIZE] = "(null)";
 
 struct termios flag_oldt;
 int flag_termux;
@@ -206,6 +206,7 @@ void server(int port)
 		time_t timep1;
 		struct tm *timep2;
 	
+		printf("\033[0;1;33mINFO > 连接成功，输入`/help`然后按ESC或回车获取帮助\033[0m\n");
 		while (strcmp(sendbuf, "/exit") != 0) {
 			if (flag_file != 1) {
 				time(&timep1);
@@ -266,6 +267,18 @@ void server(int port)
 					printf("\033[0;1;33mINFO > FLAG_ENTER: True\033[0m\n");
 				}
 				continue;
+			} else if (strcmp(sendbuf, "/help") == 0) {
+				printf("\033[0;1;33m"
+				       "INFO > Help message:\n"
+				       "\033[0;1;32m"
+				       "HELP > /help        show this message\n"
+				       "HELP > /exit        leave\n"
+				       "HELP > /flag_enter  toggle allow enter end of message\n"
+				       "HELP > <message>    input message\n"
+				       "HELP > <ESC>        end of message\n"
+				       "HELP > <Enter>      end of message(need FLAG_ENTER is True)"
+				       "\033[0m\n");
+				continue;
 			}
 	
 			//向客户端发送信息
@@ -316,6 +329,7 @@ void client(char *addr, int port)
 	time(&timep1);
 	struct tm *timep2;
 
+	printf("\033[0;1;33mINFO > 连接成功，输入`/help`然后按ESC或回车获取帮助\033[0m\n");
 	while(strcmp(sendbuf, "/exit") != 0) {
 		if (flag_file != 1) {
 			time(&timep1);
@@ -375,6 +389,18 @@ void client(char *addr, int port)
 				flag_enter = '\r';
 				printf("\033[0;1;33mINFO > FLAG_ENTER: True\033[0m\n");
 			}
+			continue;
+		} else if (strcmp(sendbuf, "/help") == 0) {
+			printf("\033[0;1;33m"
+			       "INFO > Help message:\n"
+			       "\033[0;1;32m"
+			       "HELP > /help        show this message\n"
+			       "HELP > /exit        leave\n"
+			       "HELP > /flag_enter  toggle allow enter end of message\n"
+			       "HELP > <message>    input message\n"
+			       "HELP > <ESC>        end of message\n"
+			       "HELP > <Enter>      end of message(need FLAG_ENTER is True)"
+			       "\033[0m\n");
 			continue;
 		}
 		//向客户端发送信息
@@ -459,11 +485,13 @@ int main(int argc, char *argv[])
 	flag_termux = fcntl(STDIN_FILENO, F_GETFL, 0);
 
 	printf("\033[0;1;33m"
-	       "INFO > Mode: %d(1:Server, 2:Client)\n"
+	       "INFO > Mode: %d    \t[1:Server | 2:Client]\n"
 	       "INFO > Addr: %s\n"
 	       "INFO > Port: %04d\n"
+	       "INFO > Entr: 0x%02X\t[0x0A:True | 0x1B:False]\n"
+	       "INFO > File: %s\n"
 	       "\033[0m\n",
-	       flag_mode, flag_addr, flag_port);
+	       flag_mode, flag_addr, flag_port, flag_enter, filename);
 	if (flag_mode == 1) server(flag_port);
 	else if (flag_mode == 2) client(flag_addr, flag_port);
 	else help(-3);
