@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 #include <termios.h>
+#include <libintl.h>
 
 #define MAXSIZE 8192
 /* #define PORT 8002 */
@@ -41,7 +42,7 @@ void input(char *str)
 		ch = ctools_getch();
 		if (ch == 0x1B && ctools_kbhit() != 0)
 			ch = '\0';
-		if ( ch & 0x80) {    /* If is Chinese */
+		if (ch & 0x80) {    /* If is Chinese */
 			printf("\033[0;37m%c", ch);
 			sprintf(str2, "%s%c", str, ch);
 			strcpy(str, str2);
@@ -111,8 +112,7 @@ void *get_msg()
 			}
 			tcsetattr(STDIN_FILENO, TCSANOW, &flag_oldt);
 			fcntl(STDIN_FILENO, F_SETFL, flag_termux);
-			fprintf(stderr, "\n\033[1;31mERROR > msg get error: %s(error: %d)\033[0m\n", strerror(errno), errno);
-			perror("消息接收错误");
+			fprintf(stderr, "\n\033[1;31mERROR > %s: %s(error: %d)\033[0m\n", gettext("获取信息错误"), strerror(errno), errno);
 			exit(-6);
 		}
 		ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
@@ -125,25 +125,9 @@ void *get_msg()
 		fflush(stdout);
 		time(&timep1);
 		timep2 = gmtime(&timep1);
-		printf("\033[0;1;33;47m%04d-%02d-%02d %02d-%02d-%02d OUTPUT > \033[0;30;47m%s\033[0m\r\n",
-		       1900 + timep2->tm_year,
-		       1 + timep2->tm_mon,
-		       timep2->tm_mday,
-		       8 + timep2->tm_hour,
-		       timep2->tm_min,
-		       timep2->tm_sec,
-		       recbuf
-		);
-		printf("\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;37m%s\033[0m",
-		       1900 + timep2->tm_year,
-		       1 + timep2->tm_mon,
-		       timep2->tm_mday,
-		       8 + timep2->tm_hour,
-		       timep2->tm_min,
-		       timep2->tm_sec,
-		       sendbuf
-		);
-		if (flag_file == -1) {
+		printf("\033[0;1;33;47m%04d-%02d-%02d %02d-%02d-%02d %s > \033[0;30;47m%s\033[0m\r\n", 1900 + timep2->tm_year, 1 + timep2->tm_mon, timep2->tm_mday, 8 + timep2->tm_hour, timep2->tm_min, timep2->tm_sec, gettext(" 输出  "), recbuf);
+		printf("\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d %s  > \033[0;37m%s\033[0m", 1900 + timep2->tm_year, 1 + timep2->tm_mon, timep2->tm_mday, 8 + timep2->tm_hour, timep2->tm_min, timep2->tm_sec, gettext(" 输入"), sendbuf);
+		if (access("socket_get_output.txt", F_OK) != 0 && flag_file == -1) {
 			FILE *fp = fopen("socket_get_output.txt", "w");
 			if (!fp) pthread_exit(NULL);
 			fprintf(fp, "%s", recbuf);
@@ -156,6 +140,89 @@ void *get_msg()
 	pthread_exit(NULL);
 	return NULL;
 }
+
+/*
+ * UI交互
+ */
+int ui(void)
+{
+	pthread_t pid;
+	pthread_create(&pid, NULL, get_msg, NULL);
+
+	usleep(30000);
+
+	time_t timep1;
+	struct tm *timep2;
+	
+	printf("\033[0;1;33mINFO > %s\033[0m\n", gettext("连接成功，输入`/help`然后按ESC或回车获取帮助"));
+	while (strcmp(sendbuf, "/exit") != 0) {
+		if (flag_file != 1) {
+			time(&timep1);
+			timep2 = gmtime(&timep1);
+			printf("\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d %s  > \033[0m", 1900 + timep2->tm_year, 1 + timep2->tm_mon, timep2->tm_mday, 8 + timep2->tm_hour, timep2->tm_min, timep2->tm_sec, gettext(" 输入"));
+			input(sendbuf);
+			time(&timep1);
+			timep2 = gmtime(&timep1);
+			printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d %s  > \033[0;37m%s\033[0m\n", 1900 + timep2->tm_year, 1 + timep2->tm_mon, timep2->tm_mday, 8 + timep2->tm_hour, timep2->tm_min, timep2->tm_sec, gettext(" 输入"), sendbuf);
+		} else {
+			FILE *fp = fopen(filename, "r");
+			if (!fp) return -1;
+			char ch[2] = "0\0";
+			memset(sendbuf, 0, sizeof(sendbuf));
+			while (ch[0] != EOF) {
+				ch[0] = fgetc(fp);
+				strcat(sendbuf, ch);
+			}
+			time(&timep1);
+			timep2 = gmtime(&timep1);
+			printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d %s  > \033[0;37m%s\033[0m\n", 1900 + timep2->tm_year, 1 + timep2->tm_mon, timep2->tm_mday, 8 + timep2->tm_hour, timep2->tm_min, timep2->tm_sec, gettext(" 输入"), sendbuf);
+			fclose(fp);
+			flag_file = -1;
+		}
+		if (flag_run == 0) {
+			printf("\033[0;1;33mINFO > %s\033[0m\n", gettext("对方已退出，重新开始等待连接"));
+			break;
+		}
+		if (strcmp(sendbuf, "/flag_enter") == 0) {
+			if (flag_enter == '\r') {
+				flag_enter = 0x1B;
+				printf("\033[0;1;33mINFO > FLAG_ENTER: False\033[0m\n");
+			} else {
+				flag_enter = '\r';
+				printf("\033[0;1;33mINFO > FLAG_ENTER: True\033[0m\n");
+			}
+			continue;
+		} else if (strcmp(sendbuf, "/help") == 0) {
+			printf("\033[0;1;33m"
+			       "INFO > Help message:\n"
+			       "\033[0;1;32m"
+			       "HELP > /help        %s\n"
+			       "HELP > /exit        %s\n"
+			       "HELP > /flag_enter  %s\n"
+			       "HELP > <message>    %s\n"
+			       "HELP > <ESC>        %s\n"
+			       "HELP > <Enter>      %s\n"
+			       "HELP > <Backspace>  %s"
+			       "\033[0m\n",
+			       gettext("显示这条帮助"),
+			       gettext("退出程序"),
+			       gettext("切换按下回车结束消息的功能"),
+			       gettext("输入消息"),
+			       gettext("发送消息"),
+			       gettext("结束消息(需要FLAG_ENTER显示为True)"),
+			       gettext("删除字符(需开启回车结束消息，否则它不会工作)")
+			       );
+			continue;
+		}
+	
+		//向客户端发送信息
+		write(connect_fd, sendbuf, sizeof(sendbuf));
+	}
+	pthread_cancel(pid);
+	usleep(50000);
+	return 0;
+}
+
  
 void server(int port)
 {
@@ -169,128 +236,36 @@ void server(int port)
 	if((listen_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1){
 		//如果创建套接字失败，返回错误信息
 		//strerror(int errnum)获取错误的描述字符串
-		fprintf(stderr, "\033[1;31mcreate socket error: %s(error: %d)\033[0m\n", strerror(errno), errno);
-		perror("套接字创建失败");
+		fprintf(stderr, "\033[1;31m%s: %s(error: %d)\033[0m\n", gettext("创建套接字错误"), strerror(errno), errno);
 		exit(-1);
 	}
 
 	//绑定套接字和本地IP地址和端口
 	if(bind(listen_fd, (struct sockaddr*)&servaddr, sizeof(servaddr)) == -1){
 		//绑定出现错误
-		fprintf(stderr, "bind socket error: %s(error: %d)\n", strerror(errno), errno);
-		perror("套接字绑定失败");
-		printf("小提示：一般情况下用`sudo lsof -i:$port`检查$port是否有进程占用$port，如果没有那么等一会可能就好了，或者更换端口\n");
+		fprintf(stderr, "%s: %s(error: %d)\n", gettext("绑定套接字错误"), strerror(errno), errno);
+		printf("%s\n", gettext("小提示：一般情况下用`sudo lsof -i:$port`检查$port是否有进程占用$port，如果没有那么等一会可能就好了，或者更换端口"));
 		exit(-2);
 	} 
 
 	//使得listen_fd变成监听描述符
 	if(listen(listen_fd, 10) == -1){
-		fprintf(stderr, "listen socket error: %s(error: %d)\n", strerror(errno), errno);
+		fprintf(stderr, "%s: %s(error: %d)\n", gettext("监听端口错误"), strerror(errno), errno);
 		exit(-3);
 	}
  
 	while (strcmp(sendbuf, "/exit") != 0) {
 		//accept阻塞等待客户端请求
-		printf("\033[0;1;33mINFO > 等待客户端发起连接\033[0m\n");
+		printf("\033[0;1;33mINFO > %s\033[0m\n", gettext("等待客户端发起连接"));
 		if((connect_fd = accept(listen_fd, (struct sockaddr*)NULL, NULL)) == -1){
 			printf("accept socket error: %s(error: %d)\n", strerror(errno), errno);
 			exit(-4);
 		}
-
-		pthread_t pid;
-		pthread_create(&pid, NULL, get_msg, NULL);
-
-		usleep(30000);
-
-		time_t timep1;
-		struct tm *timep2;
-	
-		printf("\033[0;1;33mINFO > 连接成功，输入`/help`然后按ESC或回车获取帮助\033[0m\n");
-		while (strcmp(sendbuf, "/exit") != 0) {
-			if (flag_file != 1) {
-				time(&timep1);
-				timep2 = gmtime(&timep1);
-				printf("\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0m",
-				       1900 + timep2->tm_year,
-				       1 + timep2->tm_mon,
-				       timep2->tm_mday,
-				       8 + timep2->tm_hour,
-				       timep2->tm_min,
-				       timep2->tm_sec
-				       );
-				input(sendbuf);
-				time(&timep1);
-				timep2 = gmtime(&timep1);
-				printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;37m%s\033[0m\n",
-				       1900 + timep2->tm_year,
-				       1 + timep2->tm_mon,
-				       timep2->tm_mday,
-				       8 + timep2->tm_hour,
-				       timep2->tm_min,
-				       timep2->tm_sec,
-				       sendbuf
-				       );
-			} else {
-				FILE *fp = fopen(filename, "r");
-				if (!fp) return;
-				char ch[2] = "0\0";
-				memset(sendbuf, 0, sizeof(sendbuf));
-				while (ch[0] != EOF) {
-					ch[0] = fgetc(fp);
-					strcat(sendbuf, ch);
-				}
-				time(&timep1);
-				timep2 = gmtime(&timep1);
-				printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;37m%s\033[0m\n",
-				       1900 + timep2->tm_year,
-				       1 + timep2->tm_mon,
-				       timep2->tm_mday,
-				       8 + timep2->tm_hour,
-				       timep2->tm_min,
-				       timep2->tm_sec,
-				       sendbuf
-				       );
-				fclose(fp);
-				flag_file = -1;
-			}
-			if (flag_run == 0) {
-				printf("\033[0;1;33mINFO > 对方已退出，重新开始等待连接\033[0m\n");
-				break;
-			}
-			if (strcmp(sendbuf, "/flag_enter") == 0) {
-				if (flag_enter == '\r') {
-					flag_enter = 0x1B;
-					printf("\033[0;1;33mINFO > FLAG_ENTER: False\033[0m\n");
-				} else {
-					flag_enter = '\r';
-					printf("\033[0;1;33mINFO > FLAG_ENTER: True\033[0m\n");
-				}
-				continue;
-			} else if (strcmp(sendbuf, "/help") == 0) {
-				printf("\033[0;1;33m"
-				       "INFO > Help message:\n"
-				       "\033[0;1;32m"
-				       "HELP > /help        show this message\n"
-				       "HELP > /exit        leave\n"
-				       "HELP > /flag_enter  toggle allow enter end of message\n"
-				       "HELP > <message>    input message\n"
-				       "HELP > <ESC>        end of message\n"
-				       "HELP > <Enter>      end of message(need FLAG_ENTER is True)"
-				       "HELP > <Backspace>  delete a char(need FLAG_ENTER is True, if not it will not work)"
-				       "\033[0m\n");
-				continue;
-			}
-	
-			//向客户端发送信息
-			write(connect_fd, sendbuf, sizeof(sendbuf));
-		}
-		pthread_cancel(pid);
-		usleep(50000);
-		/* usleep(10000); */
+		if (ui() == -1) strcpy(sendbuf, "/exit");
 		//关闭连接套接字
 		close(connect_fd);
 	}
-	printf("\033[0;1;33mINFO > 检测到退出关键词，退出程序\033[0m\n");
+	printf("\033[0;1;33mINFO > %s\033[0m\n", gettext("检测到退出关键词，退出程序"));
 	//关闭监听套接字
 	close(listen_fd);
 	return;
@@ -308,107 +283,17 @@ void client(char *addr, int port)
 	if((connect_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1){
 		//如果创建套接字失败，返回错误信息
 		//strerror(int errnum)获取错误的描述字符串
-		printf("create socket error: %s(error: %d)\n", strerror(errno), errno);
-		perror("套接字创建失败");
+		printf("%s: %s(error: %d)\n", gettext("创建套接字错误"), strerror(errno), errno);
 		exit(-1);
 	} 
 	//向服务器发送连接请求
 	if(connect(connect_fd, (struct sockaddr*)&servaddr, sizeof(servaddr)) == -1){
 		//连接失败
-		printf("connect socket error: %s(error: %d)\n", strerror(errno), errno);
-		perror("套接字连接失败");
+		printf("%s: %s(error: %d)\n", gettext("监听套接字错误"), strerror(errno), errno);
 		exit(-2);
 	}
 
-	pthread_t pid;
-	pthread_create(&pid, NULL, get_msg, NULL);
- 
-	usleep(30000);
-
-	time_t timep1;
-	time(&timep1);
-	struct tm *timep2;
-
-	printf("\033[0;1;33mINFO > 连接成功，输入`/help`然后按ESC或回车获取帮助\033[0m\n");
-	while(strcmp(sendbuf, "/exit") != 0) {
-		if (flag_file != 1) {
-			time(&timep1);
-			timep2 = gmtime(&timep1);
-			printf("\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0m",
-			       1900 + timep2->tm_year,
-			       1 + timep2->tm_mon,
-			       timep2->tm_mday,
-			       8 + timep2->tm_hour,
-			       timep2->tm_min,
-			       timep2->tm_sec
-			       );
-			input(sendbuf);
-			time(&timep1);
-			timep2 = gmtime(&timep1);
-			printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;37m%s\033[0m\n",
-			       1900 + timep2->tm_year,
-			       1 + timep2->tm_mon,
-			       timep2->tm_mday,
-			       8 + timep2->tm_hour,
-			       timep2->tm_min,
-			       timep2->tm_sec,
-			       sendbuf
-			       );
-		} else {
-			FILE *fp = fopen(filename, "r");
-			if (!fp) return;
-			char ch[2] = "0\0";
-			memset(sendbuf, 0, sizeof(sendbuf));
-			while (ch[0] != EOF) {
-				ch[0] = fgetc(fp);
-				strcat(sendbuf, ch);
-			}
-			time(&timep1);
-			timep2 = gmtime(&timep1);
-			printf("\r\033[0;1;33m%04d-%02d-%02d %02d-%02d-%02d INPUT  > \033[0;37m%s\033[0m\n",
-			       1900 + timep2->tm_year,
-			       1 + timep2->tm_mon,
-			       timep2->tm_mday,
-			       8 + timep2->tm_hour,
-			       timep2->tm_min,
-			       timep2->tm_sec,
-			       sendbuf
-			       );
-			fclose(fp);
-			flag_file = -1;
-		}
-		if (flag_run == 0) {
-			printf("\033[0;1;33mINFO > 对方已退出，退出程序\033[0m\n");
-			break;
-		}
-		if (strcmp(sendbuf, "/flag_enter") == 0) {
-			if (flag_enter == '\r') {
-				flag_enter = 0x1B;
-				printf("\033[0;1;33mINFO > FLAG_ENTER: False\033[0m\n");
-			} else {
-				flag_enter = '\r';
-				printf("\033[0;1;33mINFO > FLAG_ENTER: True\033[0m\n");
-			}
-			continue;
-		} else if (strcmp(sendbuf, "/help") == 0) {
-			printf("\033[0;1;33m"
-			       "INFO > Help message:\n"
-			       "\033[0;1;32m"
-			       "HELP > /help        show this message\n"
-			       "HELP > /exit        leave\n"
-			       "HELP > /flag_enter  toggle allow enter end of message\n"
-			       "HELP > <message>    input message\n"
-			       "HELP > <ESC>        end of message\n"
-			       "HELP > <Enter>      end of message(need FLAG_ENTER is True)"
-			       "HELP > <Backspace>  delete a char(need FLAG_ENTER is True, if not it will not work)"
-			       "\033[0m\n");
-			continue;
-		}
-		//向客户端发送信息
-		write(connect_fd, sendbuf, sizeof(sendbuf));
-	} 
-	pthread_cancel(pid);
-	usleep(50000);
+	ui();
 	//关闭套接字
 	close(connect_fd);
 	return;
@@ -419,23 +304,33 @@ void client(char *addr, int port)
  */
 void help(int flag)
 {
-	printf("usage:\n"
+	printf("%s:\n"
 	       "    socket [-f <filename>] [-s | -c] [-a <addrs>] [-p <port>] [-e]\n"
 	       "    socket -h\n"
-	       "option:\n"
-	       "    -f <filename> Use the file as the program\n"
-	       "                  input(allow use `\\r` or `\\n`)\n"
-	       "    -s            Usage server mode\n"
-	       "    -c            Usage client mode\n"
-	       "    -a <addrs>    Set client addr [default: 127.0.0.1]\n"
-	       "    -p <port>     Set port [default: 8080]\n"
-	       "    -e            Disable use enter to send msg\n"
-	       "    -h            show this help\n");
+	       "%s:\n"
+	       "    -f <filename> %s\n"
+	       "                  %s\n"
+	       "    -s            %s\n"
+	       "    -c            %s\n"
+	       "    -a <addrs>    %s\n"
+	       "    -p <port>     %s\n"
+	       "    -e            %s\n"
+	       "    -h            %s\n",
+	       gettext("用法"),
+	       gettext("选项"),
+	       gettext("使用指定的文件作为程序的输入（仅一次）"),
+	       gettext("(早期功能，已废弃)"),
+	       gettext("使用服务器模式"),
+	       gettext("使用客户端模式"),
+	       gettext("设置目标IP地址 [默认: 127.0.0.1]"),
+	       gettext("设置目标端口号 [默认: 8080]"),
+	       gettext("取消使用回车发送消息"),
+	       gettext("显示这条帮助")
+	       );
 	if (flag > 0) flag--;
 	exit(flag);
 	return;
 }
-
 
 int main(int argc, char *argv[])
 {
@@ -444,6 +339,10 @@ int main(int argc, char *argv[])
 	    flag_mode = 0,
 	    flag_port = 8080;
 	char *flag_addr = "127.0.0.1";
+
+	setlocale(LC_ALL, "");
+	bindtextdomain("socket", "Lang");
+	textdomain("socket");
 	while ((ch = getopt(argc, argv, "hf:scp:a:e")) != -1) {    /* 获取参数 */
 		switch (ch) {
 		case '?':
@@ -486,13 +385,13 @@ int main(int argc, char *argv[])
 	flag_termux = fcntl(STDIN_FILENO, F_GETFL, 0);
 
 	printf("\033[0;1;33m"
-	       "INFO > Mode: %d    \t[1:Server | 2:Client]\n"
+	       "INFO > Mode: %d    \t[1:%s | 2:%s]\n"
 	       "INFO > Addr: %s\n"
 	       "INFO > Port: %04d\n"
 	       "INFO > Entr: 0x%02X\t[0x0A:True | 0x1B:False]\n"
 	       "INFO > File: %s\n"
 	       "\033[0m\n",
-	       flag_mode, flag_addr, flag_port, flag_enter, filename);
+	       flag_mode, gettext("服务端"), gettext("客户端"), flag_addr, flag_port, flag_enter, filename);
 	if (flag_mode == 1) server(flag_port);
 	else if (flag_mode == 2) client(flag_addr, flag_port);
 	else help(-3);
