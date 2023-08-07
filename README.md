@@ -55,13 +55,21 @@ git submodule update
 
 下载子模块仓库，否则会有部分程序无法编译
 
-请在项目目录运行以下命令编译大部分程序：
+请在项目目录运行以下命令编译所有程序（注：该脚本需要使用zsh）：
+
+```shell
+./build.sh
+```
+
+更多帮助内容请使用`./build.sh -h`查看
+
+或者使用以下命令编译大部分程序
 
 ```shell
 ls -1|grep ".c$"|sed "/build.c\|gtk.c/d"|sed "s/^\(.*\).c$/gcc \1\.c $(find ./include/lib -name "*.c"|sed ":a;N;s/\n/ /g;b a"|sed 's/\//\\\//g') -lncurses -lm -o bin\/\1/"|sh
 ```
 
-或者编译 `build.c` 程序，再通过执行build文件编译大部分程序
+再或者编译 `build.c` 程序，再通过执行编译出来的可执行文件编译大部分程序
 
 ## 部分程序运行效果
 
