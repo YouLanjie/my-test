@@ -9,7 +9,7 @@
  */
 
 
-#include "ctools.h"
+#include "include/tools.h"
 
 #define INPUT_FILE_NAME "/usr/local/share/history_note/input.txt"
 #define OUTPUT_FILE_NAME "/usr/local/share/history_note/output.txt"
