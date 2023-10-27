@@ -66,193 +66,195 @@ file_name_format="NULL"
 vip="false"
 
 usage() {
-	usagetext="\
+    usagetext="\
 usage: $app_name [options] <input dir>
   options:
      -v           下载VIP歌曲
      -h           帮助信息"
-	echo $usagetext
-	exit $1
+    echo $usagetext
+    exit $1
 }
 
 download() {
-	# 获取信息
-	_msg_info "音频链接"
-	read link
+    # 获取信息
+    _msg_info "音频链接"
+    read link
 
-	_msg_info "封面链接"
-	read img_link
+    _msg_info "封面链接"
+    read img_link
 
-	_msg_info "名称"
-	read name
+    _msg_info "名称"
+    read name
 
-	sec="yes"
-	_msg_info "别称?" "$F_yellow"
-	select sec ("yes" "no") {
-		if [[ $sec == "yes" ]] {
-			_msg_info "请输入:"
-			read alias_name
-		}
-		break
-    	}
+    sec="yes"
+    _msg_info "别称?" "$F_yellow"
+    select sec ("yes" "no") {
+        if [[ $sec == "yes" ]] {
+            _msg_info "请输入:"
+            read alias_name
+        }
+        break
+        }
 
-	_msg_info "艺术家:"
-	read artist
+    _msg_info "艺术家:"
+    read artist
 
-	_msg_info "专辑:"
-	read album
+    _msg_info "专辑:"
+    read album
 
-	# 获取没有后缀的下载链接
-	_msg_info "链接1: $link"
-	link=$(echo $link|sed "s/?authSecret=.*//")
-	# _msg_info "链接2: $link"
+    clear
 
-	# 获取文件后缀名
-	extension=$(echo $link|sed "s/.*\.//")
-	file_type=$extension
-	# _msg_info "扩展名: $extension"
+    # 获取没有后缀的下载链接
+    _msg_info "链接1: $link"
+    link=$(echo $link|sed "s/?authSecret=.*//")
+    # _msg_info "链接2: $link"
 
-	# 设置文件名（没有扩展名）
-	file_name_format=$(printf "${artist} - ${name}")
-	if [[ $sec == "yes" ]] {
-		file_name_format=$(printf "${artist} - ${name}(${alias_name})")
-		# _msg_info "有别名"
-	}
+    # 获取文件后缀名
+    extension=$(echo $link|sed "s/.*\.//")
+    file_type=$extension
+    # _msg_info "扩展名: $extension"
 
-	if [[ $vip != "true" ]] {
-		# 下载音频
-		echo $F_line
-		file_name=$(echo $file_name_format|sed "s/$/.${extension}/")
-		_msg_info "wget \"$link\" -O \"$file_name\""
-		wget "$link" -O "$file_name"||(_msg_warning "错误！下载出错" && exit -1)
-	}
+    # 设置文件名（没有扩展名）
+    file_name_format=$(printf "${artist} - ${name}")
+    if [[ $sec == "yes" ]] {
+        file_name_format=$(printf "${artist} - ${name}(${alias_name})")
+        # _msg_info "有别名"
+    }
 
-	# 下载封面
-	# 获取高清的封面链接
-	img_link=$(echo "$img_link" |sed 's/\(^.*\.jpg\).*/\1/')
-	file_name=$(echo $file_name_format|sed "s/$/.jpg/")
-	_msg_info "wget \"$img_link\" -O \"$file_name\""
-	wget "$img_link" -O "$file_name"
+    if [[ $vip != "true" && $link != "NULL" ]] {
+        # 下载音频
+        echo $F_line
+        file_name=$(echo $file_name_format|sed "s/$/.${extension}/")
+        _msg_info "wget \"$link\" -O \"$file_name\""
+        wget "$link" -O "$file_name"||(_msg_warning "错误！下载出错" && exit -1)
+    }
 
-	# 设置专辑
-	# file_name=$(echo $file_name_format|sed "s/$/.txt/")
-	# _msg_info "echo \"$album\" > \"$file_name\""
-	# echo "$album" > "$file_name"
+    # 下载封面
+    # 获取高清的封面链接
+    img_link=$(echo "$img_link" |sed 's/\(^.*\.jpg\).*/\1/')
+    file_name=$(echo $file_name_format|sed "s/$/.jpg/")
+    _msg_info "wget \"$img_link\" -O \"$file_name\""
+    wget "$img_link" -O "$file_name"
+
+    # 设置专辑
+    # file_name=$(echo $file_name_format|sed "s/$/.txt/")
+    # _msg_info "echo \"$album\" > \"$file_name\""
+    # echo "$album" > "$file_name"
 }
 
 m4a_to_mp3() {
-	# 输入文件
-	input_f=$(printf "./%s.m4a" $file_name_format)
-	# 输出文件
-	out_f=$(printf "./%s.mp3" $file_name_format)
+    # 输入文件
+    input_f=$(printf "./%s.m4a" $file_name_format)
+    # 输出文件
+    out_f=$(printf "./%s.mp3" $file_name_format)
 
-	# 检查
-	if [[ -e $out_f ]] {
-		_msg_info "$input_f"
-		_msg_info "输出文件已存在，跳过" "$F_yellow"
-		echo "$F_line"
-		return 0
-	}
+    # 检查
+    if [[ -e $out_f ]] {
+        _msg_info "$input_f"
+        _msg_info "输出文件已存在，跳过" "$F_yellow"
+        echo "$F_line"
+        return 0
+    }
 
-	_msg_info "输入文件：'$input_f'"
-	_msg_info "ffmpeg -i \"$input_f\" \"$out_f\""
-	echo "$F_line"
-	_msg_info "以下为程序输出："
-	(ffmpeg -i "$input_f" "$out_f" && rm "$input_f" && _msg_info "'$input_f' 完成转换！" "$F_yellow") || (_msg_warning "'$input_f' 转换出现问题！" && exit -1)
+    _msg_info "输入文件：'$input_f'"
+    _msg_info "ffmpeg -i \"$input_f\" \"$out_f\""
+    echo "$F_line"
+    _msg_info "以下为程序输出："
+    (ffmpeg -i "$input_f" "$out_f" && rm "$input_f" && _msg_info "'$input_f' 完成转换！" "$F_yellow") || (_msg_warning "'$input_f' 转换出现问题！" && exit -1)
 }
 
 add_info() {
-	# 输入文件
-	input_f=$(printf "./%s.mp3" $file_name_format)
-	# 输出文件
-	out_f=$(printf "./out/%s.mp3" $file_name_format)
+    # 输入文件
+    input_f=$(printf "./%s.mp3" $file_name_format)
+    # 输出文件
+    out_f=$(printf "./out/%s.mp3" $file_name_format)
 
-	icon=$(printf "./%s.jpg" $file_name_format)
-	title=$(echo $file_name_format |sed 's/^.* - \(.*\)/\1/')
-	# album
+    icon=$(printf "./%s.jpg" $file_name_format)
+    title=$(echo $file_name_format |sed 's/^.* - \(.*\)/\1/')
+    # album
 
-	if [[ $album == "NULL" ]] {
-		album=$title
-	}
+    if [[ $album == "NULL" ]] {
+        album=$title
+    }
 
-	# 设置输出文件
-	if [[ -e "./out" ]] {
-		if [[ ! -d "./out" ]] {
-			_msg_warning "存在输出文件，为防止出错，退出"
-			exit -1
-		}
-	}
-	if [[ ! -d "./out" ]] {
-		_msg_info "不存在输出目录，将创建" "$F_yellow"
-		mkdir "./out" || (_msg_warning "创建文件夹失败，退出" && exit -1)
-	}
+    # 设置输出文件
+    if [[ -e "./out" ]] {
+        if [[ ! -d "./out" ]] {
+            _msg_warning "存在输出文件，为防止出错，退出"
+            exit -1
+        }
+    }
+    if [[ ! -d "./out" ]] {
+        _msg_info "不存在输出目录，将创建" "$F_yellow"
+        mkdir "./out" || (_msg_warning "创建文件夹失败，退出" && exit -1)
+    }
 
-	cmd="ffmpeg -i \"$i\" $arg2 $arg \"$out\" >$logfile 2>&1"
+    cmd="ffmpeg -i \"$i\" $arg2 $arg \"$out\" >$logfile 2>&1"
 
-	# 检查
-	if [[ -e $out ]] {
-		_msg_info $i
-		_msg_info "输出文件已存在，跳过" "$F_yellow"
-		echo "$F_line"
-		return 0
-	}
+    # 检查
+    if [[ -e $out ]] {
+        _msg_info $i
+        _msg_info "输出文件已存在，跳过" "$F_yellow"
+        echo "$F_line"
+        return 0
+    }
 
-	echo "$F_line"
-	_msg_info "'$input_f'"
-	_msg_info "$title"
-	_msg_info "$artist"
-	_msg_info "$icon"
-	_msg_info "$cmd"
-	echo "$F_line"
-	# 设置图标
-	_msg_info "以下为程序输出："
-	if [[ -f "$icon" ]] {
-		(ffmpeg\
-			-i "$input_f"                                 \
-			-i "$icon" -map 0:0 -map 1:0 -id3v2_version 3 \
-			-c copy                                       \
-			-metadata album="$album"                      \
-			-metadata artist="$artist"                    \
-			-metadata title="$title"                      \
-			-metadata:s:v title='Album cover'             \
-			-metadata:s:v comment='Cover (Front)'         \
-			"$out_f" &&
-			rm "$input_f" "$icon" &&
-			_msg_info "'$input_f' 完成转换！" "$F_yellow"
-		) || _msg_warning "'$input_f' 转换出现问题！"
-	} else {
-		(ffmpeg\
-			-i "$input_f"                                 \
-			-c copy                                       \
-			-metadata album="$album"                      \
-			-metadata artist="$artist"                    \
-			-metadata title="$title"                      \
-			-metadata:s:v title='Album cover'             \
-			-metadata:s:v comment='Cover (Front)'         \
-			"$out_f" &&
-			rm "$input_f" &&
-			_msg_info "'$input_f' 完成转换！" "$F_yellow"
-		) || _msg_warning "'$input_f' 转换出现问题！"
-	}
+    echo "$F_line"
+    _msg_info "'$input_f'"
+    _msg_info "$title"
+    _msg_info "$artist"
+    _msg_info "$icon"
+    _msg_info "$cmd"
+    echo "$F_line"
+    # 设置图标
+    _msg_info "以下为程序输出："
+    if [[ -f "$icon" ]] {
+        (ffmpeg\
+            -i "$input_f"                                 \
+            -i "$icon" -map 0:0 -map 1:0 -id3v2_version 3 \
+            -c copy                                       \
+            -metadata album="$album"                      \
+            -metadata artist="$artist"                    \
+            -metadata title="$title"                      \
+            -metadata:s:v title='Album cover'             \
+            -metadata:s:v comment='Cover (Front)'         \
+            "$out_f" &&
+            rm "$input_f" "$icon" &&
+            _msg_info "'$input_f' 完成转换！" "$F_yellow"
+        ) || _msg_warning "'$input_f' 转换出现问题！"
+    } else {
+        (ffmpeg\
+            -i "$input_f"                                 \
+            -c copy                                       \
+            -metadata album="$album"                      \
+            -metadata artist="$artist"                    \
+            -metadata title="$title"                      \
+            -metadata:s:v title='Album cover'             \
+            -metadata:s:v comment='Cover (Front)'         \
+            "$out_f" &&
+            rm "$input_f" &&
+            _msg_info "'$input_f' 完成转换！" "$F_yellow"
+        ) || _msg_warning "'$input_f' 转换出现问题！"
+    }
 }
 
 if [[ $1 == "-h" ]] {
-	usage
+    usage
 } elif [[ $1 == "-v" ]] {
-	vip="true"
+    vip="true"
 }
 
 for i ({1..100}) {
-	clear
-	echo $F_line
-	download
-	clear
-	if [[ $file_type != "mp3" ]] {
-		echo "$F_line"
-		m4a_to_mp3
-		clear
-	}
-	echo "$F_line"
-	add_info
+    # clear
+    echo $F_line
+    download
+    # clear
+    if [[ $file_type != "mp3" ]] {
+        echo "$F_line"
+        m4a_to_mp3
+        # clear
+    }
+    echo "$F_line"
+    add_info
 }
 
