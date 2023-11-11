@@ -48,8 +48,10 @@ int check(int *c)
 	return flag;
 }
 
-
-int main(void)
+/*
+ * get list
+ */
+int get_list(void)
 {
 	int count = 2;
 
@@ -67,13 +69,56 @@ int main(void)
 	}
 	free(pNew);
 	pEnd->next = NULL;
+	return 0;
+}
 
+/*
+ * print result
+ */
+int print_1(int flag)
+{
 	printf("计算出%d以内的质数:\n", Lim);
-	pNew = head;
+	Linker *pNew = head, *pEnd = pNew;
 	while (pNew != NULL) {
-		printf("-> %d\n", pNew->number);
+		if (flag) {
+			printf("-> %d\t%d\n", pNew->number, pNew->number - pEnd->number);
+		} else {
+			printf("-> %d\n", pNew->number);
+		}
+		pEnd = pNew;
 		pNew = pNew->next;
 	}
+	return 0;
+}
+
+
+int main(int argc, char *argv[])
+{
+	int ch = 0;
+	int flag_l = 0;
+	while ((ch = getopt(argc, argv, "hl")) != -1) {
+		switch (ch) {
+		case 'h': {
+			printf("Usage:\n"
+			       "    number [-l]\n"
+			       "Options:\n"
+			       "    -h      Show this message\n"
+			       "    -l      显示质数差\n"
+			       );
+			return 0;
+			break;
+		}
+		case 'l': {
+			flag_l = 1;
+			break;
+		}
+		default:
+			break;
+		}
+	}
+	get_list();
+
+	print_1(flag_l);
 	return 0;
 }
 
