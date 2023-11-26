@@ -121,6 +121,13 @@ class Power_A(VGroup):
         cir = Circle(color=WHITE).scale(0.5).set_fill(BLACK, opacity=1)
         text = Text("A")
         self.add(cir, text)
+    def state_normal(self):
+        # self[0].set_fill(BLACK, opacity=1)
+        self.set_stroke(WHITE)
+    def state_work(self):
+        self.set_stroke(GREEN)
+    def state_error(self):
+        self.set_stroke(RED)
     def text_change(self, text, direction = UP):
         if len(self) == 2:
             text2 = Text(text)
@@ -163,6 +170,18 @@ class Power_R(Power_used):
         pol = Polygon([-0.5, 0.1, 0], [0.5, 0.1, 0], [0.5, -0.1, 0], [-0.5, -0.1, 0], color=WHITE).set_fill(BLACK, opacity=1)
         pol2 = Polygon([-0.5, 0.1, 0], [0.5, 0.1, 0], [0.5, -0.1, 0], [-0.5, -0.1, 0], color=WHITE).set_fill(YELLOW, opacity=0)
         self.add(pol, pol2)
+    def text_change(self, text, direction = 0.5*UP):
+        if len(self) == 2:
+            text2 = Text(text)
+            text2.next_to(self[0], ORIGIN)
+            text2.shift(direction)
+            self.add(text2)
+            return Write(self[2])
+        else:
+            text2 = Text(text)
+            text2.next_to(self[0], ORIGIN)
+            text2.shift(direction)
+            return Transform(self[2], text2)
     def body(self):
         return self[1]
 
@@ -175,6 +194,18 @@ class Power_RC(Power_R):
         arrow = Power_arrow([[0.5, 0.5], [0, 0.5], [0, 0.1]])
         line = Line([0.5, 0, 0], [0.75, 0, 0], color=BLACK)
         self.add(line, pol, pol2, line2, arrow)
+    def text_change(self, text, direction = UP):
+        if len(self) == 5:
+            text2 = Text(text)
+            text2.next_to(self[0], ORIGIN)
+            text2.shift(direction)
+            self.add(text2)
+            return Write(self[5])
+        else:
+            text2 = Text(text)
+            text2.next_to(self[0], ORIGIN)
+            text2.shift(direction)
+            return Transform(self[5], text2)
     def body(self):
         return VGroup().add(self[1], self[2], self[3], self[4])
     def changer(self):
