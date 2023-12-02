@@ -77,6 +77,7 @@ int get_list(void)
  */
 int print_1(int flag)
 {
+	int count = 0;
 	printf("计算出%d以内的质数:\n", Lim);
 	Linker *pNew = head, *pEnd = pNew;
 	while (pNew != NULL) {
@@ -87,7 +88,9 @@ int print_1(int flag)
 		}
 		pEnd = pNew;
 		pNew = pNew->next;
+		count++;
 	}
+	printf("Total: %d\n", count);
 	return 0;
 }
 
