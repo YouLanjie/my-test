@@ -2,7 +2,7 @@
 # I = U / R
 
 if __name__ == "__main__":
-    command = "manim -pql ./Physical2.py Physical"
+    command = "manim -pql ./2023_11_19_PHY_IUR.py Physical"
     import os
     print("==> Run Command:")
     print(" -> " + command)

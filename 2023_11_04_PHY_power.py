@@ -2,7 +2,7 @@
 # 关于物理电学的动画演示源码
 
 if __name__ == "__main__":
-    command = "manim -pql ./Physical.py Physical"
+    command = "manim -pql ./2023_11_04_PHY_power.py Physical"
     import os
     print("==> Run Command:")
     print(" -> " + command)

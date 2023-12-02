@@ -2,7 +2,7 @@
 # W = Pt , P = UI , Q = I^2 * t
 
 if __name__ == "__main__":
-    command = "manim -pql ./Physical3.py Physical"
+    command = "manim -pql ./2023_11_26_PHY_PUI-QIRt.py Physical"
     import os
     print("==> Run Command:")
     print(" -> " + command)
