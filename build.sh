@@ -31,8 +31,12 @@ build_lib() {
 	cd ../../
 }
 
-declare -A build_arg=(["RSA.c"]="-lm" ["build.c"]="#" ["gtk.c"]="$(pkg-config --cflags --libs gtk+-3.0)")
 build_file() {
+	declare -A build_arg=(		\
+		["RSA.c"]="-lm"		\
+		["input.c"]="-lm"	\
+		["build.c"]="#"		\
+		["gtk.c"]="$(pkg-config --cflags --libs gtk+-3.0)")
 	if [[ $build_arg[$1] == "#" ]] {
 		return -1
 	}
@@ -84,7 +88,9 @@ while {getopts 'cf:nh?' arg} {
 
 if [[ $flag_cmd == "" ]] {
 	check
-	build_lib
+	if [[ ! -f include/lib/libtools.a ]] {
+		build_lib
+	}
 }
 if [[ $obj_file == "" ]] {
 	build_dir
