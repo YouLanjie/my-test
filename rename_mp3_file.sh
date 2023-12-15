@@ -6,14 +6,12 @@
 
 if [[ -f run.sh ]] {
 	echo "Please make sure the file 'run.sh' is not nessary and remove it by yourself."
+	exit 1
 }
 
-if [[ $1 == ""]] {
+dir=$1
+if [[ $1 == "" ]] {
 	dir="~/Musics/"
-}
-else
-{
-	dir=$1
 }
 list=$(ls $dir/*.mp3)
 
@@ -22,7 +20,7 @@ do
 	out=$(ffprobe "$line" 2>&1)
 	title=$(echo "$out"|grep title|sed -n "1p"|sed "s/.*: //")
 	artist=$(echo "$out"|grep artist|sed "s/.*: //")
-	if [[ $artist == "" || $title == "" ]]
+	if [[ $artist == "" || $title == "" ]];then
 		echo "WARN: file '$line' lost info:'$artist - $title'" >&2
 		continue
 	fi
