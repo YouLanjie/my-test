@@ -4,6 +4,8 @@
 
 int conversion(char inputF[150], char outputF[150], char dirname[100], int i);	//转换函数
 
+int flag_command = 0;
+
 int main(int argc, char *argv[])
 {
 	char             inputF[150],            /* 输入文件名 */
@@ -62,10 +64,14 @@ int main(int argc, char *argv[])
 	}
 	while (a != '0' && a != 'q' && a != 'Q' && a != 0x1B) {
 		system("clear");
-		printf("\033[1;32m欢迎使用批量格式转换小程序\n\033[31m原文件夹:\033[1;32m%s\t\033[0;31m目标格式:\033[1;32m%s\n\033[33m按下 1 键开始,按 0 退出\033[0m\n", dirname, type);
+		printf("\033[1;32m欢迎使用批量格式转换小程序\n\033[31m原文件夹:\033[1;32m%s\t\033[0;31m目标格式:\033[1;32m%s\n\033[33m按下 1 键开始,按下 2 键显示调试信息,按 0 退出\033[0m\n", dirname, type);
 		a = ctools_getch();
 		if (a != '0' && a != 'q' && a != 'Q' && a != 0x1B) {
 			printf("\033[1;32m开始转换...\033[0m\n\n");
+			if (a == '2') {
+				flag_command = 1;
+				a = '1';
+			} else flag_command = 0;
 		}
 		if (a == '\r' || a == '\n' || a == '1') {
 			dp = opendir(dirname);
@@ -170,6 +176,7 @@ int conversion(char inputF[150], char outputF[150], char dirname[100], int i)
 	strcat(command, " 2>&1");
 
 	gettimeofday(&time, NULL);
+	if (flag_command) printf("\033[1;33mINFO: [cmd]: \033[1;32m\'%s\'\033[0m\n", command);
 	fflush(stdout);
 	fflush(stderr);
 	if (system(command) != 0) {
