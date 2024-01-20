@@ -147,7 +147,10 @@ int input_string(void)
 			printf("\b \b");
 		}
 	}
-	if (count == 0) return 0;
+	if (count == 0) {
+		printf("\nFinal result:[\033[3m%s\033[0m]\n", "");
+		return 0;
+	}
 	pN = pH;
 	char *least = malloc(sizeof(char)*(count + 1));
 	while (pN != NULL) {
@@ -167,6 +170,7 @@ int input_char(void)
 	inp = ctools_getch();
 	printf("\033[4m%c\033[0m\n", inp);
 	if (inp == 0x1B) printf("Final result:[] <0x1B>\n");
+	else if (inp == '\r' || inp == '\n') printf("Final result:[] <0x%X>\n", inp);
 	else printf("Final result:[%c] <0x%X>\n", inp, inp);
 	return 0;
 }
