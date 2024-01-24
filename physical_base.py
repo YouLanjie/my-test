@@ -19,6 +19,18 @@ class Power_source(VGroup):
         self[1].set_stroke(RED)
     def body(self):
         return self[1]
+    def text_change(self, text, direction = UP):
+        if len(self) == 2:
+            text2 = Text(text)
+            text2.next_to(self[0], ORIGIN)
+            text2.shift(direction)
+            self.add(text2)
+            return Write(self[2])
+        else:
+            text2 = Text(text)
+            text2.next_to(self[0], ORIGIN)
+            text2.shift(direction)
+            return Transform(self[2], text2)
 
 class Power_used(VGroup):
     def __init__(self):
@@ -114,6 +126,34 @@ class Power_arrow(VGroup):
         pos_now = point[count]
         pos_now.append(z)
         self.add(Arrow(pos_last, pos_now))
+
+class Power_M(VGroup):
+    def __init__(self, point = [[-1, 0], [1, 0]]):
+        VGroup.__init__(self)
+        cir = Circle(color=WHITE).scale(0.5).set_fill(BLACK, opacity=1)
+        text = Text("M")
+        self.add(cir, text)
+    def state_normal(self):
+        # self[0].set_fill(BLACK, opacity=1)
+        self.set_stroke(WHITE)
+    def state_work(self):
+        self.set_stroke(GREEN)
+    def state_error(self):
+        self.set_stroke(RED)
+    def text_change(self, text, direction = UP):
+        if len(self) == 2:
+            text2 = Text(text)
+            text2.next_to(self[0], ORIGIN)
+            text2.shift(direction)
+            self.add(text2)
+            return Write(self[2])
+        else:
+            text2 = Text(text)
+            text2.next_to(self[0], ORIGIN)
+            text2.shift(direction)
+            return Transform(self[2], text2)
+    def body(self):
+        return VGroup().add(self[0], self[1])
 
 class Power_A(VGroup):
     def __init__(self, point = [[-1, 0], [1, 0]]):
