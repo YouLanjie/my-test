@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网易云音乐信息快速获取
 // @namespace    http://tampermonkey.net/
-// @version      0.1.6
+// @version      0.1.7
 // @description  解析下载链接
 // @author       水煮木头
 // @match        *://music.163.com/*
@@ -24,19 +24,18 @@
         //alert("复制成功！确认通知后自动暂停音乐");
     }
     function load() {
-        var download_url = "NULL";
-        var img = "NULL";
-        var title = "NULL";
-        var subtitle = "NULL";
-        var artists = "NULL";
-        var album = "NULL";
+        var download_url = "";
+        var img = "";
+        var title = "";
+        var subtitle = "";
+        var artists = "";
+        var album = "";
         let flag_info = 0;
         function local_copy(){
+            copy(download_url + "\n" + img[0].currentSrc + "\n" + title[0].innerText + "\n" + subtitle[0].innerText + "\n" + artists + "\n" + album[0].innerText + "\n");
             if (JSON.stringify(subtitle) === '{}') {
-                copy(download_url + "\n" + img[0].currentSrc + "\n" + title[0].innerText + "\n2\n" + artists + "\n" + album[0].innerText + "\n");
                 local_notice(download_url, img[0].currentSrc, artists + " - " + title[0].innerText, album[0].innerText);
             } else {
-                copy(download_url + "\n" + img[0].currentSrc + "\n" + title[0].innerText + "\n1\n" + subtitle[0].innerText + "\n" + artists + "\n" + album[0].innerText + "\n");
                 local_notice(download_url, img[0].currentSrc, artists + " - " + title[0].innerText + "(" + subtitle[0].innerText + ")", album[0].innerText);
             }
         }
@@ -59,8 +58,8 @@
             dom2.id = "local_result_music";
             dom2.href = music_link;
             dom2.innerText = "音乐链接";
-            if (music_link == 'NULL') {
-                dom2.innerText = "音乐链接:NULL";
+            if (music_link == '') {
+                dom2.innerText = "音乐链接:<空>";
             }
             dom2.onclick = copy_name;
             dom.appendChild(dom2);
@@ -79,9 +78,16 @@
             let dom5 = document.createElement('a');
             dom5.id = "local_button_recopy";
             // dom5.href = cover_link;
-            dom5.innerText = "点这重新复制";
+            dom5.innerText = "点这重新复制信息";
             dom5.onclick = local_copy;
             dom.appendChild(dom5);
+            dom.appendChild(document.createElement('br'));
+            let dom6 = document.createElement('a');
+            dom6.id = "local_button_recopy";
+            // dom6.href = cover_link;
+            dom6.innerText = "点这复制音乐名";
+            dom6.onclick = copy_name;
+            dom.appendChild(dom6);
         }
         function local_func (){
             var temp = document.getElementById("g_iframe").contentWindow;  // 进入新的窗口
@@ -103,7 +109,7 @@
 
             setTimeout(function (){
                 var tmp=performance.getEntriesByType("resource");
-                download_url = "NULL";
+                download_url = "";
                 if (JSON.stringify(tmp) === '{}') {
                     console.log("警告！您未有任何请求资源！");
                     download_url = "";
@@ -115,7 +121,7 @@
                         break;
                     }
                 }
-                if (download_url == "NULL") {
+                if (download_url == "") {
                     console.log("警告！未能成功获取下载链接！请在播放您想要下载的资源后重试！");
                 }
 
