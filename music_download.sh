@@ -94,16 +94,16 @@ download() {
 	get_info
 	_msg_info "音频链接: $link"
 	# 下载音频
+	name_f="${format}.${extension}"
 	if [[ $link != "" && $link != "NULL" ]] {
-		name_f="${format}.${extension}"
 		echo $F_line
 		_msg_info "wget \"$link\" -O \"$name_f\""
 		wget "$link" -O "$name_f"||(_msg_warning "错误！下载出错" && exit -1)
 	} elif [[ $input_dir != "" ]] {
-		([[ $flag_name == "true" ]] && name_f="\.mp3\|\.m4a") || name_f="${format}\.\(mp3\|\.m4a\)"
-		name_f=$(ls "$input_dir"|grep "$name_f"|sed -n "1p")
+		[[ $flag_name == "true" ]] && grep_f="\.mp3\|\.m4a" || grep_f="${format}\.\(mp3\|\.m4a\)"
+		input_f=$(ls "$input_dir"|grep "$grep_f"|sed -n "1p")
 		_msg_info "mv \""$input_dir/$name_f"\" \"$name_f\""
-		[[ -f "$input_dir/$name_f" ]] && (mv "$input_dir/$name_f" "$name_f" || (_msg_warning "错误！移动文件出错" && exit -1))
+		[[ -f "$input_dir/$input_f" ]] && (mv "$input_dir/$input_f" "$name_f" || (_msg_warning "错误！移动文件出错" && exit -1))
 	}
 	# 下载封面
 	name_f="${format}.jpg"
