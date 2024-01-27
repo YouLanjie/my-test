@@ -83,27 +83,26 @@ get_info() {
 	link=$(echo $link|sed "s/?authSecret=.*//")
 	# 获取高清的封面链接
 	img_link=$(echo "$img_link" |sed 's/\(^.*\.jpg\).*/\1/')
-	# 获取文件后缀名
-	extension=$(echo $link|sed "s/.*\.//")
 	# 设置文件名（没有扩展名）
 	format=$(printf "${artist} - ${title}(${subtitle})")
-	if [[ $subtitle == "" ]] {
-		format=$(printf "${artist} - ${title}")
-	}
+	[[ $subtitle == "" ]] && format=$(printf "${artist} - ${title}")
+	# 获取文件后缀名
+	[[ $link != "" ]] && extension=$(echo $link|sed "s/.*\.//")
 }
 
 download() {
 	get_info
 	_msg_info "音频链接: $link"
 	# 下载音频
-	name_f="${format}.${extension}"
-	if [[ $link != "" ]] {
+	if [[ $link != "" && $link != "NULL" ]] {
+		name_f="${format}.${extension}"
 		echo $F_line
 		_msg_info "wget \"$link\" -O \"$name_f\""
 		wget "$link" -O "$name_f"||(_msg_warning "错误！下载出错" && exit -1)
 	} elif [[ $input_dir != "" ]] {
-		[[ $flag_name == "true" ]] && name_f="*.${extension}"
-		_msg_info "mv \""$input_dir/$name_f"\" -O \"$name_f\""
+		([[ $flag_name == "true" ]] && name_f="\.mp3\|\.m4a") || name_f="${format}\.\(mp3\|\.m4a\)"
+		name_f=$(ls "$input_dir"|grep "$name_f"|sed -n "1p")
+		_msg_info "mv \""$input_dir/$name_f"\" \"$name_f\""
 		[[ -f "$input_dir/$name_f" ]] && (mv "$input_dir/$name_f" "$name_f" || (_msg_warning "错误！移动文件出错" && exit -1))
 	}
 	# 下载封面
