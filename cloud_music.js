@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网易云音乐信息快速获取
 // @namespace    http://tampermonkey.net/
-// @version      0.1.7
+// @version      0.1.8
 // @description  解析下载链接
 // @author       水煮木头
 // @match        *://music.163.com/*
@@ -32,11 +32,11 @@
         var album = "";
         let flag_info = 0;
         function local_copy(){
-            copy(download_url + "\n" + img[0].currentSrc + "\n" + title[0].innerText + "\n" + subtitle[0].innerText + "\n" + artists + "\n" + album[0].innerText + "\n");
+            copy(download_url + "\n" + img[0].currentSrc + "\n" + title[0].innerText + "\n" + subtitle + "\n" + artists + "\n" + album[0].innerText + "\n");
             if (JSON.stringify(subtitle) === '{}') {
                 local_notice(download_url, img[0].currentSrc, artists + " - " + title[0].innerText, album[0].innerText);
             } else {
-                local_notice(download_url, img[0].currentSrc, artists + " - " + title[0].innerText + "(" + subtitle[0].innerText + ")", album[0].innerText);
+                local_notice(download_url, img[0].currentSrc, artists + " - " + title[0].innerText + "(" + subtitle + ")", album[0].innerText);
             }
         }
         // UI结果显示
@@ -94,6 +94,11 @@
             img = temp.document.getElementsByClassName("j-img");       // 封面
             title = temp.document.getElementsByClassName("f-ff2");     // 歌曲名
             subtitle = temp.document.getElementsByClassName("subtit"); // 副标题
+            if (JSON.stringify(subtitle) === '{}') {
+                subtitle = "";
+            } else {
+                subtitle = subtitle[0].innerText;
+            }
 
             var temp2 = temp.document.getElementsByClassName("s-fc4");     // 歌手 + 专辑
             var artist = temp2[0].getElementsByClassName("s-fc7");         // 歌手
@@ -127,8 +132,8 @@
 
                 console.log("封面链接：\n" + img[0].currentSrc);
                 console.log("曲名：\n" + title[0].innerText);
-                if (JSON.stringify(subtitle) !== '{}') {
-                    console.log("副标题：\n" + subtitle[0].innerText);
+                if (subtitle != "") {
+                    console.log("副标题：\n" + subtitle);
                 }
                 artists=artist[0].innerText;
                 for(var i2 = 1, len = artist.length; i2 < len; i2++) {
@@ -137,7 +142,6 @@
                 console.log("歌手：\n" + artists);
                 console.log("专辑：\n" + album[0].innerText);
                 local_copy();
-                // alert("下载链接" + download_url + "封面链接：\n" + img[0].currentSrc + "曲名：\n" + title[0].innerText + "歌手：\n" + my_local[1].innerText + "\n专辑：\n" + my_local[2].innerText);
                 document.getElementsByClassName("ply")[0].click();
             }, 2000);
             /*   ^
