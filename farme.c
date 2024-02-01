@@ -19,26 +19,31 @@ int is_move(int *v, int l);
 void b_null_func(void);
 void b_2_func(void);
 void b_3_func(void);
+void b_4_func(void);
+void b_5_func(void);
 
 
 struct block_rules {
 	char p;
 	int is_move;
+	int is_tp;
 	void (*func)();
 } b_rules[] = {
-	{'#', 0, b_null_func},
-	{'.', 1, b_null_func},
-	{'+', 0, b_2_func},
-	{'/', 1, b_3_func},
+	{'#', 0, 0, b_null_func},
+	{'.', 1, 0, b_null_func},
+	{'+', 0, 0, b_2_func},
+	{'/', 1, 1, b_3_func},
+	{'+', 0, 0, b_4_func},
+	{'/', 1, 1, b_5_func},
 };
 
 int inp = 0;
 int map[10][10] = {/*{{{*/
-	{0, 0, 2, 0, 2, 0, 0, 2, 0, 0},
+	{0, 0, 2, 0, 4, 0, 0, 2, 0, 0},
 	{0, 1, 1, 1, 1, 1, 1, 1, 1, 0},
 	{0, 1, 1, 1, 1, 1, 1, 1, 1, 0},
 	{0, 1, 1, 1, 1, 1, 1, 1, 1, 0},
-	{2, 1, 1, 1, 1, 1, 1, 1, 1, 2},
+	{2, 1, 1, 1, 1, 1, 1, 1, 1, 4},
 	{0, 1, 1, 1, 1, 1, 1, 1, 1, 0},
 	{0, 1, 1, 1, 1, 1, 1, 1, 1, 0},
 	{0, 1, 1, 1, 1, 1, 1, 1, 1, 0},
@@ -47,6 +52,8 @@ int map[10][10] = {/*{{{*/
 };/*}}}*/
 int x = 4, y = 4;
 int flag_use = 0;
+int flag_win = 0;
+int flag_bl5 = 0;
 
 int main(void)
 {/*{{{*/
@@ -58,7 +65,7 @@ int main(void)
 	pthread_create(&pid2, NULL, logic, NULL);
 	while (inp != 'q') {
 		usleep(10000/20);
-		printf("Your Type:%c X:%2d  Y:%2d flag_use:%d\r\n", inp, x, y, flag_use);
+		printf("Your Type:%c\r\n", inp);
 		for (int i = 0; i < 10; i++) {
 			for (int j = 0; j < 10; j++) {
 				if (i == y && j == x) {
@@ -67,10 +74,17 @@ int main(void)
 				}
 				printf("%c", b_rules[map[i][j]].p);
 			}
+			if (i == 0) printf(" |  X:%2d  Y:%2d  | Type `q` to return,`wasd` to move,", x, y);
+			else if (i == 1) printf(" |  flag_use:%2d | `u` to use the object in your select way.", flag_use);
+			else if (i == 2) printf(" | flag_win:%3d | Some block can walk and some are not.", flag_win);
+			else if (i == 3) printf(" |              | Some block have special event.");
+			else if (i == 4) printf(" |  walk:  . /  | Find the way to leave there!");
+			else if (i == 5) printf(" |  nwalk: # +  | Good Luck!");
 			printf("\r\n");
 		}
 		printf("\033[11A");
 	}
+	printf("\033[11B");
 	printf("\033[?25h");
 	return 0;
 }/*}}}*/
@@ -132,26 +146,60 @@ void b_null_func(void)
 	return;
 }/*}}}*/
 
-
 void b_2_func(void)
 {/*{{{*/
 	map[y][x] = 3;
 	return;
 }/*}}}*/
 
-
 void b_3_func(void)
 {/*{{{*/
+	srand(time(NULL));
+	if (flag_bl5 == 0) {
+		flag_win -= (rand() % 10 > 5 ? 0 : rand() % 10 );
+		if (rand() % 100 > 95) map[y][x] = 5;
+	}
 	int i = 0, j = 0;
+	int all = 0;
 	for (i = 0; i < 10; i++) {
 		for (j = 0; j < 10; j++) {
-			if (map[i][j] == 3 && (i != 0 || j != 0)) {
-				x = j;
-				y = i;
-				break;
+			if (b_rules[map[i][j]].is_tp && (i != 0 || j != 0) && i != y && j != x) {
+				all++;
 			}
 		}
 	}
+	srand(time(NULL));
+	int count = (all == 1) ? 1 : rand() % (all - 1) + 1;
+	int count2 = 0;
+	for (i = 0; i < 10; i++) {
+		for (j = 0; j < 10; j++) {
+			if (b_rules[map[i][j]].is_tp && (i != 0 || j != 0) && i != y && j != x) {
+				count2++;
+				if (count2 == count) {
+					x = j;
+					y = i;
+					break;
+				}
+			}
+		}
+	}
+	return;
+}/*}}}*/
+
+void b_4_func(void)
+{/*{{{*/
+	map[y][x] = 5;
+	return;
+}/*}}}*/
+
+void b_5_func(void)
+{/*{{{*/
+	srand(time(NULL));
+	if (rand() % 100 < 6) map[y][x] = 3;
+	flag_bl5 = 1;
+	flag_win++;
+	b_3_func();
+	flag_bl5 = 0;
 	return;
 }/*}}}*/
 
