@@ -11,10 +11,7 @@
  *
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <time.h>
+#include "include/tools.h"
 
 #define SECOND 1000000
 #define TPS    (SECOND / 20)
@@ -32,7 +29,7 @@
 #define MARK_C  ":;"
 
 int **Maze = NULL;
-static int Rank = 0; //控 制迷宫的复杂度，数值越大复杂度越低，最小值为0
+static int Rank = 0; // 控制迷宫的复杂度，数值越大复杂度越低，最小值为0
 int level = 0;
 
 void init();
@@ -93,6 +90,10 @@ void init()
 void print_map()
 {				/*{{{ */
 	int l = L - 2;
+	int deep = L * L / 2 - Rank;
+	struct winsize size;
+	ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
+
 	//画迷宫
 	for (int i = 1; i < L - 1; i++) {
 		for (int j = 1; j < L - 1; j++) {
@@ -106,9 +107,16 @@ void print_map()
 	printf("\033[%dC  | 全图边长: %d\n", l*2, L);
 	printf("\033[%dC  | 实体边长: %d\n", l*2, l);
 	printf("\033[%dC  | 本体边长: %d\n", l*2, l - 2);
+	printf("\033[%dC  | 复杂度: %d (值越小越复杂) \n", l*2, Rank);
 	printf("\033[%dC  | 延迟时间:%.3fs\n", l*2, (double)(int)TPS/SECOND);
-	printf("\033[%dC  | 遍历深度: %d\n", l*2, level);
-	printf("\033[%dA", 6);
+	printf("\033[%dC  | 遍历深度: %-3d [%4.1f%%]\n", l*2, level, (double)level / deep * 100);
+	printf("\033[1A\033[%dC [", l*2 + 25);
+	int lim = size.ws_col - (l*2 + 28);
+	for (int i = 0; i < lim; i++) {
+		printf((double)i / lim < (double)level / deep ? "#" : " ");
+	}
+	printf("]\n");
+	printf("\033[%dA", 7);
 	return;
 }				/*}}} */
 
