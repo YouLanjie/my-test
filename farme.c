@@ -12,7 +12,7 @@
 #include "include/tools.h"
 #include <pthread.h>
 
-#define SECOND 100000
+#define SECOND 1000000
 #define TPS    SECOND / 20
 
 void *input();
