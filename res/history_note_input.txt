@@ -1,0 +1,19 @@
+title="test";
+background="bg1";
+obj="obj1";
+time1="2024-02-01";
+time2="2024-02-02";
+local="location";
+who="somebody's name";
+describe="some word here";
+end="what is the end of the story?";
+meaning="It's meaningless!";
+-
+title="test2";
+time1="2024-02-02";
+-
+title="test3";
+time1="2024-02-03";
+-
+title="test4";
+time1="2024-02-04";

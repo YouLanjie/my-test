@@ -11,9 +11,10 @@
 
 #include "include/tools.h"
 
-#define INPUT_FILE_NAME "/usr/local/share/history_note/input.txt"
-#define OUTPUT_FILE_NAME "/usr/local/share/history_note/output.txt"
+#define INPUT_FILE_NAME "./res/history_note_input.txt"
+#define OUTPUT_FILE_NAME "./res/history_note_output.txt"
 
+extern const ctools_menu CT_MENU;
 extern ctools_config CT_CONF;
 
 /* 不同条目的内容 */
@@ -53,7 +54,7 @@ static int print(struct Note *pNew)
 		pTemp = pNew->data;
 		while (pTemp != NULL) {
 			if (p->get_str(pTemp) != NULL) printf("\033[0;1;32m==> \033[1;33m%s \033[0;31m: \033[1;34m%s\n", get_tag(p->get_name(pTemp)), p->get_str(pTemp));
-			pTemp = p->get_next(pTemp);
+			pTemp = p->get_next_node(pTemp);
 		}
 		printf("\033[0;32m==> ===========================\033[0m\n");
 		pNew = pNew->next;
@@ -76,7 +77,7 @@ static int save(char *filename, struct Note *pNew)
 		pTemp = pNew->data;
 		while (pTemp != NULL) {
 			if (p->get_str(pTemp) != NULL) fprintf(fp, "%s=\"%s\";\n", p->get_name(pTemp), p->get_str(pTemp));
-			pTemp = p->get_next(pTemp);
+			pTemp = p->get_next_node(pTemp);
 		}
 		pNew = pNew->next;
 		if (pNew != NULL) fprintf(fp, "-\n");
@@ -102,23 +103,26 @@ static struct Note *sort_time(struct Note *pNew)
 
 	if (pNew == NULL) return NULL;
 	while (pOHead != NULL) {
-		pMark = pNew;
+		pMark = pNew = pOHead;
 		while (pNew != NULL) {    /* 标记要替换的内容 */
 			data = pNew->data;
-			while (data != NULL && strcmp("time1", p->get_name(data)) != 0) data = p->get_next(data);
+			while (data != NULL && strcmp("time1", p->get_name(data)) != 0) data = p->get_next_node(data);
 			data2 = pMark->data;
-			while (data2 != NULL && strcmp("time1", p->get_name(data2)) != 0) data2 = p->get_next(data2);
+			while (data2 != NULL && strcmp("time1", p->get_name(data2)) != 0) data2 = p->get_next_node(data2);
 			if (data == NULL) {
 				printf("\033[0;32m==> \033[1;34m[ERROR] sort_time:\033[1;31m不存在`time1`标记！\033[0m\n");
 				/* printf("\033[0;32m==> \033[1;34m[INFO] sort_time:title:\033[33m%s\033[0m\n"); */
 				return NULL;
 			}
-			if (strcmp(p->get_str(data2), p->get_str(data)) > 0) pMark = pNew;
+			if (p->get_str(data2) != NULL
+			    && p->get_str(data) != NULL
+			    && strcmp(p->get_str(data2), p->get_str(data)) > 0)
+				pMark = pNew;
 			pNew = pNew->next;
 		}
 		/* 建立链接 */
 		if (pNHead == NULL) pTmp = pNHead = pMark;    /* 为空 */
-		else {    /* 非空 */
+		else if (pTmp != NULL){    /* 非空 */
 			pTmp->next = pMark;
 			pTmp = pTmp->next;
 		}
@@ -146,9 +150,10 @@ struct Note *read_note(char *filename)
 
 	fp = fopen(filename, "r");
 	if (!fp) return NULL;
-	for (char i = '1'; i != '\0' && i != EOF; i = fgetc(fp)) {    /* 分段读取 */
+	for (int i = '1'; i != '\0' && i != EOF; i = fgetc(fp)) {    /* 分段读取 */
 		base = malloc(sizeof(char)*2);
-		for (i = fgetc(fp); i != '\0' && i != EOF && i != '-'; i = fgetc(fp)) {
+		int i2 = '\n';
+		for (i = fgetc(fp); i != '\0' && i != EOF && (i != '-' || i2 != '\n'); i2 = i, i = fgetc(fp)) {
 			base2 = malloc(sizeof(char)*(strlen(base) + 2));
 			/* memset(base2, 0, sizeof(base2)); */
 			sprintf(base2, "%s%c", base, i);
@@ -156,7 +161,7 @@ struct Note *read_note(char *filename)
 			base = base2;
 		}
 		pNew = malloc(sizeof(struct Note));
-		pNew->data = p->runner(base);
+		pNew->data = p->run_char(base);
 		pNew->next = NULL;
 		if (list == NULL) list = pNew;
 		if (pLast != NULL) pLast->next = pNew;
@@ -169,7 +174,7 @@ struct Note *read_note(char *filename)
 	return list;
 }
 
-#define Swich(ch) { node = list->data; while (node != NULL && strcmp(p->get_name(node), ch) != 0) {node = p->get_next(node);}}
+#define Swich(ch) { node = list->data; while (node != NULL && strcmp(p->get_name(node), ch) != 0) {node = p->get_next_node(node);}}
 /*
  * 在NCURSES显示笔记（子内容）
  */
