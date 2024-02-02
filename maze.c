@@ -4,7 +4,7 @@
  *   文件名称：maze.c
  *   创 建 者：u0_a221
  *   创建日期：2024年02月02日
- *   描    述：可视化显示迷宫生成(通过多线程实现)
+ *   描    述：可视化显示迷宫生成
  *             生成迷宫逻辑部分的代码原作者id:jjwwwww
  *             生成迷宫逻辑部分的代码参考链接:
  *             https://blog.csdn.net/jjwwwww/article/details/82872922
@@ -15,40 +15,36 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <time.h>
-#include <pthread.h>
 
 #define SECOND 1000000
 #define TPS    (SECOND / 20)
 
 //地图长度L，包括迷宫主体20，外侧的包围的墙体2，
 //最外侧包围路径2（之后会解释）
-#define L 24
+#define L (20 + 4)
 
 //墙和路径的标识
 #define WALL  0
 #define ROUTE 1
 #define MARK  2
+#define WALL_C  "国"
+#define ROUTE_C "  "
+#define MARK_C  ":;"
 
 int **Maze = NULL;
-int flag = 1;
-//控制迷宫的复杂度，数值越大复杂度越低，最小值为0
-static int Rank = 0;
+static int Rank = 0; //控 制迷宫的复杂度，数值越大复杂度越低，最小值为0
 int level = 0;
 
 void init();
-void *print_map();
-//生成迷宫
-void CreateMaze(int **maze, int x, int y);
+void print_map();
+void CreateMaze(int **maze, int x, int y); //生成迷宫
 
 int main(void)
 {				/*{{{ */
-	pthread_t pid;
-
 	printf("\033[?25l");
 	init();
-	pthread_create(&pid, NULL, print_map, NULL);
+	print_map();
 
-	usleep(SECOND / 2);
 	//创造迷宫，（2，2）为起点
 	CreateMaze(Maze, 2, 2);
 
@@ -64,9 +60,8 @@ int main(void)
 		}
 	}
 
-	usleep(SECOND / 2);
-	flag = 0;
-	usleep(TPS*4);
+	print_map();
+	printf("\033[%dB", L);
 
 	printf("\033[?25h");
 	for (int i = 0; i < L; i++)
@@ -95,26 +90,26 @@ void init()
 	return;
 }				/*}}} */
 
-void *print_map()
+void print_map()
 {				/*{{{ */
-	while (flag) {
-		//画迷宫
-		for (int i = 0; i < L; i++) {
-			for (int j = 0; j < L; j++) {
-				printf("%s",
-				       Maze[i][j] != WALL ? (Maze[i][j] == MARK ? "  " : ":;" ) : "国");
-				/*printf("%2d", Maze[i][j]);*/
-			}
-			printf("\n");
+	int l = L - 2;
+	//画迷宫
+	for (int i = 1; i < L - 1; i++) {
+		for (int j = 1; j < L - 1; j++) {
+			printf("%s",
+			       Maze[i][j] != WALL ? (Maze[i][j] == MARK ? MARK_C : ROUTE_C ) : WALL_C);
 		}
-		printf("\033[%dA", L);
-		printf("\033[%dC  | Level: %d\n", L*2, level);
-		printf("\033[%dA", 1);
-		usleep(TPS);
+		printf("\n");
 	}
-	printf("\033[%dB", L);
-	pthread_exit(NULL);
-	return NULL;
+	printf("\033[%dA", l);
+	printf("\033[%dC  | 符号解释: '%s'为遍历节点，'%s'为走道，'%s'为边墙\n", l*2, MARK_C, ROUTE_C, WALL_C);
+	printf("\033[%dC  | 全图边长: %d\n", l*2, L);
+	printf("\033[%dC  | 实体边长: %d\n", l*2, l);
+	printf("\033[%dC  | 本体边长: %d\n", l*2, l - 2);
+	printf("\033[%dC  | 延迟时间:%.3fs\n", l*2, (double)(int)TPS/SECOND);
+	printf("\033[%dC  | 遍历深度: %d\n", l*2, level);
+	printf("\033[%dA", 6);
+	return;
 }				/*}}} */
 
 void CreateMaze(int **maze, int x, int y)
@@ -170,6 +165,7 @@ void CreateMaze(int **maze, int x, int y)
 			//确保不会挖穿时，前进
 			--range;
 			maze[dx][dy] = ROUTE;
+			print_map();
 			usleep(TPS);
 		}
 
