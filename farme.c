@@ -12,6 +12,9 @@
 #include "include/tools.h"
 #include <pthread.h>
 
+#define SECOND 100000
+#define TPS    SECOND / 20
+
 void *input();
 void *logic();
 int is_move(int *v, int l);
@@ -64,7 +67,7 @@ int main(void)
 	pthread_create(&pid, NULL, input, NULL);
 	pthread_create(&pid2, NULL, logic, NULL);
 	while (inp != 'q') {
-		usleep(10000/20);
+		usleep(TPS);
 		printf("Your Type:%c\r\n", inp);
 		for (int i = 0; i < 10; i++) {
 			for (int j = 0; j < 10; j++) {
@@ -101,7 +104,7 @@ void *input()
 void *logic()
 {/*{{{*/
 	while (inp != 'q') {
-		usleep(10000/20);
+		usleep(TPS);
 		switch (inp) {
 		case 'w':
 			is_move(&y, -1);
