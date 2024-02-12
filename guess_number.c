@@ -17,14 +17,12 @@ int main()
 	    max = 1000,
 	    guess_number = rand() % (max - (min - 1)) + 1 + (min - 1),
 	    inp = 0,
-	    count = 0;
+	    count = 0,
+	    times = 0;
 
 	while (inp != guess_number) {
-		printf("Range:[%d-%d]\n"
-		       "Please input:\n", min, max);
+		printf("Times:%-3d Range:[%d-%d] Please input:", times, min, max);
 		scanf("%d", &inp);
-		printf("\033[A               \r"
-		       "\033[A               \r");
 		if (inp > max || inp < min) {
 			printf("Wrong number: out of the range!\n");
 			count++;
@@ -33,6 +31,7 @@ int main()
 				       "Let's retry again\n");
 				return -1;
 			}
+			continue;
 		} else if (inp > guess_number) {
 			max = inp - 1;
 			printf("More\n");
@@ -40,8 +39,10 @@ int main()
 			min = inp + 1;
 			printf("Less\n");
 		}
+		count = 0;
+		times++;
 	}
-	printf("Right!\n");
+	printf("%d is Right!\n", inp);
 	return 0;
 }
 
