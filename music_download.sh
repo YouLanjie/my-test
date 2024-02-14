@@ -84,8 +84,8 @@ get_info() {
 	# 获取高清的封面链接
 	img_link=$(echo "$img_link" |sed 's/\(^.*\.jpg\).*/\1/')
 	# 设置文件名（没有扩展名）
-	format=$(printf "${artist} - ${title}(${subtitle})")
-	[[ $subtitle == "" ]] && format=$(printf "${artist} - ${title}")
+	format="${artist} - ${title}(${subtitle})"
+	[[ $subtitle == "" ]] && format="${artist} - ${title}"
 	# 获取文件后缀名
 	[[ $link != "" ]] && extension=$(echo $link|sed "s/.*\.//")
 }
@@ -171,6 +171,7 @@ add_info() {
 	echo "$F_line"
 	# 设置图标
 	_msg_info "以下为程序输出："
+	[[ $subtitle != "" ]] && title="${title}(${subtitle})"
 	if [[ -f "$icon" ]] {
 		(ffmpeg\
 	            -i "$input_f"                                 \
