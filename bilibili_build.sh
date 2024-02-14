@@ -22,6 +22,7 @@ running() {
 		# echo "dir:$ind"
 		local title=""
 		title=$(cat "$line"|grep "download_subtitle" >/dev/null && cat "$line"|sed -n "s/.*\"download_subtitle\":\"\\([^\"]*\\)\".*/\\1/p" || cat "$line"|sed -n "s/.*\"title\":\"\\([^\"]*\\)\".*/\\1/p")
+		[[ $title == "" ]] && title=$(cat "$line"|sed -n "s/.*\"title\":\"\\([^\"]*\\)\".*/\\1/p")
 		if [[ $flag_info == "true" ]] {
 			echo "# $title <Dir: $ind>" >> $f_o
 		} else {
