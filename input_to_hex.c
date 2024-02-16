@@ -13,14 +13,22 @@
 
 int main(void)
 {
-	char ch[10];
+	int len = 256;
+	char ch[len];
 	printf("请输入:\n");
-	fgets(ch, 10, stdin);
-	for (int i = 0; i < 10; ++i) {
+	fgets(ch, len, stdin);
+	for (int i = 0; i < len && ch[i] != 0; ++i) {
+		unsigned int out = 0;
+		for (int i2 = 0; i2 < 32; i2++) out = out * 10 + ((ch[i] << i2) >> 31);
+		out = 0 - out;
+		printf("ch[\033[1;33m%3d\033[0m]: "
+		       "\033[1;32m0x\033[1;33m%03x\033[0m: "
+		       "\033[1;32m0b\033[1;33m%d\033[0m",
+		       i, ch[i], out);
 		if (ch[i] < '!') {
-			printf("ch[%d]:\033[1;32m0x\033[1;33m%x\033[0m\n", i, ch[i]);
+			printf("\n");
 		} else {
-			printf("ch[%d]:\033[1;32m0x\033[1;33m%x\033[0m\t%c\n", i, ch[i], ch[i]);
+			printf("\t%c\n", ch[i]);
 		}
 	}
 	return 0;

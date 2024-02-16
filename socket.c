@@ -22,6 +22,7 @@ char   sendbuf[MAXSIZE],    /* <ch>  接收缓冲区 */
 int flag_run = 0;
 int flag_file = 0;
 int flag_enter = '\r';
+int flag_exit = 1;
 char filename[MAXSIZE] = "(null)";
 
 struct termios flag_oldt;
@@ -32,6 +33,7 @@ int flag_termux;
  */
 void input(char *str)
 {
+	struct ctools ctools = ctools_init();
 	int ch    = 0,
 	    count = 0;
 	if (str == NULL) return;
@@ -39,18 +41,18 @@ void input(char *str)
 	memset(str,  0, sizeof(char)*MAXSIZE);
 	memset(str2, 0, sizeof(char)*MAXSIZE);
 	while (ch != 0x1B && ch != flag_enter) {
-		ch = ctools_getch();
-		if (ch == 0x1B && ctools_kbhit() != 0)
+		ch = ctools.getcha();
+		if (ch == 0x1B && ctools.kbhit() != 0)
 			ch = '\0';
 		if (ch & 0x80) {    /* If is Chinese */
 			printf("\033[0;37m%c", ch);
 			sprintf(str2, "%s%c", str, ch);
 			strcpy(str, str2);
-			ch = ctools_getch();
+			ch = ctools.getcha();
 			printf("%c", ch);
 			sprintf(str2, "%s%c", str, ch);
 			strcpy(str, str2);
-			ch = ctools_getch();
+			ch = ctools.getcha();
 			printf("%c\033[0m", ch);
 			sprintf(str2, "%s%c", str, ch);
 			strcpy(str, str2);
@@ -103,7 +105,7 @@ void *get_msg()
 	// 读取客户端发来的信息，会阻塞
 	time_t timep1;
 	struct tm *timep2;
-	while (1) {
+	while (flag_exit) {
 		ssize_t len = read(connect_fd, recbuf, sizeof(recbuf));
 		if (len <= 0){
 			if(len == 0 || errno == EINTR) {
@@ -171,7 +173,7 @@ int ui(void)
 			if (!fp) return -1;
 			char ch[2] = "0\0";
 			memset(sendbuf, 0, sizeof(sendbuf));
-			while (ch[0] != EOF) {
+			while (ch[0] != (char)EOF) {
 				ch[0] = fgetc(fp);
 				strcat(sendbuf, ch);
 			}
@@ -241,7 +243,8 @@ int ui(void)
 		//向客户端发送信息
 		write(connect_fd, sendbuf, sizeof(sendbuf));
 	}
-	pthread_cancel(pid);
+	flag_exit = 0;
+	/*pthread_cancel(pid);*/
 	usleep(50000);
 	return 0;
 }
@@ -420,5 +423,4 @@ int main(int argc, char *argv[])
 	else help(-3);
 	return 0;
 }
-
 

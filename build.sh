@@ -36,7 +36,7 @@ build_file() {
 		["RSA.c"]="-lm"		\
 		["input.c"]="-lm"	\
 		["build.c"]="#"		\
-		["gtk.c"]="$(pkg-config --cflags --libs gtk+-3.0)")
+		["gtk.c"]="$(pkg-config --cflags --libs gtk+-3.0 2>/dev/null || echo "#")")
 	if [[ $build_arg[$1] == "#" ]] {
 		return -1
 	}
