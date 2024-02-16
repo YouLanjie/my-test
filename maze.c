@@ -103,7 +103,8 @@ void print_map()
 		printf("\n");
 	}
 	printf("\033[%dA", l);
-	printf("\033[%dC  | 符号解释: '%s'为遍历节点，'%s'为走道，'%s'为边墙\n", l*2, MARK_C, ROUTE_C, WALL_C);
+	printf("\033[%dC  | 符号解释: '%s'为遍历节点,'%s'为走道\n", l*2, MARK_C, ROUTE_C);
+	printf("\033[%dC  |           '%s'为边墙\n", l*2, WALL_C);
 	printf("\033[%dC  | 全图边长: %d\n", l*2, L);
 	printf("\033[%dC  | 实体边长: %d\n", l*2, l);
 	printf("\033[%dC  | 本体边长: %d\n", l*2, l - 2);
@@ -116,7 +117,7 @@ void print_map()
 		printf((double)i / lim < (double)level / deep ? "#" : " ");
 	}
 	printf("]\n");
-	printf("\033[%dA", 7);
+	printf("\033[%dA", 8);
 	return;
 }				/*}}} */
 
