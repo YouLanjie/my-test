@@ -10,27 +10,28 @@ void stop();
 int main() {
 	FILE * fp;
 	unsigned int e = 0, n = 0, k = 0, d = 0, m = 0, c = 0, i = 0;
+	struct ctools ctools = ctools_init();
 
 	signal(SIGINT, stop);
-	Clear_SYS;
+	system("clear");
 	printf("\033[1;1H这是一个使用RSA不对称加密算法的测试程序\n请选择模式\n纯手动---1\n半自动---2\n");
-	i = ctools_getch();
-	Clear_SYS;
+	i = ctools.getcha();
+	system("clear");
 	if (i == '1') {
 		do {
 			printf("\033[1;1H这是一个使用RSA不对称加密算法的测试程序\n请输入三个整数值(e n k)，e要与φ(n)互质，以空格分开\n");
 			scanf("%d%d%d",&e, &n, &k);
 			getchar();
-			Clear_SYS;
+			system("clear");
 			if (!mgcd(e,eular(n))) {
 				printf("\033[1;31me与φ(n)不互质！\033[0mn=%d\nφ(n)=%d\n",n,eular(n));
-				ctools_getch();
-				Clear_SYS;
+				ctools.getcha();
+				system("clear");
 			}
 			if ((k * eular(n) + 1) % e != 0) {
 				printf("\033[1;31me与k乘φ(n)的积加1的和不能整除！\033[0mn=%d\nk * φ(n) + 1=%d\n",n,k * eular(n) + 1);
-				ctools_getch();
-				Clear_SYS;
+				ctools.getcha();
+				system("clear");
 			}
 		}while (!mgcd(e,eular(n)) || (k * eular(n) + 1) % e != 0);
 	}
@@ -64,21 +65,21 @@ int main() {
 		}
 	}
 	d = ( k * eular(n) + 1 ) / e;
-	Clear_SYS;
+	system("clear");
 	printf("最终参数：\ne=%d\nd=%d\nn=%d\n注意！加密的数字不能够超过n", e, d, n);
-	ctools_getch();
+	ctools.getcha();
 	i = 0;
 	while (i != 0x1B) {
-		Clear_SYS;
+		system("clear");
 		m = c = i = 0;
 		printf("加密或解密？\n加密---1\n解密---2\n");
-		i = ctools_getch();
-		Clear_SYS;
+		i = ctools.getcha();
+		system("clear");
 		if (i == '1') {
 			printf("请输入任意整数值(m)用于加密\n");
 			scanf("%d",&m);
 			getchar();
-			Clear_SYS;
+			system("clear");
 			c = pow(m, e);
 			c = c % n;
 			printf("源信息：%d\n加密信息：%d\n", m, c);
@@ -87,7 +88,7 @@ int main() {
 			printf("请输入任意整数值(c)用于解密\n");
 			scanf("%d",&c);
 			getchar();
-			Clear_SYS;
+			system("clear");
 			m = pow(c, d);
 			m = m % n;
 			printf("加密信息：%d\n解密信息：%d\n", c, m);
@@ -95,8 +96,8 @@ int main() {
 		else if (i == 0x1B) {
 			return 0;
 		}
-		i = ctools_getch();
-		Clear_SYS;
+		i = ctools.getcha();
+		system("clear");
 	}
 	return 0;
 }
@@ -137,7 +138,7 @@ int mgcd(int a,int b) {
 }
 
 void stop() {
-	Clear_SYS;
+	system("clear");
 	printf("Exiting......\n");
 	exit(0);
 }

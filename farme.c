@@ -10,7 +10,6 @@
 
 
 #include "include/tools.h"
-#include <pthread.h>
 
 #define SECOND 1000000
 #define TPS    SECOND / 20
@@ -95,7 +94,7 @@ int main(void)
 void *input()
 {/*{{{*/
 	while (inp != 'q') {
-		inp = ctools_getch();
+		inp = ctools_init().getcha();
 	}
 	pthread_exit(NULL);
 	return NULL;

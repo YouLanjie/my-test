@@ -14,9 +14,6 @@
 #define INPUT_FILE_NAME "./res/history_note_input.txt"
 #define OUTPUT_FILE_NAME "./res/history_note_output.txt"
 
-extern const ctools_menu CT_MENU;
-extern ctools_config CT_CONF;
-
 /* 不同条目的内容 */
 struct Note {
 	struct ctools_CONFIG_NODE *data;
@@ -47,14 +44,14 @@ const static char *get_tag(const char *ch)
  */
 static int print(struct Note *pNew)
 {
-	ctools_config *p = &CT_CONF;
+	struct ctools ctools = ctools_init();
 	struct ctools_CONFIG_NODE *pTemp = NULL;
 	printf("\033[0;32m==> ===========================\033[0m\n");
 	while (pNew != NULL) {
 		pTemp = pNew->data;
 		while (pTemp != NULL) {
-			if (p->get_str(pTemp) != NULL) printf("\033[0;1;32m==> \033[1;33m%s \033[0;31m: \033[1;34m%s\n", get_tag(p->get_name(pTemp)), p->get_str(pTemp));
-			pTemp = p->get_next_node(pTemp);
+			if (ctools.config.get_str(pTemp) != NULL) printf("\033[0;1;32m==> \033[1;33m%s \033[0;31m: \033[1;34m%s\n", get_tag(ctools.config.get_name(pTemp)), ctools.config.get_str(pTemp));
+			pTemp = ctools.config.get_next_node(pTemp);
 		}
 		printf("\033[0;32m==> ===========================\033[0m\n");
 		pNew = pNew->next;
@@ -68,16 +65,16 @@ static int print(struct Note *pNew)
  */
 static int save(char *filename, struct Note *pNew)
 {
+	struct ctools ctools = ctools_init();
 	FILE *fp = fopen(filename, "w");
-	ctools_config *p = &CT_CONF;
 	struct ctools_CONFIG_NODE *pTemp = NULL;
 
 	if (!fp) return -1;
 	while (pNew != NULL) {
 		pTemp = pNew->data;
 		while (pTemp != NULL) {
-			if (p->get_str(pTemp) != NULL) fprintf(fp, "%s=\"%s\";\n", p->get_name(pTemp), p->get_str(pTemp));
-			pTemp = p->get_next_node(pTemp);
+			if (ctools.config.get_str(pTemp) != NULL) fprintf(fp, "%s=\"%s\";\n", ctools.config.get_name(pTemp), ctools.config.get_str(pTemp));
+			pTemp = ctools.config.get_next_node(pTemp);
 		}
 		pNew = pNew->next;
 		if (pNew != NULL) fprintf(fp, "-\n");
@@ -91,7 +88,7 @@ static int save(char *filename, struct Note *pNew)
  */
 static struct Note *sort_time(struct Note *pNew)
 {
-	ctools_config *p = &CT_CONF;
+	struct ctools ctools = ctools_init();
 	struct Note
 		*pNHead = NULL,    /* 新表头 */
 		*pTmp   = NULL,    /* 新表临时指针 */
@@ -106,17 +103,17 @@ static struct Note *sort_time(struct Note *pNew)
 		pMark = pNew = pOHead;
 		while (pNew != NULL) {    /* 标记要替换的内容 */
 			data = pNew->data;
-			while (data != NULL && strcmp("time1", p->get_name(data)) != 0) data = p->get_next_node(data);
+			while (data != NULL && strcmp("time1", ctools.config.get_name(data)) != 0) data = ctools.config.get_next_node(data);
 			data2 = pMark->data;
-			while (data2 != NULL && strcmp("time1", p->get_name(data2)) != 0) data2 = p->get_next_node(data2);
+			while (data2 != NULL && strcmp("time1", ctools.config.get_name(data2)) != 0) data2 = ctools.config.get_next_node(data2);
 			if (data == NULL) {
 				printf("\033[0;32m==> \033[1;34m[ERROR] sort_time:\033[1;31m不存在`time1`标记！\033[0m\n");
 				/* printf("\033[0;32m==> \033[1;34m[INFO] sort_time:title:\033[33m%s\033[0m\n"); */
 				return NULL;
 			}
-			if (p->get_str(data2) != NULL
-			    && p->get_str(data) != NULL
-			    && strcmp(p->get_str(data2), p->get_str(data)) > 0)
+			if (ctools.config.get_str(data2) != NULL
+			    && ctools.config.get_str(data) != NULL
+			    && strcmp(ctools.config.get_str(data2), ctools.config.get_str(data)) > 0)
 				pMark = pNew;
 			pNew = pNew->next;
 		}
@@ -143,8 +140,8 @@ static struct Note *sort_time(struct Note *pNew)
  */
 struct Note *read_note(char *filename)
 {
+	struct ctools ctools = ctools_init();
 	FILE *fp;
-	const ctools_config *p = &CT_CONF;
 	struct Note *list = NULL, *pNew = NULL, *pLast = NULL;
 	char *base = NULL, *base2 = NULL;
 
@@ -161,7 +158,7 @@ struct Note *read_note(char *filename)
 			base = base2;
 		}
 		pNew = malloc(sizeof(struct Note));
-		pNew->data = p->run_char(base);
+		pNew->data = ctools.config.run_char(base);
 		pNew->next = NULL;
 		if (list == NULL) list = pNew;
 		if (pLast != NULL) pLast->next = pNew;
@@ -174,34 +171,33 @@ struct Note *read_note(char *filename)
 	return list;
 }
 
-#define Swich(ch) { node = list->data; while (node != NULL && strcmp(p->get_name(node), ch) != 0) {node = p->get_next_node(node);}}
+#define Swich(ch) { node = list->data; while (node != NULL && strcmp(ctools.config.get_name(node), ch) != 0) {node = ctools.config.get_next_node(node);}}
 /*
  * 在NCURSES显示笔记（子内容）
  */
 static int show_subnote(struct Note *list, int number)
 {
-	const ctools_menu *m = &CT_MENU;
-	const ctools_config *p = &CT_CONF;
+	struct ctools ctools = ctools_init();
 	struct ctools_menu_t *menu = NULL;
 	struct ctools_CONFIG_NODE *node = NULL;
 
 	for (int i = 0; i < number && list != NULL; ++i) list = list->next;
 	if (list == NULL) return -1;
 
-	m->data_init(&menu);
+	ctools.menu.data_init(&menu);
 	Swich("title");
-	m->set_title(menu, p->get_str(node));
+	ctools.menu.set_title(menu, ctools.config.get_str(node));
 
 	for (int i = 1; i < 10; ++i) {
 		Swich(tag_table[0][i]);
 		if (node != NULL) {
-			m->add_text(menu, (char*)tag_table[1][i]);
-			m->add_text_data(menu, "describe", p->get_str(node));
+			ctools.menu.add_text(menu, (char*)tag_table[1][i]);
+			ctools.menu.add_text_data(menu, "describe", ctools.config.get_str(node));
 		}
 	}
 	int input = -1;
 	while (input != 'q' && input != 0) {
-		input = m->show(menu);
+		input = ctools.menu.show(menu);
 		if (input == 0) continue;
 	}
 	free(menu);
@@ -213,34 +209,33 @@ static int show_subnote(struct Note *list, int number)
  */
 static int show_note(struct Note *list)
 {
-	const ctools_menu *m = &CT_MENU;
-	const ctools_config *p = &CT_CONF;
+	struct ctools ctools = ctools_init();
 	struct ctools_menu_t *menu = NULL;
 	struct ctools_CONFIG_NODE *node = NULL;
 	int input = -1;
 	struct Note *list2 = list;
 	char *str1 = NULL, *str2 = NULL, *str3 = NULL;
 
-	m->data_init(&menu);
-	m->set_title(menu, "笔记显示");
+	ctools.menu.data_init(&menu);
+	ctools.menu.set_title(menu, "笔记显示");
 	while (list != NULL) {
 		Swich("title");
-		m->add_text(menu, p->get_str(node));
+		ctools.menu.add_text(menu, ctools.config.get_str(node));
 		Swich("time1");
-		if (node != NULL) str1 = p->get_str(node);
+		if (node != NULL) str1 = ctools.config.get_str(node);
 		Swich("describe");
-		if (node != NULL) str2 = p->get_str(node);
+		if (node != NULL) str2 = ctools.config.get_str(node);
 		if (str1 == NULL) return -2;
 		if (str2 == NULL) str2 = " ";
 		str3 = malloc(sizeof(char)*(strlen(str1) + strlen(str2) + 2));
 		sprintf(str3, "%s\n%s", str1, str2);
-		m->add_text_data(menu, "describe", str3);
+		ctools.menu.add_text_data(menu, "describe", str3);
 		free(str3);
 		str1 = str2 = str3 = NULL;
 		list = list->next;
 	}
 	while (input != 'q' && input != 0) {
-		input = m->show(menu);
+		input = ctools.menu.show(menu);
 		if (input == 0) continue;
 		show_subnote(list2, input - 1);
 	}
@@ -251,7 +246,7 @@ static int show_note(struct Note *list)
 
 int main()
 {
-	const ctools_menu *m = &CT_MENU;
+	struct ctools ctools = ctools_init();
 	struct ctools_menu_t *menu = NULL;
 	struct Note *list = NULL;
 	int input = -1;
@@ -262,14 +257,14 @@ int main()
 		return -1;
 	}
 
-	m->ncurses_init();
+	ctools.menu.ncurses_init();
 	def_prog_mode();
-	m->data_init(&menu);
-	m->set_title(menu, "太酷辣");
-	m->set_text(menu, "查看笔记", "查看笔记（终端）", "保存文件", "退出程序", NULL);
-	m->set_text_data(menu, "describe", "%s%s%s", "在ncurses内部通过套用菜单库实现显示笔记的效果", "退出Ncurses在正常的终端界面显示历史事件（按照时间顺序排序）", "将排序后的文件输出保存", "选择此项即可退出程序");
+	ctools.menu.data_init(&menu);
+	ctools.menu.set_title(menu, "太酷辣");
+	ctools.menu.set_text(menu, "查看笔记", "查看笔记（终端）", "保存文件", "退出程序", NULL);
+	ctools.menu.set_text_data(menu, "describe", "%s%s%s", "在ncurses内部通过套用菜单库实现显示笔记的效果", "退出Ncurses在正常的终端界面显示历史事件（按照时间顺序排序）", "将排序后的文件输出保存", "选择此项即可退出程序");
 	while (input != 'q' && input != 0 && input != 4) {
-		input = m->show(menu);
+		input = ctools.menu.show(menu);
 		switch (input) {
 		case 1: {
 			show_note(list);
@@ -279,7 +274,7 @@ int main()
 			endwin();
 			print(list);
 			printf("\033[0;32m==> \033[1;33m按下任意按键返回\033[0m\n");
-			ctools_getch();
+			ctools.getcha();
 			reset_prog_mode();
 			break;
 		}
@@ -289,7 +284,7 @@ int main()
 			printf("%s\n%s\033[0m\n",
 			       "\033[0;32m==> \033[1;33m保存成功！",
 			       "\033[0;32m==> \033[1;33m按下任意按键返回");
-			ctools_getch();
+			ctools.getcha();
 			reset_prog_mode();
 			break;
 		}

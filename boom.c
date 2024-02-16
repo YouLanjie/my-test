@@ -5,17 +5,18 @@ enum unit{Exit = 48, Boom};
 void boom();
 
 int main() {
+	struct ctools ctools = ctools_init();
 	int i = 0;
 
 	printf("\033[?25l");
 	while(1) {
-		Clear_TER;
+		system("clear");
 		printf("请选择计算程序：\n0:Exit\n1:boom\n");
-		i = ctools_getch();
-		Clear_TER;
+		i = ctools.getcha();
+		system("clear");
 		switch (i) {
 			case Exit:
-				Clear_TER;
+				system("clear");
 				printf("\033[?25h");
 				return 0;
 				break;
@@ -30,6 +31,7 @@ int main() {
 }
 
 void boom() {
+	struct ctools ctools = ctools_init();
 	int a = 1,b = 1;
 	int s = 1,y = 0,h = 10,n = 1;
 
@@ -75,6 +77,6 @@ void boom() {
 	}
 	printf("\033[2J\033[1;1H被除数：%d\n除数：%d\n",a,b);
 	getchar();
-	ctools_getch();
+	ctools.getcha();
 	return;
 }

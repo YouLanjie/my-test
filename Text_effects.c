@@ -1,19 +1,21 @@
 #include "include/tools.h"
 
+
 int main() {
+	struct ctools ctools = ctools_init();
 	int a = 0, b = 0, c = 0, d = 0, e = 0;
 
 	printf("print ALL?\n");
-	a = ctools_getch();
+	a = ctools.getcha();
 	printf("print background colors?\n");
-	b = ctools_getch();
+	b = ctools.getcha();
 	printf("print all colors?\n");
-	e = ctools_getch();
+	e = ctools.getcha();
 	if (a == 'y' || a == 'Y') {
 		printf("print ALL and background colors?\n");
-		c = ctools_getch();
+		c = ctools.getcha();
 		printf("print all colors in ALL?\n");
-		d = ctools_getch();
+		d = ctools.getcha();
 	}
 
 	printf("\ntext:\n");

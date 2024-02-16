@@ -107,17 +107,17 @@ int input(char * type, char * filename)
  * 2 通过命令行传入参数
  */
 int get_type(char * type) {
-	const ctools_menu *p = &CT_MENU;
+	struct ctools ctools = ctools_init();
 	struct ctools_menu_t *data = NULL;    /* 使用工具库中的菜单 */
 
 	if (!bit) {    /* 如果比特数为0:非命令行模式 */
-		p->ncurses_init();
-		p->data_init(&data);
+		ctools.menu.ncurses_init();
+		ctools.menu.data_init(&data);
 
-		p->set_title(data, "创建文件");
-		p->set_text(data, "1.Bit", "2.KiB", "3.MiB", "4.GiB", "5.KB", "6.MB", "7.GB", "0.Exit", NULL);
+		ctools.menu.set_title(data, "创建文件");
+		ctools.menu.set_text(data, "1.Bit", "2.KiB", "3.MiB", "4.GiB", "5.KB", "6.MB", "7.GB", "0.Exit", NULL);
 
-		*type = (char)p->show(data);    /* 获取类型 */
+		*type = (char)ctools.menu.show(data);    /* 获取类型 */
 		endwin();
 
 	} else {    /* 命令行模式 */
@@ -182,6 +182,7 @@ int mkfile(int argc, char *filename)
 	double   count = 0,          /* 填充的字符数 */
 	         percent = 0;        /* 已填充的字符占字符总数的百分比 */
 	int      percent_int = 0;    /* 同上百分比，但是是整型 */
+	struct ctools ctools = ctools_init();
 
 	fp = fopen(filename,"w");
 	if(!fp) {
@@ -195,7 +196,7 @@ int mkfile(int argc, char *filename)
 		while (percent * 100 > percent_int) {
 			percent_int++;
 			printf("\033[A\033[%dC=>\n\033[A\033[65C%3d%%\n",(percent_int / 2) + 12, percent_int);
-			ctools_kbhitGetchar();
+			ctools.kbhitGetchar();
 		}
 		if (count < bit) {    /* 插入文件内容 */
 			fputs("\n",fp);
@@ -203,8 +204,8 @@ int mkfile(int argc, char *filename)
 	}
 	fclose(fp);
 	printf("创建完成！按下回车返回\n");
-	ctools_getch();
-	ctools_getch();
+	ctools.getcha();
+	ctools.getcha();
 	if (argc < 3) {    /* 是否进入了界面 */
 		bit = 0;
 		return 0;

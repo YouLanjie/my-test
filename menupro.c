@@ -12,12 +12,13 @@ int main() {
 		"6.ok ok...",
 		"7.next page"
 	};
-	Clear_SYS;
+	system("clear");
 	printf("chose %d\n", menupro("test", text, 7));
 	return 0;
 }
 
 int menupro(char *title, char *text[], int tl) {
+	struct ctools ctools = ctools_init();
 #ifdef __linux
 	struct winsize size;
 	ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
@@ -28,7 +29,7 @@ int menupro(char *title, char *text[], int tl) {
 	int input = 1, currentPage = 1, count = 1, allPages = (tl - 1) / 6 + 1;
 
 	while (input != 0x30 && input != 0x1B) {
-		Clear_SYS;
+		system("clear");
 #ifdef __linux
 		ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
 		winSizeCol = size.ws_col;
@@ -37,7 +38,7 @@ int menupro(char *title, char *text[], int tl) {
 #ifdef __linux
 		printf("\033[5;%dH\033[34m--------------------------------------------------------\033[34m", winSizeCol / 2 - 27);
 		for (int i = 0; i < 7; i++) {
-			Gotoxy_TER(i + 6, winSizeCol / 2 - 27);
+			printf("\033[%d;%dH", i + 6, winSizeCol / 2 - 27);
 			printf("|\033[54C|");
 		}
 		printf("\033[13;%dH--------------------------------------------------------\033[0m", winSizeCol / 2 - 27);
@@ -72,11 +73,11 @@ int menupro(char *title, char *text[], int tl) {
 				printf("> %s", text[i - 1 +  6 * (currentPage - 1)]);
 #endif
 			}
-			ctools_kbhitGetchar();
+			ctools.kbhitGetchar();
 		}
-		input = ctools_getch();
+		input = ctools.getcha();
 		if (input == 0x1B) {
-			if (ctools_kbhit()) {
+			if (ctools.kbhit()) {
 				getchar();
 				input = getchar();
 				if (input == 'A') {
@@ -120,7 +121,7 @@ int menupro(char *title, char *text[], int tl) {
 				}
 			}
 			else {
-				Clear_SYS;
+				system("clear");
 				return 0;
 			}
 		}
@@ -164,11 +165,11 @@ int menupro(char *title, char *text[], int tl) {
 			}
 		}
 		else if (input == 'q' || input == 'Q') {
-			Clear_SYS;
+			system("clear");
 			return 0;
 		}
 		else {
-			Clear_SYS;
+			system("clear");
 			return count + 6 * (currentPage - 1);
 		}
 	}
