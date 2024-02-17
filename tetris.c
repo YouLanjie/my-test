@@ -55,17 +55,18 @@ struct map {/*{{{*/
 
 int print_lock = 1;
 const char *print_ch[] = {
-	"  ",
-	"\033[31m\033[41m[]\033[0m",
-	"\033[32m\033[42m[]\033[0m",
-	"\033[33m\033[43m[]\033[0m",
-	"\033[34m\033[44m[]\033[0m",
-	"\033[35m\033[45m[]\033[0m",
-	"\033[36m\033[46m[]\033[0m",
-	"\033[37m\033[47m[]\033[0m",
-	"\033[2m[]\033[0m",
+	"\033[30m",
+	"\033[31m\033[41m",
+	"\033[32m\033[42m",
+	"\033[33m\033[43m",
+	"\033[34m\033[44m",
+	"\033[35m\033[45m",
+	"\033[36m\033[46m",
+	"\033[37m\033[47m",
+	"\033[2m",
 };
 int flag_fack = 1;
+int flag_debug = 0;
 int list[7] = {};
 
 static int create_list()
@@ -207,13 +208,18 @@ static void *print_map()
 	printf("\033[?25l");
 	while (print_lock) {
 		for (int i = 0; i < map.size; i++) {
-			printf("%s%s", print_ch[map.map[i]],
-			       (i + 1) % map.weight == 0 ? "|\r\n" : "");
+			if (flag_debug) {
+				printf("%s\033[37m%02d\033[0m%s", print_ch[map.map[i]], map.map[i],
+				       (i + 1) % map.weight == 0 ? "|\r\n" : "");
+			} else {
+				printf("%s[]\033[0m%s", print_ch[map.map[i]],
+				       (i + 1) % map.weight == 0 ? "|\r\n" : "");
+			}
 		}
 		printf("--------------------\r\n");
 		printf("\033[%dA", map.height + 1);
 		printf("\033[%dC| score:%d\r\n", map.weight * 2, map.score);
-		printf("\033[%dC| Key: 'wasd' move, 'f' toggle fake\r\n", map.weight * 2);
+		printf("\033[%dC| Key: 'asd' move, 'f' toggle fake, 'wjk' rote, 'b' debug\r\n", map.weight * 2);
 		printf("\033[%dA", 2);
 		if (print_lock && print_lock % 6 == 0) {
 			int inp = 0;
@@ -226,6 +232,18 @@ static void *print_map()
 	}
 	printf("\033[%dB", map.height + 1);
 	printf("\033[?25hGame Over\r\nIf the game did not close,press 'enter'\r\n");
+	if (flag_debug) {
+		printf("Exit dump:\r\n");
+		for (int i = 0; i < map.size; i++) {
+			if (flag_debug) {
+				printf("%s\033[37m%02d\033[0m%s", print_ch[map.map[i]], map.map[i],
+				       (i + 1) % map.weight == 0 ? "|\r\n" : "");
+			} else {
+				printf("%s[]\033[0m%s", print_ch[map.map[i]],
+				       (i + 1) % map.weight == 0 ? "|\r\n" : "");
+			}
+		}
+	}
 	pthread_exit(NULL);
 	return NULL;
 }/*}}}*/
@@ -270,6 +288,9 @@ int main()
 			break;
 		case 'F':
 			flag_fack = flag_fack ? 0 : 1;
+			break;
+		case 'B':
+			flag_debug = flag_debug ? 0 : 1;
 			break;
 		default:
 			break;
