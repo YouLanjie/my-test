@@ -54,8 +54,52 @@ struct map {/*{{{*/
 
 
 int print_lock = 1;
-const char *print_ch[] = {"  ", "[]", "\033[2m[]\033[0m"};
-int flag_fack = 1;
+const char *print_ch[] = {
+	"  ",
+	"\033[41m[]\033[0m",
+	"\033[42m[]\033[0m",
+	"\033[43m[]\033[0m",
+	"\033[44m[]\033[0m",
+	"\033[45m[]\033[0m",
+	"\033[46m[]\033[0m",
+	"\033[47m[]\033[0m",
+	"\033[2m[]\033[0m",
+};
+int flag_fack = 0;
+int list[7] = {};
+
+static int create_list()
+{/*{{{*/
+	struct timeval gettime;
+	int li[] = {1, 2, 3, 4, 5, 6, 7},
+	    num = 0;
+	int type  = 0,
+	    shape = 0;
+	static int times = 0;
+
+	if (times == 0 || times >= 7) {
+		for (int i = 0; i < 7; i++) {
+			do {
+				gettimeofday(&gettime, NULL);
+				srand(gettime.tv_usec + time(NULL));
+				num = rand() % (Shape_max - 2);
+				usleep(rand() % (TPS / 25));
+			} while (li[num] == 0);
+			type = li[num];
+			li[num] = 0;
+
+			gettimeofday(&gettime, NULL);
+			srand(gettime.tv_usec + time(NULL));
+			shape = rand() % 4;
+			usleep(rand() % (TPS / 25));
+
+			list[i] = type * 4 + shape;
+		}
+		times = 0;
+	}
+	times++;
+	return times;
+}/*}}}*/
 
 static int delete()
 {/*{{{*/
@@ -65,11 +109,14 @@ static int delete()
 
 static int create(int x, int y, int type)
 {/*{{{*/
+	int ret = 0;
 	type = abs(type);
 
 	if (type > (Shape_max - 1) * 4) {
-		srand(time(NULL));
-		type = rand() % (Shape_max - 2) * 4 + 4;
+		ret = create_list() - 1;
+		type = list[ret];
+		/*srand(time(NULL));*/
+		/*type = rand() % (Shape_max - 2) * 4 + 4;*/
 	}
 	type %= (Shape_max - 1) * 4;
 
@@ -78,9 +125,9 @@ static int create(int x, int y, int type)
 	map.y = y;
 	Get() {
 		if (Bit()) {
-			if (map.map[y * map.weight + x] == 1)
+			if (map.map[y * map.weight + x] != 0 && map.map[y * map.weight + x] != 8)
 				return 1;
-			map.map[y * map.weight + x] = 1;
+			map.map[y * map.weight + x] = type / 4;
 		}
 	}
 	return 0;
@@ -90,7 +137,7 @@ static int delete_fake()
 {/*{{{*/
 	for (int y = map.height - 1; y >= 0 ; y--) {
 		for (int x = map.weight - 1; x >= 0; x--) {
-			if (map.map[y * map.weight + x] == 2)
+			if (map.map[y * map.weight + x] == 8)
 				map.map[y * map.weight + x] = 0;
 		}
 	}
@@ -106,10 +153,10 @@ static int create_fake()
 	delete_fake();
 	while (! flag) {
 		map.y += 1;
-		Get() (Bit()) && (x < 0 || x >= map.weight || y >= map.height || map.map[y * map.weight + x] == 1) && (flag = 1);
+		Get() (Bit()) && (x < 0 || x >= map.weight || y >= map.height || (map.map[y * map.weight + x] != 0 && map.map[y * map.weight + x] != 8)) && (flag = 1);
 	}
 	map.y -= 1;
-	Get() Bit() ? map.map[y * map.weight + x] = 2 : 0;
+	Get() Bit() ? map.map[y * map.weight + x] = 8 : 0;
 	map.x = x1;
 	map.y = y1;
 	create(map.x, map.y, map.type);
@@ -144,7 +191,7 @@ static int lmove(int *v, int step)
 
 	delete();
 	*v += step;
-	Get() (Bit()) && (x < 0 || x >= map.weight || y >= map.height || map.map[y * map.weight + x] == 1) && (flag = 1);
+	Get() (Bit()) && (x < 0 || x >= map.weight || y >= map.height || (map.map[y * map.weight + x] != 0 && map.map[y * map.weight + x] != 8)) && (flag = 1);
 	if (flag) *v -= step;
 	create(map.x, map.y, map.type);
 	if (flag && v == &map.y) {
