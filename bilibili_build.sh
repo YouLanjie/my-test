@@ -42,7 +42,7 @@ running() {
 		if [[ $flag_type == "3gp" ]] {
 			echo "ffmpeg -i \"`find $ind -name "video.m4s"`\" -i \"`find $ind -name "audio.m4s"`\" -r 12 -b:v 400k -s 352x288 -ab 12.2k -ac 1 -ar 8000 \"$title.3gp\"" >> $f_o
 		} elif [[ $flag_type == "mp4" ]] {
-			echo "ffmpeg -i \"`find $ind -name "audio.m4s"`\" -c copy \"$title.mp4\"" >> $f_o
+			echo "ffmpeg -i \"`find $ind -name "video.m4s"`\" -i \"`find $ind -name "audio.m4s"`\" -c copy \"$title.mp4\"" >> $f_o
 		} else {
 			echo "ffmpeg -i \"`find $ind -name "audio.m4s"`\" \"$title.mp3\"" >> $f_o
 		}
