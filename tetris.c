@@ -47,13 +47,12 @@ struct map {/*{{{*/
 		0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0000000000000000,
 	},
 	.type   = 0,
-	.x      = 0,
+	.x      = 3,
 	.y      = 0,
 	.score  = 0,
 };/*}}}*/
 
 
-int print_lock = 1;
 const char *print_ch[] = {
 	"\033[30m",
 	"\033[31m\033[41m",
@@ -65,6 +64,8 @@ const char *print_ch[] = {
 	"\033[37m\033[47m",
 	"\033[2m",
 };
+int print_lock = 1;
+int flag_move_lock = 0;
 int flag_fack = 1;
 int flag_debug = 0;
 int list[7] = {};
@@ -190,6 +191,9 @@ static int lmove(int *v, int step)
 {/*{{{*/
 	int flag = 0;
 
+	if (flag_move_lock)
+		return 0;
+	flag_move_lock = 1;
 	delete();
 	*v += step;
 	Get() (Bit()) && (x < 0 || x >= map.weight || y >= map.height || (map.map[y * map.weight + x] != 0 && map.map[y * map.weight + x] != 8)) && (flag = 1);
@@ -197,8 +201,9 @@ static int lmove(int *v, int step)
 	create(map.x, map.y, map.type);
 	if (flag && v == &map.y) {
 		clean();
-		flag = create(0, 0, Shape_max * 4) == 0 ? flag : -1;
+		flag = create(3, 0, Shape_max * 4) == 0 ? flag : -1;
 	}
+	flag_move_lock = 0;
 	return flag;
 }/*}}}*/
 
