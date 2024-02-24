@@ -108,8 +108,8 @@ void print_map()
 	printf("\033[%dC  | 全图边长: %d\n", l*2, L);
 	printf("\033[%dC  | 实体边长: %d\n", l*2, l);
 	printf("\033[%dC  | 本体边长: %d\n", l*2, l - 2);
-	printf("\033[%dC  | 复杂度: %d (值越小越复杂) \n", l*2, Rank);
-	printf("\033[%dC  | 延迟时间:%.3fs\n", l*2, (double)(int)TPS/SECOND);
+	printf("\033[%dC  | 复杂程度: %d (值越小越复杂) \n", l*2, Rank);
+	printf("\033[%dC  | 延迟时间: %.4fs\n", l*2, (double)(int)TPS/SECOND);
 	printf("\033[%dC  | 遍历深度: %-3d [%4.1f%%]\n", l*2, level, (double)level / deep * 100);
 	printf("\033[1A\033[%dC [", l*2 + 25);
 	int lim = size.ws_col - (l*2 + 28);
