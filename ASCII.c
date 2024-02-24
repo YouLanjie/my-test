@@ -16,7 +16,7 @@ int main() {
 		unsigned int out = 0;
 		for (int i = 0; i < 32; i++) out = out * 10 + ((a << i) >> 31);
 		out = 0 - out;
-		printf("%03d | 0x%03x | %09d | \n", a, a, out);  //循环打印输出
+		printf("%03d | 0x%03x | %09d | ", a, a, out);  //循环打印输出
 		switch (a) {
 		case '\r':
 			printf("\\r\n");
