@@ -10,8 +10,8 @@
 
 #include "include/head.h"
 
-static union ctools_cmd_arg version();
-static union ctools_cmd_arg shell();
+static void *version();
+static void *shell();
 
 ctools_cmd_list Command_list[] = {
 	{"version", "打印程序版本",           version,      &Command_list[1]},
@@ -24,31 +24,29 @@ ctools_cmd_list Command_list[] = {
 int main(void)
 {
 	char cmd[1024] = "set version=menu program v0.0.1 alpha, powder by C-head";
-	CT_CMD.cmd_list_set(Command_list);
+	struct ctools ctools = ctools_init();
+	ctools.cmd.cmd_list_set(Command_list);
 	/* cmd_run("set version=menu program v0.0.1 alpha, powder by C-head"); */
-	CT_CMD.run(cmd);
-	CT_CMD.ui();
+	ctools.cmd.run(cmd);
+	ctools.cmd.ui();
 	return 0;
 }
 
-static union ctools_cmd_arg version()
+static void *version()
 {
-	char cmd[1024] = "get version";
-	union ctools_cmd_arg arg = {.num = 0};
-	arg = CT_CMD.run(cmd);
-	if (arg.num != -1 && arg.ch != NULL) {
-		printf("Version:\n"
-		       "%s\n",
-		       arg.ch);
+	char *result = NULL;
+	result = ctools_init().cmd.run("get version");
+	if (result != NULL && (int)*result != -1) {
+		printf("Version:\n" "%s\n", result);
 	} else {
 		printf("Version:\n"
 		       "Error...No message....\n");
 	}
-	arg.num = 0;
-	return arg;
+	static int ret = 0;
+	return &ret;
 }
 
-static union ctools_cmd_arg shell()
+static void *shell()
 {
 	char cmd[1024] = "exit";
 	printf("shell command > ");
@@ -56,7 +54,6 @@ static union ctools_cmd_arg shell()
 	fgets(cmd, 1024, stdin);
 	printf("\033[1;33mExec: %s\033[0m\n", cmd);
 	system(cmd);
-	union ctools_cmd_arg arg = {.num = 0};
-	return arg;
+	return NULL;
 }
 

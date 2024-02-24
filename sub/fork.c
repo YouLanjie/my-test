@@ -11,7 +11,7 @@
 
 #include "../include/head.h"
 
-union ctools_cmd_arg shell_f(void)
+void *shell_f(void)
 {
 	int PID;
 
@@ -23,8 +23,8 @@ union ctools_cmd_arg shell_f(void)
 	PID = fork();
 	if (PID != 0) {
 		printf("Pid of the child: %d\n", PID);
-		union ctools_cmd_arg arg = {.num = 0};
-		return arg;
+		static int ret = 0;
+		return &ret;
 	} else {
 		usleep(500000);
 		printf("\033[1;33mExec: %s\033[0m\n", cmd);
