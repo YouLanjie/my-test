@@ -32,7 +32,7 @@ running() {
 		local index=""
 		ind_title=$(cat "$line"|grep "index_title" >/dev/null && cat "$line"|sed -n "s/.*\"index_title\":\"\\([^\"]*\\)\".*/\\1/p" || cat "$line"|sed -n "s/.*\"title\":\"\\([^\"]*\\)\".*/\\1/p")
 		index=$(cat "$line"|grep "index" >/dev/null && cat "$line"|sed -n "s/.*\"index\":\"\\([^\"]*\\)\".*/\\1/p" || cat "$line"|sed -n "s/.*\"index\":\"\\([^\"]*\\)\".*/\\1/p")
-		[[ $ind_title != "" ]] && title="${title}_No${index}_${ind_title}"
+		[[ $ind_title != "" && $index != "" ]] && title="${title}_No${index}_${ind_title}"
 
 		if [[ $flag_info == "true" ]] {
 			echo "# $title <Dir: $ind>" >> $f_o
