@@ -68,38 +68,47 @@ int print_lock = 1;
 int flag_move_lock = 0;
 int flag_fack = 1;
 int flag_debug = 0;
-int list[7] = {};
+int list[7] = {0, 0, 0, 0, 0, 0, 0};
+int list_num = 0;
 
 static int create_list()
 {/*{{{*/
+	static int times = 6;
 	struct timeval gettime;
 	int li[] = {1, 2, 3, 4, 5, 6, 7},
 	    num = 0;
 	int type  = 0,
 	    shape = 0;
-	static int times = 0;
 
-	if (times == 0 || times >= 7) {
-		for (int i = 0; i < 7; i++) {
-			do {
-				gettimeofday(&gettime, NULL);
-				srand(gettime.tv_usec + time(NULL));
-				num = rand() % (Shape_max - 2);
-				usleep(rand() % (TPS / 25));
-			} while (li[num] == 0);
-			type = li[num];
-			li[num] = 0;
 
+	list[times] = 0;
+	times = 6;
+	for (int i = 6; i >= 0 && list[i] != 0; times = i - 1, i--);
+	for (int i = 0; i <= times; i++)
+		list[i] && (li[list[i] / 4 - 1] = 0);
+	for (int i = 0; i <= times; i++) {
+		if (list[i]) continue;
+		do {
 			gettimeofday(&gettime, NULL);
 			srand(gettime.tv_usec + time(NULL));
-			shape = rand() % 4;
+			num = rand() % (Shape_max - 2);
 			usleep(rand() % (TPS / 25));
+		} while (li[num] == 0);
+		type = li[num];
+		li[num] = 0;
 
-			list[i] = type * 4 + shape;
-		}
+		gettimeofday(&gettime, NULL);
+		srand(gettime.tv_usec + time(NULL));
+		shape = rand() % 4;
+		usleep(rand() % (TPS / 25));
+
+		list[i] = type * 4 + shape;
+	}
+
+	times++;
+	if (times > 6) {
 		times = 0;
 	}
-	times++;
 	return times;
 }/*}}}*/
 
@@ -111,12 +120,11 @@ static int delete()
 
 static int create(int x, int y, int type)
 {/*{{{*/
-	int ret = 0;
 	type = abs(type);
 
 	if (type > (Shape_max - 1) * 4) {
-		ret = create_list() - 1;
-		type = list[ret];
+		list_num = create_list();
+		type = list[list_num];
 		/*srand(time(NULL));*/
 		/*type = rand() % (Shape_max - 2) * 4 + 4;*/
 	}
@@ -225,7 +233,19 @@ static void *print_map()
 		printf("\033[%dA", map.height + 1);
 		printf("\033[%dC| score:%d\r\n", map.weight * 2, map.score);
 		printf("\033[%dC| Key: 'asd' move, 'f' toggle fake, 'wjk' rote, 'b' debug\r\n", map.weight * 2);
-		printf("\033[%dA", 2);
+		char type_char[] = "#ISZLJT";
+#define tmp_select(num) (flag_debug ? type_char[((list[num > 6 ? num - 6 : num]) / 4) - 1] : type_char[((list[list_num + num > 6 ? list_num + num - 6 : list_num + num]) / 4) - 1])
+		printf("\033[%dC| Next Block:%c %c %c %c %c %c %c\r\n",
+		       map.weight * 2,
+		       tmp_select(0),
+		       tmp_select(1),
+		       tmp_select(2),
+		       tmp_select(3),
+		       tmp_select(4),
+		       tmp_select(5),
+		       tmp_select(6));
+#undef tmp_select
+		printf("\033[%dA", 3);
 		if (print_lock && print_lock % 6 == 0) {
 			int inp = 0;
 			inp = lmove(&map.y, 1);
