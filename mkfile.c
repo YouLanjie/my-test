@@ -115,7 +115,9 @@ int get_type(char * type) {
 		ctools.menu.data_init(&data);
 
 		ctools.menu.set_title(data, "创建文件");
-		ctools.menu.set_text(data, "1.Bit", "2.KiB", "3.MiB", "4.GiB", "5.KB", "6.MB", "7.GB", "0.Exit", NULL);
+#define mk_text(title) ctools.menu.add_text(data, 0, title, NULL, NULL, NULL, NULL, 0, 0, 0)
+		mk_text("1.Bit");mk_text("2.KiB");mk_text("3.MiB");mk_text("4.GiB");mk_text("5.KB");mk_text("6.MB");mk_text("7.GB");mk_text("0.Exit");
+#undef mk_text
 
 		*type = (char)ctools.menu.show(data);    /* 获取类型 */
 		endwin();

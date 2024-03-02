@@ -191,8 +191,7 @@ static int show_subnote(struct Note *list, int number)
 	for (int i = 1; i < 10; ++i) {
 		Swich(tag_table[0][i]);
 		if (node != NULL) {
-			ctools.menu.add_text(menu, (char*)tag_table[1][i]);
-			ctools.menu.add_text_data(menu, "describe", ctools.config.get_str(node));
+			ctools.menu.add_text(menu, 0, (char*)tag_table[1][i], ctools.config.get_str(node), NULL, NULL, NULL, 0, 0, 0);
 		}
 	}
 	int input = -1;
@@ -215,12 +214,15 @@ static int show_note(struct Note *list)
 	int input = -1;
 	struct Note *list2 = list;
 	char *str1 = NULL, *str2 = NULL, *str3 = NULL;
+	int count = 0;
 
 	ctools.menu.data_init(&menu);
 	ctools.menu.set_title(menu, "笔记显示");
 	while (list != NULL) {
 		Swich("title");
-		ctools.menu.add_text(menu, ctools.config.get_str(node));
+		char *title = ctools.config.get_str(node);
+		ctools.menu.add_text(menu, 0, title, NULL, NULL, NULL, NULL, 0, 0, 0);
+		count++;
 		Swich("time1");
 		if (node != NULL) str1 = ctools.config.get_str(node);
 		Swich("describe");
@@ -229,7 +231,8 @@ static int show_note(struct Note *list)
 		if (str2 == NULL) str2 = " ";
 		str3 = malloc(sizeof(char)*(strlen(str1) + strlen(str2) + 2));
 		sprintf(str3, "%s\n%s", str1, str2);
-		ctools.menu.add_text_data(menu, "describe", str3);
+		ctools.menu.del_text(menu, count);
+		ctools.menu.add_text(menu, 0, title, str3, NULL, NULL, NULL, 0, 0, 0);
 		free(str3);
 		str1 = str2 = str3 = NULL;
 		list = list->next;
@@ -261,8 +264,10 @@ int main()
 	def_prog_mode();
 	ctools.menu.data_init(&menu);
 	ctools.menu.set_title(menu, "太酷辣");
-	ctools.menu.set_text(menu, "查看笔记", "查看笔记（终端）", "保存文件", "退出程序", NULL);
-	ctools.menu.set_text_data(menu, "describe", "%s%s%s", "在ncurses内部通过套用菜单库实现显示笔记的效果", "退出Ncurses在正常的终端界面显示历史事件（按照时间顺序排序）", "将排序后的文件输出保存", "选择此项即可退出程序");
+	ctools.menu.add_text(menu, 0, "查看笔记", "在ncurses内部通过套用菜单库实现显示笔记的效果", NULL, NULL, NULL, 0, 0, 0);
+	ctools.menu.add_text(menu, 0, "查看笔记（终端）", "退出Ncurses在正常的终端界面显示历史事件（按照时间顺序排序）", NULL, NULL, NULL, 0, 0, 0);
+	ctools.menu.add_text(menu, 0, "保存文件", "将排序后的文件输出保存", NULL, NULL, NULL, 0, 0, 0);
+	ctools.menu.add_text(menu, 0, "退出程序", "选择此项即可退出程序", NULL, NULL, NULL, 0, 0, 0);
 	while (input != 'q' && input != 0 && input != 4) {
 		input = ctools.menu.show(menu);
 		switch (input) {
