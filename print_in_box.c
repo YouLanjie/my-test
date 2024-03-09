@@ -68,8 +68,8 @@ static int print(char *ch, int x_start, int y_start, int width, int heigh, int h
 
 		cond_print && printf("%s%s%s", line_num == focus ? "\033[7m" : "",
 			buf, line_num == focus ? "\033[0;37;44m" : "");
-			/*kbhitGetchar();*/
-			/*usleep(100000/10);*/
+		/*kbhitGetchar();*/
+		/*usleep(100000/10);*/
 		/* 字符指针下移 */
 		ch++;
 	}

@@ -7,7 +7,7 @@ int  get_type(char * type);
 int  get_size(char * type, char * filename);
 int  mkfile(int argc, char * filename);
 
-enum unit{Exit = 48, Bit, KiB, MiB, GiB, KB, MB, GB};
+enum unit{Exit = 0, Bit, KiB, MiB, GiB, KB, MB, GB};
 double bit = 0;    /* 比特值 */
 
 int main(int argc, char * argv[])
@@ -107,38 +107,37 @@ int input(char * type, char * filename)
  * 2 通过命令行传入参数
  */
 int get_type(char * type) {
-	struct ctools ctools = ctools_init();
-	struct ctools_menu_t *data = NULL;    /* 使用工具库中的菜单 */
+	cmenu *menu = NULL;    /* 使用工具库中的菜单 */
 
 	if (!bit) {    /* 如果比特数为0:非命令行模式 */
-		ctools.menu.ncurses_init();
-		ctools.menu.data_init(&data);
+		ctools_ncurses_init();
+		menu = cmenu_create();
 
-		ctools.menu.set_title(data, "创建文件");
-#define mk_text(title) ctools.menu.add_text(data, 0, title, NULL, NULL, NULL, NULL, 0, 0, 0)
+		cmenu_set_title(menu, "创建文件");
+#define mk_text(title) cmenu_add_text(menu, 0, title, "", NULL, NULL, NULL, 0, 0, 0)
 		mk_text("1.Bit");mk_text("2.KiB");mk_text("3.MiB");mk_text("4.GiB");mk_text("5.KB");mk_text("6.MB");mk_text("7.GB");mk_text("0.Exit");
 #undef mk_text
 
-		*type = (char)ctools.menu.show(data);    /* 获取类型 */
+		*type = (char)cmenu_show(menu);    /* 获取类型 */
 		endwin();
 
 	} else {    /* 命令行模式 */
 		switch (*type) {    /* 将传入参数转换为输入 */
 		case 'b':
 		case 'B':
-			*type = '1';
+			*type = 1;
 			break;
 		case 'k':
 		case 'K':
-			*type = '2';
+			*type = 2;
 			break;
 		case 'm':
 		case 'M':
-			*type = '3';
+			*type = 3;
 			break;
 		case 'g':
 		case 'G':
-			*type = '4';
+			*type = 4;
 			break;
 		}
 	}
@@ -184,7 +183,6 @@ int mkfile(int argc, char *filename)
 	double   count = 0,          /* 填充的字符数 */
 	         percent = 0;        /* 已填充的字符占字符总数的百分比 */
 	int      percent_int = 0;    /* 同上百分比，但是是整型 */
-	struct ctools ctools = ctools_init();
 
 	fp = fopen(filename,"w");
 	if(!fp) {
@@ -198,7 +196,7 @@ int mkfile(int argc, char *filename)
 		while (percent * 100 > percent_int) {
 			percent_int++;
 			printf("\033[A\033[%dC=>\n\033[A\033[65C%3d%%\n",(percent_int / 2) + 12, percent_int);
-			ctools.kbhitGetchar();
+			kbhitGetchar();
 		}
 		if (count < bit) {    /* 插入文件内容 */
 			fputs("\n",fp);
@@ -206,8 +204,8 @@ int mkfile(int argc, char *filename)
 	}
 	fclose(fp);
 	printf("创建完成！按下回车返回\n");
-	ctools.getcha();
-	ctools.getcha();
+	_getch();
+	_getch();
 	if (argc < 3) {    /* 是否进入了界面 */
 		bit = 0;
 		return 0;
@@ -215,7 +213,6 @@ int mkfile(int argc, char *filename)
 		return 1;
 	}
 }
-
 
 void stop() {
 	endwin();
