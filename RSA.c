@@ -10,12 +10,11 @@ void stop();
 int main() {
 	FILE * fp;
 	unsigned int e = 0, n = 0, k = 0, d = 0, m = 0, c = 0, i = 0;
-	struct ctools ctools = ctools_init();
 
 	signal(SIGINT, stop);
 	system("clear");
 	printf("\033[1;1H这是一个使用RSA不对称加密算法的测试程序\n请选择模式\n纯手动---1\n半自动---2\n");
-	i = ctools.getcha();
+	i = _getch();
 	system("clear");
 	if (i == '1') {
 		do {
@@ -25,12 +24,12 @@ int main() {
 			system("clear");
 			if (!mgcd(e,eular(n))) {
 				printf("\033[1;31me与φ(n)不互质！\033[0mn=%d\nφ(n)=%d\n",n,eular(n));
-				ctools.getcha();
+				_getch();
 				system("clear");
 			}
 			if ((k * eular(n) + 1) % e != 0) {
 				printf("\033[1;31me与k乘φ(n)的积加1的和不能整除！\033[0mn=%d\nk * φ(n) + 1=%d\n",n,k * eular(n) + 1);
-				ctools.getcha();
+				_getch();
 				system("clear");
 			}
 		}while (!mgcd(e,eular(n)) || (k * eular(n) + 1) % e != 0);
@@ -67,13 +66,13 @@ int main() {
 	d = ( k * eular(n) + 1 ) / e;
 	system("clear");
 	printf("最终参数：\ne=%d\nd=%d\nn=%d\n注意！加密的数字不能够超过n", e, d, n);
-	ctools.getcha();
+	_getch();
 	i = 0;
 	while (i != 0x1B) {
 		system("clear");
 		m = c = i = 0;
 		printf("加密或解密？\n加密---1\n解密---2\n");
-		i = ctools.getcha();
+		i = _getch();
 		system("clear");
 		if (i == '1') {
 			printf("请输入任意整数值(m)用于加密\n");
@@ -96,7 +95,7 @@ int main() {
 		else if (i == 0x1B) {
 			return 0;
 		}
-		i = ctools.getcha();
+		i = _getch();
 		system("clear");
 	}
 	return 0;

@@ -48,7 +48,6 @@ int flag_termux;
  */
 void input(char *str)
 {				/*{{{ */
-	struct ctools ctools = ctools_init();
 	int ch = 0, count = 0;
 	if (str == NULL)
 		return;
@@ -56,18 +55,18 @@ void input(char *str)
 	memset(str, 0, sizeof(char) * MAXSIZE);
 	memset(str2, 0, sizeof(char) * MAXSIZE);
 	while (ch != 0x1B && ch != flag_enter) {
-		ch = ctools.getcha();
-		if (ch == 0x1B && ctools.kbhit() != 0)
+		ch = _getch();
+		if (ch == 0x1B && kbhit() != 0)
 			ch = '\0';
 		if (ch & 0x80) {	/* If is Chinese */
 			printf("\033[0;37m%c", ch);
 			sprintf(str2, "%s%c", str, ch);
 			strcpy(str, str2);
-			ch = ctools.getcha();
+			ch = _getch();
 			printf("%c", ch);
 			sprintf(str2, "%s%c", str, ch);
 			strcpy(str, str2);
-			ch = ctools.getcha();
+			ch = _getch();
 			printf("%c\033[0m", ch);
 			sprintf(str2, "%s%c", str, ch);
 			strcpy(str, str2);

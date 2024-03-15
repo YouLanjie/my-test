@@ -1,7 +1,6 @@
 #include "include/tools.h"
 
 int main(int argc,char * argv[]) {
-	struct ctools ctools = ctools_init();
 	int a = 0;
 	int exit = 0;
 	FILE * fp;
@@ -19,7 +18,7 @@ int main(int argc,char * argv[]) {
 		return 0;
 	}
 	while (!exit) {
-		exit = ctools.kbhit();
+		exit = kbhit();
 		a = fgetc(fp);
 		if(a == EOF) {
 			fseek(fp,0L,0);

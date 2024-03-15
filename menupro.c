@@ -18,7 +18,6 @@ int main() {
 }
 
 int menupro(char *title, char *text[], int tl) {
-	struct ctools ctools = ctools_init();
 #ifdef __linux
 	struct winsize size;
 	ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
@@ -73,11 +72,11 @@ int menupro(char *title, char *text[], int tl) {
 				printf("> %s", text[i - 1 +  6 * (currentPage - 1)]);
 #endif
 			}
-			ctools.kbhitGetchar();
+			kbhitGetchar();
 		}
-		input = ctools.getcha();
+		input = _getch();
 		if (input == 0x1B) {
-			if (ctools.kbhit()) {
+			if (kbhit()) {
 				getchar();
 				input = getchar();
 				if (input == 'A') {

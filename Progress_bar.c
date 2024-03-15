@@ -14,7 +14,7 @@ int main() {
 		printf("\033[1;%dH#\033[1;60H%.2lf%%\n",(int)(f / 2) + 9,f);
 	}
 	printf("\033[2;1HTest is over.\nInput enter return.\n");
-	ctools_init().getcha();
+	_getch();
 	printf("\033[?25h");
 	return 0;
 }

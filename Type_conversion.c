@@ -22,8 +22,6 @@ int main(int argc, char *argv[])
 		         time2,
 		         time3;
 
-	struct ctools ctools = ctools_init();
-
 	while ((opt = getopt(argc, argv, "t:d:h")) != -1) {
 		switch (opt) {
 		case 't':
@@ -65,7 +63,7 @@ int main(int argc, char *argv[])
 	while (a != '0' && a != 'q' && a != 'Q' && a != 0x1B) {
 		system("clear");
 		printf("\033[1;32m欢迎使用批量格式转换小程序\n\033[31m原文件夹:\033[1;32m%s\t\033[0;31m目标格式:\033[1;32m%s\n\033[33m按下 1 键开始,按下 2 键显示调试信息,按 0 退出\033[0m\n", dirname, type);
-		a = ctools.getcha();
+		a = _getch();
 		if (a != '0' && a != 'q' && a != 'Q' && a != 0x1B) {
 			printf("\033[1;32m开始转换...\033[0m\n\n");
 			if (a == '2') {
@@ -140,7 +138,7 @@ int main(int argc, char *argv[])
 			     i,
 			     time3.tv_sec - time2.tv_sec + (double)(time3.tv_usec - time2.tv_usec) / 1000000,
 			     time3.tv_sec - time.tv_sec + (double)(time3.tv_usec - time.tv_usec) / 1000000);
-			ctools.getcha();
+			_getch();
 		}
 	}
 	if (dp) {

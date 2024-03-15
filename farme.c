@@ -94,7 +94,7 @@ int main(void)
 void *input()
 {/*{{{*/
 	while (inp != 'q') {
-		inp = ctools_init().getcha();
+		inp = _getch();
 	}
 	pthread_exit(NULL);
 	return NULL;

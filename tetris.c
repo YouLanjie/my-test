@@ -275,7 +275,6 @@ static void *print_map()
 
 int main()
 {/*{{{*/
-	const struct ctools ctools = ctools_init();
 	pthread_t pid;
 	int input = 0;
 
@@ -286,7 +285,7 @@ int main()
 	create(map.x, map.y, Shape_max * 4);
 	while(input != 'Q' && print_lock) {
 		flag_fack && create_fake();
-		input = ctools.getcha();
+		input = _getch();
 		flag_fack && delete_fake();
 		input = (input >= 'a' && input <= 'z') ? input - 32 : input;
 		switch (input) {

@@ -17,13 +17,12 @@
  */
 int input_int_number(void)
 {
-	struct ctools ctools = ctools_init();
 	printf("Number input test:\n");
 	printf("[__________]\r[");
 	int inp = 0;
 	int count = 0;
 	while (inp != '\r') {
-		inp = ctools.getcha();
+		inp = _getch();
 		printf("\r");
 		int count2 = count * 10 + inp - 48;
 		if (inp >= '0' && inp <= '9' && count2 > count && count2 < 1000000000) {
@@ -44,7 +43,6 @@ int input_int_number(void)
 
 int input_float_number(void)
 {
-	struct ctools ctools = ctools_init();
 	printf("Number input test:\n");
 	printf("[_________________]\r[");
 	int inp = 0;
@@ -52,7 +50,7 @@ int input_float_number(void)
 	int flag_small = 0;
 	int level = 0;
 	while (inp != '\r') {
-		inp = ctools.getcha();
+		inp = _getch();
 		printf("\r");
 		double tmp = inp - 48;
 		double count2 = flag_small ? (count + tmp / pow(10, level)) : (count * 10 + inp - 48);
@@ -122,7 +120,6 @@ void t_print(t_inp *tmp, int max)
 
 int input_string(void)
 {
-	struct ctools ctools = ctools_init();
 	printf("String input test(Only ASCII):\n");
 	printf("[_______________]\r[");
 	int count = 0;
@@ -131,7 +128,7 @@ int input_string(void)
 	t_inp *pN = pH, *pL = NULL;
 	while (inp != '\r') {
 		t_print(pH, count);
-		inp = ctools.getcha();
+		inp = _getch();
 		if ((inp > '!' && inp < '~') || inp == ' ') {
 			count++;
 			pN->id = count;
@@ -167,11 +164,10 @@ int input_string(void)
 
 int input_char(void)
 {
-	struct ctools ctools = ctools_init();
 	printf("Char input test:\n");
 	printf("[____]\r[");
 	int inp = 0;
-	inp = ctools.getcha();
+	inp = _getch();
 	printf("\033[4m%c\033[0m\n", inp);
 	if (inp == 0x1B) printf("Final result:[] <0x1B>\n");
 	else if (inp == '\r' || inp == '\n') printf("Final result:[] <0x%X>\n", inp);
@@ -181,13 +177,12 @@ int input_char(void)
 
 int main(int argc, char *argv[])
 {
-	struct ctools ctools = ctools_init();
 	printf("What Type Data You Want To Input?\n"
 	       "1) Number(int)\n"
 	       "2) Number(float)\n"
 	       "3) String[Default]\n"
 	       "4) Char\n");
-	int inp = ctools.getcha();
+	int inp = _getch();
 	if (inp == '1') {
 		input_int_number();
 	} else if (inp == '2') {
