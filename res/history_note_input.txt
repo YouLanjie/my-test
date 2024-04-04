@@ -1,19 +1,22 @@
+title="test5";
+time_start="2025-02-04";
+-
 title="test";
 background="bg1";
-obj="obj1";
-time1="2024-02-01";
-time2="2024-02-02";
-local="location";
+purpose="obj1";
+time_start="2024-02-01";
+time_end="2024-02-02";
+where="location";
 who="somebody's name";
 describe="some word here";
-end="what is the end of the story?";
+result="what is the end of the story?";
 meaning="It's meaningless!";
 -
 title="test2";
-time1="2024-02-02";
+time_start="2024-02-02";
 -
 title="test3";
-time1="2024-02-03";
+time_start="2024-02-03";
 -
 title="test4";
-time1="2024-02-04";
+time_start="2024-02-04";

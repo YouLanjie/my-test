@@ -16,104 +16,89 @@
 
 /* 不同条目的内容 */
 struct Note {
-	struct ctools_CONFIG_NODE *data;
+	int  id;
+	char *title;
+	char *background;
+	char *purpose;
+	char *time_start;
+	char *time_end;
+	char *where;
+	char *who;
+	char *descirbe;
+	char *result;
+	char *meaning;
 	struct Note *next;
 };
 
 const static char *tag_table[2][10] = {
-	{"title", "background", "obj", "time1", "time2", "local", "who", "describe", "end", "meaning"},
+	{"title", "background", "purpose", "time_start", "time_end", "where", "who", "describe", "result", "meaning"},
 	{"标题    ", "背景    ", "目的    ", "开始时间", "结束时间", "位置    ", "人物    ", "描述    ", "结果    ", "意义    "},
 };
-
-/*
- * 换算标签
- */
-const static char *get_tag(const char *ch)
-{
-	if (ch == NULL) return NULL;
-	for (int i = 0; i < 10; ++i) {
-		if (strcmp(ch, tag_table[0][i]) == 0) {
-			return tag_table[1][i];
-		}
-	}
-	return ch;
-}
 
 /*
  * 打印
  */
 static int print(struct Note *pNew)
-{
-	struct ctools ctools = ctools_init();
-	struct ctools_CONFIG_NODE *pTemp = NULL;
+{/*{{{*/
 	printf("\033[0;32m==> ===========================\033[0m\n");
 	while (pNew != NULL) {
-		pTemp = pNew->data;
-		while (pTemp != NULL) {
-			if (ctools.config.get_str(pTemp) != NULL) printf("\033[0;1;32m==> \033[1;33m%s \033[0;31m: \033[1;34m%s\n", get_tag(ctools.config.get_name(pTemp)), ctools.config.get_str(pTemp));
-			pTemp = ctools.config.get_next_node(pTemp);
+		char **tmp = &pNew->title;
+		for (int i = 0; i < 10; ++i) {
+			if (*tmp) printf("\033[0;1;32m==> \033[1;33m%s \033[0;31m: \033[1;34m%s\n", (char*)tag_table[1][i], *tmp);
+			tmp++;
 		}
 		printf("\033[0;32m==> ===========================\033[0m\n");
 		pNew = pNew->next;
 	}
 	return 0;
-}
-
+}/*}}}*/
 
 /*
  * 保存
  */
 static int save(char *filename, struct Note *pNew)
-{
-	struct ctools ctools = ctools_init();
+{/*{{{*/
 	FILE *fp = fopen(filename, "w");
-	struct ctools_CONFIG_NODE *pTemp = NULL;
 
 	if (!fp) return -1;
 	while (pNew != NULL) {
-		pTemp = pNew->data;
-		while (pTemp != NULL) {
-			if (ctools.config.get_str(pTemp) != NULL) fprintf(fp, "%s=\"%s\";\n", ctools.config.get_name(pTemp), ctools.config.get_str(pTemp));
-			pTemp = ctools.config.get_next_node(pTemp);
+		char **tmp = &pNew->title;
+		for (int i = 0; i < 10; ++i) {
+			if (*tmp) fprintf(fp, "%s=\"%s\";\n", tag_table[1][i], *tmp);
+			tmp++;
 		}
 		pNew = pNew->next;
 		if (pNew != NULL) fprintf(fp, "-\n");
 	}
 	fclose(fp);
 	return 0;
-}
+}/*}}}*/
 
 /*
  * 事件排序
  */
 static struct Note *sort_time(struct Note *pNew)
-{
-	struct ctools ctools = ctools_init();
+{/*{{{*/
 	struct Note
 		*pNHead = NULL,    /* 新表头 */
 		*pTmp   = NULL,    /* 新表临时指针 */
 		*pOHead = pNew,    /* 旧表头 */
 		*pMark  = pNew;    /* 旧表临时指针 */
-	struct ctools_CONFIG_NODE
-		*data  = NULL,    /* 旧表用 */
-		*data2 = NULL;    /* 新表用 */
+	char *time1 = NULL,
+	     *time2 = NULL;
 
 	if (pNew == NULL) return NULL;
 	while (pOHead != NULL) {
 		pMark = pNew = pOHead;
 		while (pNew != NULL) {    /* 标记要替换的内容 */
-			data = pNew->data;
-			while (data != NULL && strcmp("time1", ctools.config.get_name(data)) != 0) data = ctools.config.get_next_node(data);
-			data2 = pMark->data;
-			while (data2 != NULL && strcmp("time1", ctools.config.get_name(data2)) != 0) data2 = ctools.config.get_next_node(data2);
-			if (data == NULL) {
-				printf("\033[0;32m==> \033[1;34m[ERROR] sort_time:\033[1;31m不存在`time1`标记！\033[0m\n");
+			time1 = pNew->time_start;
+			time2 = pMark->time_start;
+			if (!time1 || !time2) {
+				printf("\033[0;32m==> \033[1;34m[ERROR] sort_time:\033[1;31m不存在`time_start`标记！\033[0m\n");
 				/* printf("\033[0;32m==> \033[1;34m[INFO] sort_time:title:\033[33m%s\033[0m\n"); */
 				return NULL;
 			}
-			if (ctools.config.get_str(data2) != NULL
-			    && ctools.config.get_str(data) != NULL
-			    && strcmp(ctools.config.get_str(data2), ctools.config.get_str(data)) > 0)
+			if (strcmp(time2, time1) > 0)
 				pMark = pNew;
 			pNew = pNew->next;
 		}
@@ -133,14 +118,47 @@ static struct Note *sort_time(struct Note *pNew)
 		}
 	}
 	return pNHead;
-}
+}/*}}}*/
+
+/*
+ * 创建节点
+ */
+struct Note *create_node(char *str)
+{/*{{{*/
+	struct Note *pNew = malloc(sizeof(struct Note));
+	pNew->id = -1;
+	pNew->title = NULL;
+	pNew->background = NULL;
+	pNew->purpose = NULL;
+	pNew->time_start = NULL;
+	pNew->time_end = NULL;
+	pNew->where = NULL;
+	pNew->who = NULL;
+	pNew->descirbe = NULL;
+	pNew->result = NULL;
+	pNew->meaning = NULL;
+	pNew->next = NULL;
+	
+	cconfig rule = NULL;
+	cconfig_rule_set(&rule, "title", &pNew->title);
+	cconfig_rule_set(&rule, "background", &pNew->background);
+	cconfig_rule_set(&rule, "purpose", &pNew->purpose);
+	cconfig_rule_set(&rule, "time_start", &pNew->time_start);
+	cconfig_rule_set(&rule, "time_end", &pNew->time_end);
+	cconfig_rule_set(&rule, "where", &pNew->where);
+	cconfig_rule_set(&rule, "who", &pNew->who);
+	cconfig_rule_set(&rule, "describe", &pNew->descirbe);
+	cconfig_rule_set(&rule, "result", &pNew->result);
+	cconfig_rule_set(&rule, "meaning", &pNew->meaning);
+	cconfig_run(rule, str);
+	return pNew;
+}/*}}}*/
 
 /*
  * 读取笔记
  */
 struct Note *read_note(char *filename)
-{
-	struct ctools ctools = ctools_init();
+{/*{{{*/
 	FILE *fp;
 	struct Note *list = NULL, *pNew = NULL, *pLast = NULL;
 	char *base = NULL, *base2 = NULL;
@@ -157,9 +175,7 @@ struct Note *read_note(char *filename)
 			free(base);
 			base = base2;
 		}
-		pNew = malloc(sizeof(struct Note));
-		pNew->data = ctools.config.run_char(base);
-		pNew->next = NULL;
+		pNew = create_node(base);
 		if (list == NULL) list = pNew;
 		if (pLast != NULL) pLast->next = pNew;
 		pLast = pNew;
@@ -169,29 +185,24 @@ struct Note *read_note(char *filename)
 	free(base);
 	fclose(fp);
 	return list;
-}
+}/*}}}*/
 
-#define Swich(ch) { node = list->data; while (node != NULL && strcmp(ctools.config.get_name(node), ch) != 0) {node = ctools.config.get_next_node(node);}}
 /*
  * 在NCURSES显示笔记（子内容）
  */
 static int show_subnote(struct Note *list, int number)
-{
-	struct ctools ctools = ctools_init();
-	struct ctools_CONFIG_NODE *node = NULL;
+{/*{{{*/
 	cmenu menu = cmenu_create();
 
 	for (int i = 0; i < number && list != NULL; ++i) list = list->next;
 	if (list == NULL) return -1;
 
-	Swich("title");
-	cmenu_set_title(menu, ctools.config.get_str(node));
+	cmenu_set_title(menu, list->title);
 
+	char **tmp = &list->background;
 	for (int i = 1; i < 10; ++i) {
-		Swich(tag_table[0][i]);
-		if (node != NULL) {
-			cmenu_add_text(menu, 0, (char*)tag_table[1][i], ctools.config.get_str(node), NULL, NULL, NULL, 0, 0, 0);
-		}
+		if (*tmp) cmenu_add_text(menu, 0, (char*)tag_table[1][i], *tmp, NULL, NULL, NULL, 0, 0, 0);
+		tmp++;
 	}
 	int input = -1;
 	while (input != 'q' && input != 0) {
@@ -200,15 +211,13 @@ static int show_subnote(struct Note *list, int number)
 	}
 	free(menu);
 	return 0;
-}
+}/*}}}*/
 
 /*
  * 在NCURSES显示笔记
  */
 static int show_note(struct Note *list)
-{
-	struct ctools ctools = ctools_init();
-	struct ctools_CONFIG_NODE *node = NULL;
+{/*{{{*/
 	cmenu menu = cmenu_create();
 	int input = -1;
 	struct Note *list2 = list;
@@ -217,14 +226,10 @@ static int show_note(struct Note *list)
 
 	cmenu_set_title(menu, "笔记显示");
 	while (list != NULL) {
-		Swich("title");
-		char *title = ctools.config.get_str(node);
-		cmenu_add_text(menu, 0, title, "", NULL, NULL, NULL, 0, 0, 0);
+		cmenu_add_text(menu, 0, list->title, "", NULL, NULL, NULL, 0, 0, 0);
 		count++;
-		Swich("time1");
-		if (node != NULL) str1 = ctools.config.get_str(node);
-		Swich("describe");
-		if (node != NULL) str2 = ctools.config.get_str(node);
+		str1 = list->time_start;
+		str2 = list->descirbe;
 		if (str1 == NULL) return -2;
 		if (str2 == NULL) str2 = " ";
 		str3 = malloc(sizeof(char)*(strlen(str1) + strlen(str2) + 2));
@@ -241,11 +246,10 @@ static int show_note(struct Note *list)
 	}
 	free(menu);
 	return 0;
-}
-#undef Swich
+}/*}}}*/
 
 int main()
-{
+{/*{{{*/
 	cmenu menu = cmenu_create();
 	struct Note *list = NULL;
 	int input = -1;
@@ -295,5 +299,5 @@ int main()
 	endwin();
 	free(list);
 	return 0;
-}
+}/*}}}*/
 
