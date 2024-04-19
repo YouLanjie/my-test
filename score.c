@@ -30,11 +30,18 @@ int f_random(int f)
 	return rand() % 2;
 }/*}}}*/
 int tit_for_tat(int f)
-{
+{/*{{{*/
 	if (count <= 0) return 1;
 	if (record[!f][count - 1 > 0 ? count - 1 : 0]) return 1;
 	return 0;
-}
+}/*}}}*/
+int zero_after_one(int f)
+{/*{{{*/
+	if (count <= 0) return 1;
+	if (!record[!f][count - 1 > 0 ? count - 1 : 0]) return 0;
+	if (!record[f][count - 1 > 0 ? count - 1 : 0]) return 0;
+	return 1;
+}/*}}}*/
 
 
 int clean()
@@ -77,18 +84,20 @@ int run(int (*f_left)(int f), int (*f_right)(int f))
 	return 0;
 }/*}}}*/
 
-#define LEN 4
+#define LEN 5
 int lists[LEN] = {0};
 int (*list[LEN])(int f) = {
 	f_random,
 	zero_all,
 	one_all,
+	zero_after_one,
 	tit_for_tat,
 };
 char *listc[LEN] = {
 	"RANDOM",
 	"Betray ALL",
 	"Cooperate ALL",
+	"Betray After Cooperate",
 	"Tit For Tat"
 };
 
