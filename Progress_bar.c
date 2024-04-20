@@ -4,17 +4,16 @@
 int main() {
 	double f = 0,i = 0;
 
-	printf("\033[?25l");
 	printf("Please input a number:");
 	scanf("%lf",&i);
+	printf("\033[?25l");
 	getchar();
-	printf("\033[1;1H进度条:[\033[1;59H]\n");
+	printf("进度条:[\033[50C]\n");
 	for(double count = 0; count < i ; count++) {
 		f = count / i * 100;
-		printf("\033[1;%dH#\033[1;60H%.2lf%%\n",(int)(f / 2) + 9,f);
+		printf("\033[A\033[%dC#\n",(int)(f / 2) + 8);
+		printf("\033[A\033[59C%.2lf%%\n",f);
 	}
-	printf("\033[2;1HTest is over.\nInput enter return.\n");
-	_getch();
 	printf("\033[?25h");
 	return 0;
 }

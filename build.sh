@@ -45,7 +45,7 @@ build_file() {
 		return -2
 	}
 	cmd=$(echo "gcc $1 -g -Wall -Linclude/lib -ltools -lncurses $build_arg[$1] -o bin/$(echo $1 | sed 's/\.c$//')")
-	if [[ $flag_cmd != "" ]] {
+	if [[ $flag_cmd != "" || $flag_source != "" ]] {
 		cmd=$(echo "gcc $1 -g -Wall `find ./include/lib -name "*.c"|sed ":a;N;s/\n/ /g;b a"` -lncurses $build_arg[$1] -o bin/$(echo $1 | sed 's/\.c$//')")
 	}
 	echo "\033[0;1;32mCOMMAND> \033[0;1;33m$cmd\033[0m"
@@ -66,6 +66,7 @@ usage() {
 usage: $app_name [options]
   options:
      -c          只是获取编译命令
+     -s          不使用lib文件编译
      -f filename 指定编译的C文件
      -n          不删除lib文件
      -h          帮助信息"
@@ -76,9 +77,11 @@ usage: $app_name [options]
 obj_file=""
 nc_lib=""
 flag_cmd=""
-while {getopts 'cf:nh?' arg} {
+flag_source=""
+while {getopts 'csf:nh?' arg} {
 	case $arg {
 		c) flag_cmd="true" ;;
+		s) flag_source="true" ;;
 		f) obj_file=$OPTARG ;;
 		n) nc_lib="true" ;;
 		h|?) usage 0;;
@@ -86,7 +89,7 @@ while {getopts 'cf:nh?' arg} {
 	}
 }
 
-if [[ $flag_cmd == "" ]] {
+if [[ $flag_cmd == "" && $flag_source == "" ]] {
 	check
 	if [[ ! -f include/lib/libtools.a ]] {
 		build_lib

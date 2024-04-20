@@ -32,14 +32,12 @@
 | mkfile.c                   | 在认识dd和/dev/null前做的创建文件工具，有进度条(好用)                      |
 | readfile.c                 | 不断地查看指定文件的内容（适用于小文件）                                   |
 | socket.c                   | 使用套接字的简易本地聊天程序，支持中英文输入，无使用ncruses                |
-| 256color.c                 | 测试真彩色的显示                                                           |
 | CPU.c                      | 使用多个线程挤占CPU的性能                                                  |
 | bit.c                      | 验证dwm使用位运算标记工作区的原理                                          |
 | chinese.c                  | 辨别输入的内容是中文还是英文                                               |
 | input\_to\_hex.c           | 将输入的内容拆分成多个字符并使用十六进制显示，方便查找快捷键对应的输入字符 |
 | fork.c                     | 将使用fork创建新的进程执行命令，方便后台执行程序                           |
 | history\_note.c            | 正在制作中的历史笔记显示程序                                               |
-| Type\_conversion\_3gp.c    | 功能同Type\_conversion.c相似，不过专门用于将视频转换为3gp格式              |
 | number.c                   | 计算质数                                                                   |
 | input.c                    | 测试固定类型输入的输入框                                                   |
 | farme.c                    | 多线程显示处理测试                                                         |

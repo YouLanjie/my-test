@@ -3,6 +3,7 @@
 int conversion(char inputF[150], char outputF[150], char dirname[100], int i);	//转换函数
 
 int flag_command = 0;
+int flag_3gp = 0;
 
 int main(int argc, char *argv[])
 {
@@ -22,30 +23,25 @@ int main(int argc, char *argv[])
 		         time2,
 		         time3;
 
-	while ((opt = getopt(argc, argv, "t:d:h")) != -1) {
+	while ((opt = getopt(argc, argv, "vt:d:h")) != -1) {
 		switch (opt) {
+		case 'v':
+			flag_3gp = 1;
+			break;
 		case 't':
-			if (strcmp(optarg, "?") == 0) {
-				printf("请指定类型(mp3,m4a,mp4,gif,jpg,png)\n");
-				scanf("%s", type);
-				getchar();
-			} else {
-				strcpy(type, optarg);
-			}
+			if (strcmp(optarg, "?") == 0)
+				return -1;
+			strcpy(type, optarg);
 			break;
 		case 'd':
-			if (strcmp(optarg, "?") == 0) {
-				printf("请指定文件夹\n");
-				scanf("%s", dirname);
-				getchar();
-			} else {
-				strcpy(dirname, optarg);
-			}
+			if (strcmp(optarg, "?") == 0)
+				return -2;
+			strcpy(dirname, optarg);
 			break;
 		case '?':
 		case 'h':
 		default:
-			printf("本程序基于ffmpeg，转换格式时需要安装ffmpeg\n参数：Type_conversion -[t 目标格式] -[d 文件夹] -[h]帮助\n");
+			printf("本程序基于ffmpeg，转换格式时需要安装ffmpeg\n参数：Type_conversion [-t <目标格式>] [-d <文件夹>] [-v 3gp] [-h]帮助\n");
 			return 0;
 			break;
 		}
@@ -111,6 +107,11 @@ int main(int argc, char *argv[])
 					outputF[i4 - i2] = type[i3];
 					i2--;
 				}
+				if ((i + 1) % 7 == 0) {
+					printf("\n\033[1;33mInfo: \033[1;32m进程较多，等待后再开始\033[0m\n\n");
+					fflush(stdout);
+					while (wait(NULL) != -1) ;
+				}
 				pid = fork();
 				if (pid == 0) {
 					printf("\033[1;33mLoading: [file]: \033[1;32m\'%s\'\033[0m\n", inputF);
@@ -161,7 +162,8 @@ int conversion(char inputF[150], char outputF[150], char dirname[100], int i)
 		exit(1);
 	}
 	strcat(command, inputF);
-	strcat(command, "\" \"");
+	if (flag_3gp) strcat(command, "\" -r 12 -b:v 400k -s 352x288 -ab 12.2k -ac 1 -ar 8000 \"");
+	else strcat(command, "\" \"");
 	strcat(command, outputF);
 	strcat(command, "\" > ");
 
