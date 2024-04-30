@@ -13,7 +13,7 @@
 | RSA.c                      | RSA飞对称加密算法测试                                                      |
 | **Type_conversion.c**      | Linux下调用ffmpeg来对媒体文件进行格式转换(懒得打命令)                      |
 | *ASCII.c*                  | 打印ASCII码所对应的字符（因为懒得查）                                      |
-| *MEM.c*                    | 吞噬你的内存（我电脑差点被作死了）                                         |
+| *mem.c*                    | 吞噬你的内存                                                               |
 | *Progress_bar.c*           | 无聊写的进度条测试工具，可能会在后面用到                                   |
 | *Reverse_progress_bar.c*   | 类似于一条反方向的进度条                                                   |
 | ***Text_effects.c***       | 测试Linux下printf加上\033的文字显示效果测试                                |
