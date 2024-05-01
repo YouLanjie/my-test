@@ -40,8 +40,8 @@
 | history\_note.c            | 正在制作中的历史笔记显示程序                                               |
 | number.c                   | 计算质数                                                                   |
 | input.c                    | 测试固定类型输入的输入框                                                   |
-| farme.c                    | 多线程显示处理测试                                                         |
-| maze.c                     | 可视化生成迷宫                                                             |
+| farme.c                    | 多线程显示处理测试（已改为走迷宫，可和`maze.c`配合使用）                   |
+| maze.c                     | 可视化生成迷宫，数据将保存在`maze.txt`中                                   |
 | guess\_number.c            | 猜数字                                                                     |
 | tetris.c                   | 俄罗斯方块（测试）                                                         |
 

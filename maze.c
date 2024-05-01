@@ -60,6 +60,17 @@ int main(void)
 	print_map();
 	printf("\033[%dB", L);
 
+	FILE *fp = fopen("maze.txt", "w");
+	if (!fp) goto LEAVE;
+	for (int i = 1; i < L - 1; i++) {
+		for (int j = 1; j < L - 1; j++) {
+			fprintf(fp, "%d ", Maze[i][j]);
+		}
+		fprintf(fp, "\n");
+	}
+	fclose(fp);
+
+LEAVE:
 	printf("\033[?25h");
 	for (int i = 0; i < L; i++)
 		free(Maze[i]);
