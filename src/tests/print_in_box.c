@@ -9,7 +9,7 @@
  */
 
 
-#include "include/tools.h"
+#include "../../include/tools.h"
 
 static int print(char *ch, int x_start, int y_start, int width, int heigh, int hide, int focus)
 {

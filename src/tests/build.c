@@ -1,4 +1,4 @@
-#include "include/tools.h"
+#include "../../include/tools.h"
 
 #define Files 2
 // #define CC "clang"

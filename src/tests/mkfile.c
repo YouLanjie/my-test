@@ -1,4 +1,4 @@
-#include "include/tools.h"
+#include "../../include/tools.h"
 
 void stop();
 int  get_opt(int argc, char * argv[], char * type);

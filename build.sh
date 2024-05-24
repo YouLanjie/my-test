@@ -37,16 +37,16 @@ build_file() {
 		["input.c"]="-lm"	\
 		["build.c"]="#"		\
 		["gtk.c"]="$(pkg-config --cflags --libs gtk+-3.0 2>/dev/null || echo "#")")
-	if [[ $build_arg[$1] == "#" ]] {
+	if [[ $build_arg[$(echo $1 | sed 's/^.*\///')] == "#" ]] {
 		return -1
 	}
 	if {! file $1|grep "C source" >/dev/null 2>&1} {
 		echo "WARN: '$1'非C语言文件！Skip!"
 		return -2
 	}
-	cmd=$(echo "gcc $1 -g -Wall -Linclude/lib -ltools -lncurses $build_arg[$1] -o bin/$(echo $1 | sed 's/\.c$//')")
+	cmd=$(echo "gcc $1 -g -Wall -Linclude/lib -ltools -lncurses $build_arg[$(echo $1 | sed 's/^.*\///')] -o bin/$(echo $1 | sed 's/^.*\///'| sed 's/\.c$//')")
 	if [[ $flag_cmd != "" || $flag_source != "" ]] {
-		cmd=$(echo "gcc $1 -g -Wall `find ./include/lib -name "*.c"|sed ":a;N;s/\n/ /g;b a"` -lncurses $build_arg[$1] -o bin/$(echo $1 | sed 's/\.c$//')")
+		cmd=$(echo "gcc $1 -g -Wall `find ./include/lib -name "*.c"|sed ":a;N;s/\n/ /g;b a"` -lncurses $build_arg[$(echo $1 | sed 's/^.*\///')] -o bin/$(echo $1 | sed 's/^.*\///'| sed 's/\.c$//')")
 	}
 	echo "\033[0;1;32mCOMMAND> \033[0;1;33m$cmd\033[0m"
 	if [[ $flag_cmd == "" ]] {
@@ -55,7 +55,7 @@ build_file() {
 }
 
 build_dir() {
-	ls *.c |while {read line} {
+	ls src/*/*.c |while {read line} {
 		build_file $line
 	}
 }
