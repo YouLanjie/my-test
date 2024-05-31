@@ -23,10 +23,18 @@ running() {
 		# echo "dir:$ind"
 		local title=""
 
+		local part=""
+		part=$(cat "$line"|grep "part" >/dev/null && cat "$line"|sed -n "s/.*\"part\":\"\\([^\"]*\\)\".*/\\1/p")
+
 		local subtitle=""
-		subtitle=$(cat "$line"|grep "download_subtitle" >/dev/null && cat "$line"|sed -n "s/.*\"download_subtitle\":\"\\([^\"]*\\)\".*/\\1/p" || cat "$line"|sed -n "s/.*\"title\":\"\\([^\"]*\\)\".*/\\1/p")
-		[[ $subtitle != "" ]] && title=$subtitle
-		[[ $subtitle == "" ]] && title=$(cat "$line"|sed -n "s/.*\"title\":\"\\([^\"]*\\)\".*/\\1/p")
+		subtitle=$(cat "$line"|grep "download_subtitle" >/dev/null && cat "$line"|sed -n "s/.*\"download_subtitle\":\"\\([^\"]*\\)\".*/\\1/p")
+
+		local main_title=""
+		main_title=$(cat "$line"|sed -n "s/.*\"title\":\"\\([^\"]*\\)\".*/\\1/p")
+
+		title=$main_title
+		[[ $subtitle != "" ]] && title="$title - $subtitle"
+		[[ $part != "" ]] && title="$title - $part"
 
 		local ind_title=""
 		local index=""
