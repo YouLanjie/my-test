@@ -38,7 +38,7 @@ int check(int *c)
 	int flag = 1;
 	Linker *tmp = head;
 	while (tmp != NULL) {
-		if (*c % tmp->number == 0) flag = 0;
+		if (tmp->number && *c % tmp->number == 0) flag = 0;
 		tmp = tmp->next;
 	}
 	if (!flag) {

@@ -9,10 +9,7 @@
  */
 
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <time.h>
+#include "../../include/tools.h"
 
 FILE *fp = NULL;
 unsigned short int score[2] = {0};

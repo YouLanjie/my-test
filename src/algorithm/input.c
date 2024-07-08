@@ -21,7 +21,7 @@ int input_int_number(void)
 	printf("[__________]\r[");
 	int inp = 0;
 	int count = 0;
-	while (inp != '\r') {
+	while (inp != '\r' && inp != '\n') {
 		inp = _getch();
 		printf("\r");
 		int count2 = count * 10 + inp - 48;
@@ -49,7 +49,7 @@ int input_float_number(void)
 	double count = 0;
 	int flag_small = 0;
 	int level = 0;
-	while (inp != '\r') {
+	while (inp != '\r' && inp != '\n') {
 		inp = _getch();
 		printf("\r");
 		double tmp = inp - 48;
@@ -126,7 +126,7 @@ int input_string(void)
 	int inp = 0;
 	t_inp *pH = new_n();
 	t_inp *pN = pH, *pL = NULL;
-	while (inp != '\r') {
+	while (inp != '\r' && inp != '\n') {
 		t_print(pH, count);
 		inp = _getch();
 		if ((inp > '!' && inp < '~') || inp == ' ') {
@@ -170,7 +170,7 @@ int input_char(void)
 	inp = _getch();
 	printf("\033[4m%c\033[0m\n", inp);
 	if (inp == 0x1B) printf("Final result:[] <0x1B>\n");
-	else if (inp == '\r' || inp == '\n') printf("Final result:[] <0x%X>\n", inp);
+	else if (inp == '\r' || inp == '\n') printf("Final result:[%s] <0x%X>\n",inp == '\n' ? "\\n" : "\\r", inp);
 	else printf("Final result:[%c] <0x%X>\n", inp, inp);
 	return 0;
 }

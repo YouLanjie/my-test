@@ -109,6 +109,8 @@ RUN:
 	printf("\033[%dB", Max + 1);
 	printf("\033[?25h");
 	if (flag_win) printf("You did it!You Win!\n");
+	pthread_cancel(pid);
+	pthread_cancel(pid2);
 	return 0;
 }/*}}}*/
 
