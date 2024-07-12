@@ -16,8 +16,10 @@
 
 #define Shape_max 9
 
+/* 方块内第i位的状态值 */
 #define Bit() ((map.shape[map.type]) << (i + 16) >> 31)
 
+/* i为顺序号，(x,y)为方块内相对坐标 */
 #define Get() for (int i = 0, x = 0, y = 0; x = map.x + i % 4, y = map.y + i / 4 % 4, i < 16; i++)
 
 struct map {/*{{{*/
@@ -64,10 +66,11 @@ const char *print_ch[] = {
 	"\033[37m\033[47m",
 	"\033[2m",
 };
-int print_lock = 1;
-int flag_move_lock = 0;
-int flag_fack = 1;
-int flag_debug = 0;
+int print_lock = 1;		/* 控制进程、自动下落时间 */
+int flag_move_lock = 0;		/* 防止两个进程同时移动 */
+int flag_fake = 1;		/* 设置下落最终位置显示 */
+int flag_debug = 0;		/* 调试设置 */
+int flag_difficult = 14;	/* 难度设置(0~20) */
 int list[7] = {0, 0, 0, 0, 0, 0, 0};
 int list_num = 0;
 
@@ -85,7 +88,7 @@ static int create_list()
 	times = 6;
 	for (int i = 6; i >= 0 && list[i] != 0; times = i - 1, i--);
 	for (int i = 0; i <= times; i++)
-		list[i] && (li[list[i] / 4 - 1] = 0);
+		if (list[i]) li[list[i] / 4 - 1] = 0;
 	for (int i = 0; i <= times; i++) {
 		if (list[i]) continue;
 		do {
@@ -179,7 +182,7 @@ static int clean()
 	for (y = map.height - 1; y >= 0 ; y--) {
 		int count = map.weight;
 		for (x = map.weight - 1; x >= 0; x--) {
-			map.map[y * map.weight + x] && count--;
+			if (map.map[y * map.weight + x]) count--;
 		}
 		if (count)
 			continue;
@@ -189,7 +192,7 @@ static int clean()
 				else map.map[y * map.weight + x] = 0;
 			}
 		}
-		map.score += 100;
+		map.score += 1;
 		y = map.height + 1;
 	}
 	return 0;
@@ -231,7 +234,7 @@ static void *print_map()
 		}
 		printf("--------------------\r\n");
 		printf("\033[%dA", map.height + 1);
-		printf("\033[%dC| score:%d\r\n", map.weight * 2, map.score);
+		printf("\033[%dC| line:%3d  difficult:%2d\r\n", map.weight * 2, map.score, flag_difficult);
 		printf("\033[%dC| Key: 'asd' move, 'f' toggle fake, 'wjk' rote, 'b' debug\r\n", map.weight * 2);
 		char type_char[] = "#ISZLJT";
 #define tmp_select(num) (flag_debug ? type_char[((list[num > 6 ? num - 6 : num]) / 4) - 1] : type_char[((list[list_num + num > 6 ? list_num + num - 6 : list_num + num]) / 4) - 1])
@@ -246,14 +249,14 @@ static void *print_map()
 		       tmp_select(6));
 #undef tmp_select
 		printf("\033[%dA", 3);
-		if (print_lock && print_lock % 6 == 0) {
+		if (print_lock && print_lock % (20 - flag_difficult) == 0) {    /* 每0.3s就移动一次 */
 			int inp = 0;
 			inp = lmove(&map.y, 1);
 			print_lock = 1;
 			if (inp == -1) print_lock = 0;
 		}
-		usleep(TPS);
-		print_lock && print_lock++;
+		usleep(TPS);    /* 每0.05s就刷新一次 */
+		if (print_lock) print_lock++;
 	}
 	printf("\033[%dB", map.height + 1);
 	printf("\033[?25hGame Over\r\nIf the game did not close,press 'enter'\r\n");
@@ -284,9 +287,9 @@ int main()
 	pthread_create(&pid, NULL, print_map, NULL);
 	create(map.x, map.y, Shape_max * 4);
 	while(input != 'Q' && print_lock) {
-		flag_fack && create_fake();
+		if (flag_fake) create_fake();
 		input = _getch();
-		flag_fack && delete_fake();
+		if (flag_fake) delete_fake();
 		input = (input >= 'a' && input <= 'z') ? input - 32 : input;
 		switch (input) {
 		case 'J':
@@ -311,10 +314,17 @@ int main()
 				input = lmove(&map.y, 1);
 			break;
 		case 'F':
-			flag_fack = flag_fack ? 0 : 1;
+			flag_fake = flag_fake ? 0 : 1;
 			break;
 		case 'B':
 			flag_debug = flag_debug ? 0 : 1;
+			break;
+		case '+':
+		case '=':
+			flag_difficult += flag_difficult <= 20 ? 1 : 0;
+			break;
+		case '-':
+			flag_difficult -= flag_difficult >= 0 ? 1 : 0;
 			break;
 		default:
 			break;
