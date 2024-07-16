@@ -55,7 +55,7 @@ build_file() {
 }
 
 build_dir() {
-	ls src/*/*.c |while {read line} {
+	ls ./*.c |while {read line} {
 		build_file $line
 	}
 }
