@@ -40,7 +40,7 @@ run() {
 		out=$i
 		logfile=$(printf "%s/Log%03d" "$o_dir" $count)
 		icon=$(echo $i |sed 's/\.mp3/\.jpg/')
-		artist=$(echo $i |sed 's/^\.\/\(.*\) - .*/\1/')
+		artist=$(echo $i |sed 's/^.*\/\(.*\) - .*/\1/')
 		title=$(echo $i |sed 's/^.* - \(.*\)\.mp3/\1/')
 		msg=$(echo $i|sed 's/.mp3$/.txt/')
 		if [[ -f "$icon" ]] {
