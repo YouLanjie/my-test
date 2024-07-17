@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
 		}
 	}
 	print();
-	flag_256 && color256();
+	if (flag_256) color256();
 	return 0;
 }
 

@@ -101,7 +101,7 @@ void init()
 void print_map()
 {				/*{{{ */
 	int l = L - 2;
-	int deep = L * L / 2 - Rank;
+	int deep = L * L / 2 - Rank;    /* 并无实际意义，经验公式 */
 	struct winsize size;
 	ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
 
@@ -114,7 +114,8 @@ void print_map()
 		printf("\n");
 	}
 	printf("\033[%dA", l);
-	printf("\033[%dC  | 符号解释: '%s'为遍历节点,'%s'为走道\n", l*2, MARK_C, ROUTE_C);
+	printf("\033[%dC  | 符号解释: '%s'为遍历节点\n", l*2, MARK_C);
+	printf("\033[%dC  |           '%s'为走道\n", l*2, ROUTE_C);
 	printf("\033[%dC  |           '%s'为边墙\n", l*2, WALL_C);
 	printf("\033[%dC  | 全图边长: %d\n", l*2, L);
 	printf("\033[%dC  | 实体边长: %d\n", l*2, l);
@@ -128,7 +129,7 @@ void print_map()
 		printf((double)i / lim < (double)level / deep ? "#" : " ");
 	}
 	printf("]\n");
-	printf("\033[%dA", 8);
+	printf("\033[%dA", 9);
 	return;
 }				/*}}} */
 
