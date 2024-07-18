@@ -12,17 +12,20 @@
 #include "include/tools.h"
 
 #define SECOND 1000000
-#define TPS    (SECOND / 20)
+int TPS = (SECOND / 20);
 
 #define Shape_max 9
 
 /* 方块内第i位的状态值 */
-#define Bit() ((map.shape[map.type]) << (i + 16) >> 31)
+#define Stat ((map.shape[map.type]) >> (15 - i) & 1)
+#define Stat2(type) ((map.shape[type]) >> (15 - i) & 1)
+/* i为顺序号，(x,y)为地图坐标 */
+#define Map_for() for (int i = 0, x = 0, y = 0; x = map.x + i % 4, y = map.y + i / 4 % 4, i < 16; i++)
+/* 判断出界条件 */
+#define Cond_out (x < 0 || x >= map.weight || y >= map.height || \
+		  (map.map[y * map.weight + x] != 0 && map.map[y * map.weight + x] != 8))
 
-/* i为顺序号，(x,y)为方块内相对坐标 */
-#define Get() for (int i = 0, x = 0, y = 0; x = map.x + i % 4, y = map.y + i / 4 % 4, i < 16; i++)
-
-struct map {/*{{{*/
+struct map {
 	int *map;
 	int weight;
 	int height;
@@ -52,10 +55,10 @@ struct map {/*{{{*/
 	.x      = 3,
 	.y      = 0,
 	.score  = 0,
-};/*}}}*/
+};
 
 
-const char *print_ch[] = {
+const char *print_color[] = {
 	"\033[30m",
 	"\033[31m\033[41m",
 	"\033[32m\033[42m",
@@ -70,12 +73,15 @@ int print_lock = 1;		/* 控制进程、自动下落时间 */
 int flag_move_lock = 0;		/* 防止两个进程同时移动 */
 int flag_fake = 1;		/* 设置下落最终位置显示 */
 int flag_debug = 0;		/* 调试设置 */
-int flag_difficult = 14;	/* 难度设置(0~20) */
+int flag_difficult = 14;	/* 难度设置(0~19) */
+int flag_challenge = 0;
+time_t game_time1 = 0, game_time2 = 0;
 int list[7] = {0, 0, 0, 0, 0, 0, 0};
 int list_num = 0;
 
+/* 创建等候列表 */
 static int create_list()
-{/*{{{*/
+{
 	static int times = 6;
 	struct timeval gettime;
 	int li[] = {1, 2, 3, 4, 5, 6, 7},
@@ -113,16 +119,18 @@ static int create_list()
 		times = 0;
 	}
 	return times;
-}/*}}}*/
+}
 
+/* 移除旧有方块 */
 static int delete()
-{/*{{{*/
-	Get() Bit() ? map.map[y * map.weight + x] = 0 : 0;
+{
+	Map_for() Stat ? map.map[y * map.weight + x] = 0 : 0;
 	return 0;
-}/*}}}*/
+}
 
+/* 创建方块 */
 static int create(int x, int y, int type)
-{/*{{{*/
+{
 	type = abs(type);
 
 	if (type > (Shape_max - 1) * 4) {
@@ -136,18 +144,18 @@ static int create(int x, int y, int type)
 	map.type = type;
 	map.x = x;
 	map.y = y;
-	Get() {
-		if (Bit()) {
+	Map_for() {
+		if (Stat) {
 			if (map.map[y * map.weight + x] != 0 && map.map[y * map.weight + x] != 8)
 				return 1;
 			map.map[y * map.weight + x] = type / 4;
 		}
 	}
 	return 0;
-}/*}}}*/
+}
 
 static int delete_fake()
-{/*{{{*/
+{
 	for (int y = map.height - 1; y >= 0 ; y--) {
 		for (int x = map.weight - 1; x >= 0; x--) {
 			if (map.map[y * map.weight + x] == 8)
@@ -155,10 +163,10 @@ static int delete_fake()
 		}
 	}
 	return 0;
-}/*}}}*/
+}
 
 static int create_fake()
-{/*{{{*/
+{
 	int x1 = map.x, y1 = map.y;
 	int flag = 0;
 
@@ -166,18 +174,19 @@ static int create_fake()
 	delete_fake();
 	while (! flag) {
 		map.y += 1;
-		Get() (Bit()) && (x < 0 || x >= map.weight || y >= map.height || (map.map[y * map.weight + x] != 0 && map.map[y * map.weight + x] != 8)) && (flag = 1);
+		Map_for() (Stat) && Cond_out && (flag = 1);
 	}
 	map.y -= 1;
-	Get() Bit() ? map.map[y * map.weight + x] = 8 : 0;
+	Map_for() Stat ? map.map[y * map.weight + x] = 8 : 0;
 	map.x = x1;
 	map.y = y1;
 	create(map.x, map.y, map.type);
 	return 0;
-}/*}}}*/
+}
 
+/* 消除拼成一行的方块 */
 static int clean()
-{/*{{{*/
+{
 	int x = 0, y = 0;
 	for (y = map.height - 1; y >= 0 ; y--) {
 		int count = map.weight;
@@ -194,12 +203,13 @@ static int clean()
 		}
 		map.score += 1;
 		y = map.height + 1;
+		if (flag_challenge && flag_difficult < 19 && map.score % 20 == 0) flag_difficult++;
 	}
 	return 0;
-}/*}}}*/
+}
 
 static int lmove(int *v, int step)
-{/*{{{*/
+{
 	int flag = 0;
 
 	if (flag_move_lock)
@@ -207,7 +217,7 @@ static int lmove(int *v, int step)
 	flag_move_lock = 1;
 	delete();
 	*v += step;
-	Get() (Bit()) && (x < 0 || x >= map.weight || y >= map.height || (map.map[y * map.weight + x] != 0 && map.map[y * map.weight + x] != 8)) && (flag = 1);
+	Map_for() (Stat) && Cond_out && (flag = 1);
 	if (flag) *v -= step;
 	create(map.x, map.y, map.type);
 	if (flag && v == &map.y) {
@@ -216,40 +226,63 @@ static int lmove(int *v, int step)
 	}
 	flag_move_lock = 0;
 	return flag;
-}/*}}}*/
+}
 
-static void *print_map()
-{/*{{{*/
+static void print_block(int shape, int margin_left)
+{
+	for (int i = 0; i < 16; i++) {
+		if (i % 4 == 0) printf("\033[%dC| ", margin_left);
+		printf("%s[]\033[0m", print_color[Stat2(shape) ? shape / 4 : 8]);
+		if ((i + 1) % 4 == 0) printf("\r\n");
+	}
+	printf("\r\n");
+	return;
+}
+
+static void print_next()
+{
+	for (int i = 0; i <= 6; i++) {
+		int shape = list[flag_debug ? (i > 6 ? i - 6 : i) : (list_num + i > 6 ? list_num + i - 7 : list_num + i)];
+		if (i <= 4) print_block(shape, map.weight * 2);
+		else {
+			if (i == 5) printf("\033[%dA", 5*5);
+			print_block(shape, map.weight * 2 + 2 + 4*2 + 1);
+		}
+	}
+	printf("\033[%dA", 5*2);
+	return;
+}
+
+static void print_map()
+{
+	for (int i = 0; i < map.size; i++) {
+		printf("%s", print_color[map.map[i]]);
+		if (flag_debug) printf("\033[37m%02d\033[0m", map.map[i]);
+		else printf("[]\033[0m");
+		printf("%s", (i + 1) % map.weight == 0 ? "|\r\n" : "");
+	}
+	printf("--------------------\r\n");
+	return;
+}
+
+static void *print_ui()
+{
+	int dtime = 0;
 	print_lock = 1;
 	printf("\033[?25l");
+
 	while (print_lock) {
-		for (int i = 0; i < map.size; i++) {
-			if (flag_debug) {
-				printf("%s\033[37m%02d\033[0m%s", print_ch[map.map[i]], map.map[i],
-				       (i + 1) % map.weight == 0 ? "|\r\n" : "");
-			} else {
-				printf("%s[]\033[0m%s", print_ch[map.map[i]],
-				       (i + 1) % map.weight == 0 ? "|\r\n" : "");
-			}
-		}
-		printf("--------------------\r\n");
-		printf("\033[%dA", map.height + 1);
-		printf("\033[%dC| line:%3d  difficult:%2d\r\n", map.weight * 2, map.score, flag_difficult);
-		printf("\033[%dC| Key: 'asd' move, 'f' toggle fake, 'wjk' rote, 'b' debug\r\n", map.weight * 2);
-		char type_char[] = "#ISZLJT";
-#define tmp_select(num) (flag_debug ? type_char[((list[num > 6 ? num - 6 : num]) / 4) - 1] : type_char[((list[list_num + num > 6 ? list_num + num - 6 : list_num + num]) / 4) - 1])
-		printf("\033[%dC| Next Block:%c %c %c %c %c %c %c\r\n",
-		       map.weight * 2,
-		       tmp_select(0),
-		       tmp_select(1),
-		       tmp_select(2),
-		       tmp_select(3),
-		       tmp_select(4),
-		       tmp_select(5),
-		       tmp_select(6));
-#undef tmp_select
-		printf("\033[%dA", 3);
-		if (print_lock && print_lock % (20 - flag_difficult) == 0) {    /* 每0.3s就移动一次 */
+		time(&game_time2);
+		dtime = difftime(game_time2, game_time1);
+		print_map();
+		printf("Clean Line:%3d /Difficult:%2d /Time:(%02d:%02d:%02d) /Challenge Mode:%s\r\n\r\n", map.score, flag_difficult,
+		       dtime / 3600, dtime / 60, dtime % 60,
+		       flag_challenge ? "On" : "Off");
+		printf("<Game> [a/s/d] Move   [w/j/k] rotate  [SPACE]fast descend\r\n"
+		       "<Setting>  [b] Toogle Debug Mode      [f] Toggle Show predicted position\r\n");
+		printf("\033[%dA", map.height + 5);
+		print_next();
+		if (print_lock && print_lock % (20 - flag_difficult) == 0) {    /* 默认每0.3s就移动一次 */
 			int inp = 0;
 			inp = lmove(&map.y, 1);
 			print_lock = 1;
@@ -258,33 +291,60 @@ static void *print_map()
 		usleep(TPS);    /* 每0.05s就刷新一次 */
 		if (print_lock) print_lock++;
 	}
-	printf("\033[%dB", map.height + 1);
+
+	printf("\033[%dB\r\n", map.height + 4);
 	printf("\033[?25hGame Over\r\nIf the game did not close,press 'enter'\r\n");
 	if (flag_debug) {
 		printf("Exit dump:\r\n");
-		for (int i = 0; i < map.size; i++) {
-			if (flag_debug) {
-				printf("%s\033[37m%02d\033[0m%s", print_ch[map.map[i]], map.map[i],
-				       (i + 1) % map.weight == 0 ? "|\r\n" : "");
-			} else {
-				printf("%s[]\033[0m%s", print_ch[map.map[i]],
-				       (i + 1) % map.weight == 0 ? "|\r\n" : "");
-			}
-		}
+		print_map();
 	}
 	pthread_exit(NULL);
 	return NULL;
-}/*}}}*/
+}
 
-int main()
-{/*{{{*/
+static void help()
+{
+	printf("Usage:\n"
+	       "    tetris [-c]\n"
+	       "    socket -h\n"
+	       "Option:\n"
+	       "    -c    Challenge Mode:speed increases over time\n"
+	       "    -h    Show this page\n"
+	    );
+	return;
+}
+
+int main(int argc, char *argv[])
+{
 	pthread_t pid;
 	int input = 0;
+
+	int ch = 0;
+	while ((ch = getopt(argc, argv, "hc")) != -1) {	/* 获取参数 */
+		switch (ch) {
+		case '?':
+			help();
+			return -1;
+			break;
+		case 'h':
+			help();
+			return 0;
+			break;
+		case 'c':
+			TPS = SECOND / 80;
+			flag_challenge = 1;
+			flag_difficult = 6;
+			break;
+		default:
+			break;
+		}
+	}
 
 	map.map = calloc(map.size = map.weight * map.height, sizeof(int));
 	memset(map.map, 0, map.size);
 
-	pthread_create(&pid, NULL, print_map, NULL);
+	time(&game_time1);
+	pthread_create(&pid, NULL, print_ui, NULL);
 	create(map.x, map.y, Shape_max * 4);
 	while(input != 'Q' && print_lock) {
 		if (flag_fake) create_fake();
@@ -321,10 +381,10 @@ int main()
 			break;
 		case '+':
 		case '=':
-			flag_difficult += flag_difficult <= 20 ? 1 : 0;
+			if (!flag_challenge) flag_difficult += flag_difficult <= 20 ? 1 : 0;
 			break;
 		case '-':
-			flag_difficult -= flag_difficult >= 0 ? 1 : 0;
+			if (!flag_challenge) flag_difficult -= flag_difficult >= 0 ? 1 : 0;
 			break;
 		default:
 			break;
@@ -336,5 +396,5 @@ int main()
 	usleep(TPS * 2);
 	free(map.map);
 	return 0;
-}/*}}}*/
+}
 
