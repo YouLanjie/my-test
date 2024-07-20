@@ -34,6 +34,7 @@ struct map {
 	int type;
 	int x;
 	int y;
+	int line;
 	int score;
 } map = {
 	.map    = NULL,
@@ -75,6 +76,7 @@ int flag_fake = 1;		/* 设置下落最终位置显示 */
 int flag_debug = 0;		/* 调试设置 */
 int flag_difficult = 14;	/* 难度设置(0~19) */
 int flag_challenge = 0;
+int flag_info = 1;
 time_t game_time1 = 0, game_time2 = 0;
 int list[7] = {0, 0, 0, 0, 0, 0, 0};
 int list_num = 0;
@@ -188,6 +190,7 @@ static int create_fake()
 static int clean()
 {
 	int x = 0, y = 0;
+	int line = map.line;
 	for (y = map.height - 1; y >= 0 ; y--) {
 		int count = map.weight;
 		for (x = map.weight - 1; x >= 0; x--) {
@@ -201,10 +204,11 @@ static int clean()
 				else map.map[y * map.weight + x] = 0;
 			}
 		}
-		map.score += 1;
+		map.line += 1;
 		y = map.height + 1;
-		if (flag_challenge && flag_difficult < 19 && map.score % 20 == 0) flag_difficult++;
+		if (flag_challenge && flag_difficult < 19 && map.line % 20 == 0) flag_difficult++;
 	}
+	map.score += (map.line - line) * (map.line - line);
 	return 0;
 }
 
@@ -268,6 +272,7 @@ static void print_map()
 static void *print_ui()
 {
 	int dtime = 0;
+	int info = flag_info;
 	print_lock = 1;
 	printf("\033[?25l");
 
@@ -275,12 +280,28 @@ static void *print_ui()
 		time(&game_time2);
 		dtime = difftime(game_time2, game_time1);
 		print_map();
-		printf("Clean Line:%3d /Difficult:%2d /Time:(%02d:%02d:%02d) /Challenge Mode:%s\r\n\r\n", map.score, flag_difficult,
-		       dtime / 3600, dtime / 60, dtime % 60,
-		       flag_challenge ? "On" : "Off");
-		printf("<Game> [a/s/d] Move   [w/j/k] rotate  [SPACE]fast descend\r\n"
-		       "<Setting>  [b] Toogle Debug Mode      [f] Toggle Show predicted position\r\n");
-		printf("\033[%dA", map.height + 5);
+		if (info ^  flag_info) {
+			printf("                                                         \r\n\r\n");
+			printf("                                                          \r\n"
+				"                                                                \r\n");
+			fflush(stdout);
+			printf("\033[%dA", 4);
+			fflush(stdout);
+			info = flag_info;
+		}
+		if (flag_info) {
+			printf("Line:%3d /Score:%3d /Level:%2d /Time:(%02d:%02d:%02d) /CMode:%s\r\n\r\n", map.line, map.score, flag_difficult,
+			       dtime / 3600, dtime / 60, dtime % 60,
+			       flag_challenge ? "On" : "Off");
+			printf("<Game> [a/s/d] Move   [w/j/k] rotate  [SPACE] fast descend\r\n"
+				"<Setting>  [b] Debug      [i] this infos  [f] predicted position\r\n");
+			printf("\033[%dA", 2);
+		} else {
+			printf("Ln:%3d /Sc:%3d /Lv:%2d /T:(%02d:%02d:%02d) /CM:%s\r\n\r\n", map.line, map.score, flag_difficult,
+			       dtime / 3600, dtime / 60, dtime % 60,
+			       flag_challenge ? "1" : "0");
+		}
+		printf("\033[%dA", map.height + 3);
 		print_next();
 		if (print_lock && print_lock % (20 - flag_difficult) == 0) {    /* 默认每0.3s就移动一次 */
 			int inp = 0;
@@ -309,6 +330,7 @@ static void help()
 	       "    socket -h\n"
 	       "Option:\n"
 	       "    -c    Challenge Mode:speed increases over time\n"
+	       "    -i    Hide some of the info below the main ui\n"
 	       "    -h    Show this page\n"
 	    );
 	return;
@@ -320,7 +342,7 @@ int main(int argc, char *argv[])
 	int input = 0;
 
 	int ch = 0;
-	while ((ch = getopt(argc, argv, "hc")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "hci")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 			help();
@@ -334,6 +356,9 @@ int main(int argc, char *argv[])
 			TPS = SECOND / 80;
 			flag_challenge = 1;
 			flag_difficult = 6;
+			break;
+		case 'i':
+			flag_info = 0;
 			break;
 		default:
 			break;
@@ -385,6 +410,9 @@ int main(int argc, char *argv[])
 			break;
 		case '-':
 			if (!flag_challenge) flag_difficult -= flag_difficult >= 0 ? 1 : 0;
+			break;
+		case 'I':
+			flag_info ^= 1;
 			break;
 		default:
 			break;
