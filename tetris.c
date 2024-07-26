@@ -323,59 +323,28 @@ static void *print_ui()
 	return NULL;
 }
 
-static void help()
+static int key(int input)
 {
-	printf("Usage:\n"
-	       "    tetris [-c]\n"
-	       "    socket -h\n"
-	       "Option:\n"
-	       "    -c    Challenge Mode:speed increases over time\n"
-	       "    -i    Hide some of the info below the main ui\n"
-	       "    -h    Show this page\n"
-	    );
-	return;
+	int table[256] = {['A'] = 'W', ['B'] = 'S', ['C'] = 'D', ['D'] = 'A'};
+
+	input = (input >= 'a' && input <= 'z') ? input - 32 : input;
+	if (input != 0x1B || !kbhit()) return input;
+
+	getchar();
+	input = getchar();
+	input = table[input];
+	return input;
 }
 
-int main(int argc, char *argv[])
+static void run()
 {
-	pthread_t pid;
 	int input = 0;
 
-	int ch = 0;
-	while ((ch = getopt(argc, argv, "hci")) != -1) {	/* 获取参数 */
-		switch (ch) {
-		case '?':
-			help();
-			return -1;
-			break;
-		case 'h':
-			help();
-			return 0;
-			break;
-		case 'c':
-			TPS = SECOND / 80;
-			flag_challenge = 1;
-			flag_difficult = 6;
-			break;
-		case 'i':
-			flag_info = 0;
-			break;
-		default:
-			break;
-		}
-	}
-
-	map.map = calloc(map.size = map.weight * map.height, sizeof(int));
-	memset(map.map, 0, map.size);
-
-	time(&game_time1);
-	pthread_create(&pid, NULL, print_ui, NULL);
 	create(map.x, map.y, Shape_max * 4);
 	while(input != 'Q' && print_lock) {
 		if (flag_fake) create_fake();
-		input = _getch();
+		input = key(_getch());
 		if (flag_fake) delete_fake();
-		input = (input >= 'a' && input <= 'z') ? input - 32 : input;
 		switch (input) {
 		case 'J':
 			lmove(&map.type, map.type % 4 > 0 ? -1 : 3);
@@ -419,6 +388,55 @@ int main(int argc, char *argv[])
 		}
 		input == -1 && (input = 'Q');
 	}
+}
+
+static void help()
+{
+	printf("Usage:\n"
+	       "    tetris [-c]\n"
+	       "    socket -h\n"
+	       "Option:\n"
+	       "    -c    Challenge Mode:speed increases over time\n"
+	       "    -i    Hide some of the info below the main ui\n"
+	       "    -h    Show this page\n"
+	    );
+	return;
+}
+
+int main(int argc, char *argv[])
+{
+	pthread_t pid;
+
+	int ch = 0;
+	while ((ch = getopt(argc, argv, "hci")) != -1) {	/* 获取参数 */
+		switch (ch) {
+		case '?':
+			help();
+			return -1;
+			break;
+		case 'h':
+			help();
+			return 0;
+			break;
+		case 'c':
+			TPS = SECOND / 80;
+			flag_challenge = 1;
+			flag_difficult = 6;
+			break;
+		case 'i':
+			flag_info = 0;
+			break;
+		default:
+			break;
+		}
+	}
+
+	map.map = calloc(map.size = map.weight * map.height, sizeof(int));
+	memset(map.map, 0, map.size);
+
+	time(&game_time1);
+	pthread_create(&pid, NULL, print_ui, NULL);
+	run();
 
 	print_lock = 0;
 	usleep(TPS * 2);
