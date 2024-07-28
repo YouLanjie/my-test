@@ -10,22 +10,6 @@
 
 #define MAXSIZE (1024*20)
 /* #define PORT 8002 */
-#define print_time(type)					\
-	printf("\033[0;1;33%sm%04d-%02d-%02d %02d-%02d-%02d ",	\
-	       type ? ";47" : "",				\
-	       timep2->tm_year + 1900,				\
-	       timep2->tm_mon + 1,				\
-	       timep2->tm_mday,					\
-	       timep2->tm_hour + 8,				\
-	       timep2->tm_min,					\
-	       timep2->tm_sec);
-#define print_msg(type, bef, aft)				\
-	printf("%s", bef);					\
-	print_time(type);					\
-	printf("%s > \033[0;%sm%s\033[0m%s",			\
-	       gettext(type ? " 输出 " : " 输入 "),		\
-	       type ? "30;47" : "37",				\
-	       type ? recbuf : sendbuf, aft);
 
 int listen_fd = -1,		/* <fd>     监听套接字 */
     connect_fd = -1;		/* <fd>     连接套接字 */
@@ -35,89 +19,94 @@ char sendbuf[MAXSIZE],		/* <ch>  接收缓冲区 */
      recbuf[MAXSIZE];		/* <ch>  发送缓冲区 */
 
 int flag_run = 0;
-int flag_file = 0;
-int flag_enter = '\r';
+int flag_enter = '\n';
 int flag_exit = 1;
 char filename[MAXSIZE] = "(null)";
 
 struct termios flag_oldt;
 int flag_termux;
 
+
+/* type: 0->input, 1->output, 2->format_only */
+int print_msg(int type, char *before, char *after, struct tm *tp)
+{
+	printf("%s", before);
+	if (tp) {
+		printf("\033[0;1;33%sm[%04d-%02d-%02d %02d:%02d:%02d]", type & 1 ? ";47" : "",
+		       tp->tm_year + 1900, tp->tm_mon + 1, tp->tm_mday, tp->tm_hour + 8, tp->tm_min, tp->tm_sec);
+	}
+	printf(" %s > \033[0;%sm%s\033[0m%s", gettext(type & 1 ? "输出" : "输入"),
+	       type & 1 ? "30;47" : "37",
+	       type & 2 ? "" : (type & 1 ? recbuf : sendbuf),
+	       after);
+	return 0;
+}
+
 /*
  * 获取输入
  */
 void input(char *str)
-{				/*{{{ */
+{
 	int ch = 0, count = 0;
 	if (str == NULL)
 		return;
-	char *str2 = malloc(sizeof(char) * MAXSIZE);
 	memset(str, 0, sizeof(char) * MAXSIZE);
-	memset(str2, 0, sizeof(char) * MAXSIZE);
 	while (ch != 0x1B && ch != flag_enter) {
+		fflush(stdout);
+		fflush(stdin);
+
 		ch = _getch();
-		if (ch == 0x1B && kbhit() != 0)
+		ch = ch == '\r' ? '\n' : ch;
+
+		if (ch == 0x1B && kbhit() != 0) {
 			ch = '\0';
-		if (ch & 0x80) {	/* If is Chinese */
-			printf("\033[0;37m%c", ch);
-			sprintf(str2, "%s%c", str, ch);
-			strcpy(str, str2);
-			ch = _getch();
-			printf("%c", ch);
-			sprintf(str2, "%s%c", str, ch);
-			strcpy(str, str2);
-			ch = _getch();
-			printf("%c\033[0m", ch);
-			sprintf(str2, "%s%c", str, ch);
-			strcpy(str, str2);
-			count += 3;
-			fflush(stdout);
-			fflush(stdin);
 			continue;
 		}
-		if (ch == 0x7F && count > 0 && flag_enter == '\r') {
+		if (ch == 0x7F && count > 0 && flag_enter == '\n') {
 			if (str[strlen(str) - 1] & 0x80) {
-				printf("\b\b  \b\b");
-				str[strlen(str) - 1] = '\0';
-				str[strlen(str) - 2] = '\0';
-				str[strlen(str2) - 1] = '\0';
-				str[strlen(str2) - 2] = '\0';
-				count -= 2;
-			} else {
 				printf("\b \b");
 				str[strlen(str) - 1] = '\0';
-				str[strlen(str2) - 1] = '\0';
+				str[strlen(str) - 1] = '\0';
+				count -= 2;
 			}
+			printf("\b \b");
+			str[strlen(str) - 1] = '\0';
 			count--;
+		}
+		if (ch & 0x80) {	/* If is Chinese */
+			char tmp[5] = "   \0";
+			tmp[0] = ch;
+			tmp[1] = _getch();
+			tmp[2] = _getch();
+			printf("\033[0;37m%s\033[0m", tmp);
+			strcat(str, tmp);
+			count += 3;
+			continue;
 		}
 		if (ch != 0x1B && ch != 0x7F && ch != flag_enter) {
 			count++;
 			printf("\033[0;37m%c\033[0m", ch);
-			sprintf(str2, "%s%c", str, ch);
-			if (ch == '\r') {
-				ch = '\n';
-				printf("\033[0;37m%c\033[0m", ch);
-				sprintf(str2, "%s\r%c", str, ch);
-			}
-			strcpy(str, str2);
+			str[strlen(str)] = ch;
 		}
-		fflush(stdout);
-		fflush(stdin);
 	}
-	free(str2);
 	return;
-}				/*}}} */
+}
+
+struct tm *gtime()
+{
+	time_t tp;
+
+	time(&tp);
+	return gmtime(&tp);
+}
 
 void *get_msg()
-{				/*{{{ */
-	char recbuf[MAXSIZE];	/* <ch>  发送缓冲区 */
+{
 	struct winsize size;
 
 	fflush(stdout);
 	flag_run = 1;
 	// 读取客户端发来的信息，会阻塞
-	time_t timep1;
-	struct tm *timep2;
 	while (flag_exit) {
 		ssize_t len = read(connect_fd, recbuf, sizeof(recbuf));
 		if (len <= 0) {
@@ -142,109 +131,78 @@ void *get_msg()
 		}
 		printf("\033[0m\r");
 		fflush(stdout);
-		time(&timep1);
-		timep2 = gmtime(&timep1);
 
-		print_msg(1, "", "\r\n");	/* Output : recbuf */
-		print_msg(0, "", "");		/* Input : sendbuf */
+		print_msg(1, "", "\r\n", gtime());	/* Output : recbuf */
+		print_msg(0, "", "", gtime());		/* Input : sendbuf */
 
-		if (access("socket_get_output.txt", F_OK) != 0 && flag_file == -1) {
-			FILE *fp = fopen("socket_get_output.txt", "w");
-			if (!fp)
-				pthread_exit(NULL);
-			fprintf(fp, "%s", recbuf);
-			fclose(fp);
-		}
 		fflush(stdout);
 		usleep(30000);
 	}
 	flag_run = 0;
 	pthread_exit(NULL);
 	return NULL;
-}				/*}}} */
+}
+
+int help_in()
+{
+	printf("\033[0;1;33m"
+	       "INFO > Help message:\n"
+	       "\033[0;1;32m"
+	       "HELP > /help        %s\n"
+	       "HELP > /exit        %s\n"
+	       "HELP > /flag_enter  %s\n"
+	       "HELP > /lang_query  %s\n"
+	       "HELP > /lang_en     %s\n"
+	       "HELP > /lang_zh     %s\n"
+	       "HELP > <message>    %s\n"
+	       "HELP > <ESC>        %s\n"
+	       "HELP > <Enter>      %s\n"
+	       "HELP > <Backspace>  %s"
+	       "\033[0m\n",
+	       gettext("显示这条帮助"),
+	       gettext("退出程序"),
+	       gettext("切换按下回车结束消息的功能"),
+	       gettext("查询当前的语言设置"),
+	       gettext("设置界面语言为英文"),
+	       gettext("设置界面语言为中文"),
+	       gettext("输入消息"),
+	       gettext("发送消息"),
+	       gettext("结束消息(需要FLAG_ENTER显示为True)"),
+	       gettext("删除字符(需开启回车结束消息，否则它不会工作)")
+	    );
+	return 0;
+}
 
 /*
  * UI交互
  */
 int ui(void)
-{				/*{{{ */
+{
 	pthread_t pid;
 	pthread_create(&pid, NULL, get_msg, NULL);
 
 	usleep(30000);
 
-	time_t timep1;
-	struct tm *timep2;
-
-	printf("\033[0;1;33mINFO > %s\033[0m\n",
-	       gettext
-	       ("连接成功，输入`/help`然后按ESC或回车获取帮助"));
+	printf("\033[0;1;33mINFO > %s\033[0m\n", gettext("连接成功，输入`/help`然后按ESC或回车获取帮助"));
 	while (strcmp(sendbuf, "/exit") != 0) {
-		if (flag_file != 1) {
-			time(&timep1);
-			timep2 = gmtime(&timep1);
-			print_time(0);
-			printf("%s > \033[0m", gettext(" 输入 "));
-			input(sendbuf);
-			time(&timep1);
-			timep2 = gmtime(&timep1);
-			print_msg(0, "\r", "\n");	/* Input : sendbuf */
-		} else {
-			FILE *fp = fopen(filename, "r");
-			if (!fp)
-				return -1;
-			char ch[2] = "0\0";
-			memset(sendbuf, 0, sizeof(sendbuf));
-			while (ch[0] != (char)EOF) {
-				ch[0] = fgetc(fp);
-				strcat(sendbuf, ch);
-			}
-			time(&timep1);
-			timep2 = gmtime(&timep1);
-			print_msg(0, "\r", "\n");	/* Input : sendbuf */
-			fclose(fp);
-			flag_file = -1;
-		}
+		print_msg(0b10, "", "", gtime());
+		input(sendbuf);
+		print_msg(0, "\r", "\n", gtime());	/* Input : sendbuf */
 		if (flag_run == 0) {
-			printf("\033[0;1;33mINFO > %s\033[0m\n",
-			       gettext("对方已退出，重新开始等待连接"));
+			printf("\033[0;1;33mINFO > %s\033[0m\n", gettext("对方已退出，重新开始等待连接"));
 			break;
 		}
 		if (strcmp(sendbuf, "/flag_enter") == 0) {
-			if (flag_enter == '\r') {
+			if (flag_enter == '\n') {
 				flag_enter = 0x1B;
 				printf("\033[0;1;33mINFO > FLAG_ENTER: False\033[0m\n");
 			} else {
-				flag_enter = '\r';
+				flag_enter = '\n';
 				printf("\033[0;1;33mINFO > FLAG_ENTER: True\033[0m\n");
 			}
 			continue;
 		} else if (strcmp(sendbuf, "/help") == 0) {
-			printf("\033[0;1;33m"
-			       "INFO > Help message:\n"
-			       "\033[0;1;32m"
-			       "HELP > /help        %s\n"
-			       "HELP > /exit        %s\n"
-			       "HELP > /flag_enter  %s\n"
-			       "HELP > /lang_query  %s\n"
-			       "HELP > /lang_en     %s\n"
-			       "HELP > /lang_zh     %s\n"
-			       "HELP > <message>    %s\n"
-			       "HELP > <ESC>        %s\n"
-			       "HELP > <Enter>      %s\n"
-			       "HELP > <Backspace>  %s"
-			       "\033[0m\n",
-			       gettext("显示这条帮助"),
-			       gettext("退出程序"),
-			       gettext("切换按下回车结束消息的功能"),
-			       gettext("查询当前的语言设置"),
-			       gettext("设置界面语言为英文"),
-			       gettext("设置界面语言为中文"),
-			       gettext("输入消息"),
-			       gettext("发送消息"),
-			       gettext("结束消息(需要FLAG_ENTER显示为True)"),
-			       gettext("删除字符(需开启回车结束消息，否则它不会工作)")
-			    );
+			help_in();
 			continue;
 		} else if (strcmp(sendbuf, "/lang_zh") == 0) {
 			setlocale(LC_ALL, "zh_CN.UTF-8");
@@ -270,10 +228,10 @@ int ui(void)
 	/*pthread_cancel(pid); */
 	usleep(50000);
 	return 0;
-}				/*}}} */
+}
 
 void server(int port)
-{				/*{{{ */
+{
 	// 初始化套接字地址结构体
 	memset(&servaddr, 0, sizeof(servaddr));
 	servaddr.sin_family = AF_INET;	// IPv4协议
@@ -284,9 +242,7 @@ void server(int port)
 	if ((listen_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
 		//如果创建套接字失败，返回错误信息
 		//strerror(int errnum)获取错误的描述字符串
-		fprintf(stderr, "\033[1;31m%s: %s(error: %d)\033[0m\n",
-			gettext("创建套接字错误"), strerror(errno),
-			errno);
+		fprintf(stderr, "\033[1;31m%s: %s(error: %d)\033[0m\n", gettext("创建套接字错误"), strerror(errno), errno);
 		exit(-1);
 	}
 	//绑定套接字和本地IP地址和端口
@@ -319,10 +275,10 @@ void server(int port)
 	//关闭监听套接字
 	close(listen_fd);
 	return;
-}				/*}}} */
+}
 
 void client(char *addr, int port)
-{				/*{{{ */
+{
 	//初始化服务器套接字地址
 	memset(&servaddr, 0, sizeof(servaddr));
 	servaddr.sin_family = AF_INET;	//IPv4
@@ -347,19 +303,17 @@ void client(char *addr, int port)
 	//关闭套接字
 	close(connect_fd);
 	return;
-}				/*}}} */
+}
 
 /*
  * 帮助函数
  */
 void help(int flag)
-{				/*{{{ */
+{
 	printf("%s:\n"
-	       "    socket [-f <filename>] [-s | -c] [-a <addrs>] [-p <port>] [-e]\n"
+	       "    socket [-s | -c] [-a <addrs>] [-p <port>] [-e]\n"
 	       "    socket -h\n"
 	       "%s:\n"
-	       "    -f <filename> %s\n"
-	       "                  %s\n"
 	       "    -s            %s\n"
 	       "    -c            %s\n"
 	       "    -a <addrs>    %s\n"
@@ -368,8 +322,6 @@ void help(int flag)
 	       "    -h            %s\n",
 	       gettext("用法"),
 	       gettext("选项"),
-	       gettext("使用指定的文件作为程序的输入（仅一次）"),
-	       gettext("(早期功能，已废弃)"),
 	       gettext("使用服务器模式"),
 	       gettext("使用客户端模式"),
 	       gettext("设置目标IP地址 [默认: 127.0.0.1]"),
@@ -381,10 +333,10 @@ void help(int flag)
 		flag--;
 	exit(flag);
 	return;
-}				/*}}} */
+}
 
 int main(int argc, char *argv[])
-{				/*{{{ */
+{
 	int ch = 0;
 	int flag_help = 0, flag_mode = 0, flag_port = 8080;
 	char *flag_addr = "127.0.0.1";
@@ -400,10 +352,6 @@ int main(int argc, char *argv[])
 			break;
 		case 'h':
 			flag_help = 1;
-			break;
-		case 'f':
-			strcpy(filename, optarg);
-			flag_file = 1;
 			break;
 		case 's':
 			flag_mode = 1;
@@ -446,5 +394,5 @@ int main(int argc, char *argv[])
 	else
 		help(-3);
 	return 0;
-}				/*}}} */
+}
 

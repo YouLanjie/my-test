@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2023-07-29 17:05+0800\n"
+"POT-Creation-Date: 2024-07-28 16:38+0800\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,75 +17,71 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: socket.c:115
+#: socket.c:38
+msgid "输出"
+msgstr "OUT "
+
+#: socket.c:121
 msgid "获取信息错误"
 msgstr "msg get error"
 
-#: socket.c:128
-msgid " 输出 "
-msgstr "OUTPUT"
-
-#: socket.c:129 socket.c:162 socket.c:166 socket.c:178
-msgid " 输入"
-msgstr "INPUT"
-
-#: socket.c:157
-msgid "连接成功，输入`/help`然后按ESC或回车获取帮助"
-msgstr "The connection is successful. Type '/help' and press ESC or enter for help"
-
-#: socket.c:183
-msgid "对方已退出，重新开始等待连接"
-msgstr "Disconnected. Wait fot connection"
-
-#: socket.c:207 socket.c:328
+#: socket.c:162 socket.c:330
 msgid "显示这条帮助"
 msgstr "show this message"
 
-#: socket.c:208
+#: socket.c:163
 msgid "退出程序"
 msgstr "Exit"
 
-#: socket.c:209
+#: socket.c:164
 msgid "切换按下回车结束消息的功能"
 msgstr "toggle allow enter end of message"
 
-#: socket.c:215
+#: socket.c:165
 msgid "查询当前的语言设置"
 msgstr "Query the current language settings"
 
-#: socket.c:216
+#: socket.c:166
 msgid "设置界面语言为英文"
 msgstr "Set the interface language to English"
 
-#: socket.c:217
+#: socket.c:167
 msgid "设置界面语言为中文"
 msgstr "Set the interface language to Chinese"
 
-#: socket.c:218
+#: socket.c:168
 msgid "输入消息"
 msgstr "input message"
 
-#: socket.c:219
+#: socket.c:169
 msgid "发送消息"
 msgstr "Send the message"
 
-#: socket.c:220
+#: socket.c:170
 msgid "结束消息(需要FLAG_ENTER显示为True)"
 msgstr "end of message(need FLAG_ENTER is True)"
 
-#: socket.c:221
+#: socket.c:171
 msgid "删除字符(需开启回车结束消息，否则它不会工作)"
 msgstr "delete a char(need FLAG_ENTER is True, if not it will not work)"
 
-#: socket.c:262 socket.c:309
+#: socket.c:186
+msgid "连接成功，输入`/help`然后按ESC或回车获取帮助"
+msgstr "Connect successfully. Type '/help' and press ESC or enter for help"
+
+#: socket.c:192
+msgid "对方已退出，重新开始等待连接"
+msgstr "Disconnected. Wait fot connection"
+
+#: socket.c:245 socket.c:292
 msgid "创建套接字错误"
 msgstr "create socket error"
 
-#: socket.c:269
+#: socket.c:251
 msgid "绑定套接字错误"
 msgstr "bind socket error"
 
-#: socket.c:270
+#: socket.c:252
 msgid ""
 "小提示：一般情况下用`sudo lsof -i:$port`检查$port是否有进程占用$port，如果没"
 "有那么等一会可能就好了，或者更换端口"
@@ -93,62 +89,54 @@ msgstr ""
 "Tip: In general, use 'sudo lsof - i: $port' to check if there are any "
 "processes occupying the $port. If not, wait for a while or replace the port"
 
-#: socket.c:276
+#: socket.c:257
 msgid "监听端口错误"
 msgstr "listen socket error"
 
-#: socket.c:282
+#: socket.c:263
 msgid "等待客户端发起连接"
 msgstr "Waiting for the client to initiate a connection"
 
-#: socket.c:291
+#: socket.c:274
 msgid "检测到退出关键词，退出程序"
 msgstr "Detected exit keyword, exit program"
 
-#: socket.c:315
+#: socket.c:298
 msgid "监听套接字错误"
 msgstr "connect socket error"
 
-#: socket.c:342
+#: socket.c:323
 msgid "用法"
 msgstr "Usage"
 
-#: socket.c:343
+#: socket.c:324
 msgid "选项"
 msgstr "Option"
 
-#: socket.c:344
-msgid "使用指定的文件作为程序的输入（仅一次）"
-msgstr "Use the specified file as input to the"
-
-#: socket.c:345
-msgid "(早期功能，已废弃)"
-msgstr "program (only once)(obsolete)"
-
-#: socket.c:346
+#: socket.c:325
 msgid "使用服务器模式"
 msgstr "Usage server mode"
 
-#: socket.c:347
+#: socket.c:326
 msgid "使用客户端模式"
 msgstr "Usage client mode"
 
-#: socket.c:348
+#: socket.c:327
 msgid "设置目标IP地址 [默认: 127.0.0.1]"
 msgstr "Set client addr [default: 127.0.0.1]"
 
-#: socket.c:349
+#: socket.c:328
 msgid "设置目标端口号 [默认: 8080]"
 msgstr "Set port [default: 8080]"
 
-#: socket.c:350
+#: socket.c:329
 msgid "取消使用回车发送消息"
 msgstr "Cancel using carriage return to send messages"
 
-#: socket.c:417
+#: socket.c:388
 msgid "服务端"
 msgstr "Server"
 
-#: socket.c:417
+#: socket.c:388
 msgid "客户端"
 msgstr "Client"
