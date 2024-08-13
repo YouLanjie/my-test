@@ -257,7 +257,7 @@ int opt(int argc, char *argv[])
 			       "    -s    save data\n"
 			       "    -t    train\n"
 			       "    -i    test by input\n");
-			return 0;
+			exit(0);
 			break;
 		case 'l':
 			flag ^= 0b0100;
@@ -280,7 +280,7 @@ int opt(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
-	int ch = 0, flag = opt(argc, argv);
+	int flag = opt(argc, argv);
 
 	srand(time(NULL));
 	init();
