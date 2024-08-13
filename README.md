@@ -30,6 +30,8 @@
 | guess\_number.c            | 猜数字                                                                     |
 | tetris.c                   | 俄罗斯方块                                                                 |
 | print\_in\_box.c           | 在一定的限定范围内打印                                                     |
+| arch-fast-install.c        | 快速按照Archlinux的测试程序                                                |
+| neuro.c                    | 神经网络测试程序，输入2个数判断它们的正负及大小，正确率在90%~94%左右浮动   |
 
 > 注：文件名为斜体的为不再改动的文件，粗体为相对有用的文件
 
