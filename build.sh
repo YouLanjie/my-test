@@ -33,9 +33,8 @@ build_lib() {
 
 build_file() {
 	declare -A build_arg=(		\
-		["RSA.c"]="-lm"		\
 		["input.c"]="-lm"	\
-		["build.c"]="#"		\
+		["neuro.c"]="-lm"	\
 		["gtk.c"]="$(pkg-config --cflags --libs gtk+-3.0 2>/dev/null || echo "#")")
 	if [[ $build_arg[$(echo $1 | sed 's/^.*\///')] == "#" ]] {
 		return -1
