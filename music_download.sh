@@ -65,6 +65,7 @@ usage: $app_name [options]
   options:
      -i           设置备用输入文件夹
      -n           查找备用文件时使用通配符查找
+     -l           优先使用本地文件
      -h           帮助信息"
 	exit $1
 }
@@ -90,21 +91,36 @@ get_info() {
 	[[ $link != "" ]] && extension=$(echo $link|sed "s/.*\.//")
 }
 
-download() {
-	get_info
-	_msg_info "音频链接: $link"
-	# 下载音频
+local_sound() {
+	if [[ $input_dir == "" ]] {
+		return
+	}
+	[[ $flag_name == "true" ]] && grep_f="\.mp3\|\.m4a" || grep_f="${format}\.\(mp3\|\.m4a\)"
+	input_f=$(ls "$input_dir"|grep "$grep_f"|sed -n "1p")
+	_msg_info "mv \""$input_dir/$name_f"\" \"$name_f\""
+	[[ -f "$input_dir/$input_f" ]] && (mv "$input_dir/$input_f" "$name_f" || (_msg_warning "错误！移动文件出错" && exit -1))
+}
+
+download_sound() {
 	name_f="${format}.${extension}"
+	if [[ $flag_local == "true" ]] {
+		local_sound
+	}
 	if [[ $link != "" && $link != "NULL" ]] {
 		echo $F_line
 		_msg_info "wget \"$link\" -O \"$name_f\""
 		wget "$link" -O "$name_f"||(_msg_warning "错误！下载出错" && exit -1)
 	} elif [[ $input_dir != "" ]] {
-		[[ $flag_name == "true" ]] && grep_f="\.mp3\|\.m4a" || grep_f="${format}\.\(mp3\|\.m4a\)"
-		input_f=$(ls "$input_dir"|grep "$grep_f"|sed -n "1p")
-		_msg_info "mv \""$input_dir/$name_f"\" \"$name_f\""
-		[[ -f "$input_dir/$input_f" ]] && (mv "$input_dir/$input_f" "$name_f" || (_msg_warning "错误！移动文件出错" && exit -1))
+		local_sound
 	}
+}
+
+download() {
+	get_info
+	_msg_info "音频链接: $link"
+	# 下载音频
+	name_f="${format}.${extension}"
+	download_sound
 	# 下载封面
 	name_f="${format}.jpg"
 	_msg_info "wget \"$img_link\" -O \"$name_f\""
@@ -227,10 +243,12 @@ extension="m4a"
 
 input_dir=""
 flag_name="false"
-while {getopts "i:nh" OPTION} {
+flag_local="false"
+while {getopts "i:nhl" OPTION} {
 	case $OPTION {
 		i) input_dir=$OPTARG ;;
 		n) flag_name="true" ;;
+		l) flag_local="true" ;;
 		h|?) usage ;;
 		*) usage -1 ;;
 	}
