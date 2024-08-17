@@ -10,7 +10,7 @@
 #
 #================================================================
 
-source ./source.sh 
+source ./source.sh
 
 usage() {
 	usagetext="\
@@ -65,7 +65,7 @@ run() {
 			_msg_info "不存在输出目录，将创建" "$F_yellow"
 			mkdir "$o_dir/out" || (_msg_warning "创建文件夹失败，退出" && exit -1)
 		}
-		out=$(echo $out |sed "s/$o_dir\//$o_dir\/out\//")
+		out=$(echo $out |sed "s|$o_dir\/|$o_dir\/out\/|")
 		cmd="ffmpeg -i \"$i\" $arg2 $arg \"$out\" >$logfile 2>&1"
 
 		# 检查
