@@ -23,9 +23,9 @@ static int print_in_box(char *ch, int x_start, int y_start, int width, int heigh
 	if (y_start < 1) y_start = 1;
 
 	width = width + x_start > get_winsize_col() ? get_winsize_col() - x_start + 1 : width;
-	if (width < 0) width = 0;
+	if (width < 0) width = get_winsize_col() - x_start + 1;
 	heigh = heigh + y_start > get_winsize_row() ? get_winsize_row() - y_start + 1 : heigh;
-	if (heigh < 0) heigh = 0;
+	if (heigh < 0) heigh = get_winsize_row() - y_start + 1;
 
 	focus = focus - 1;
 	if (!color_code) color_code = "\033[0m";
