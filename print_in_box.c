@@ -11,7 +11,7 @@
 
 #include "include/tools.h"
 
-static int print_in_box(char *ch, int x_start, int y_start, int width, int heigh, int hide, int focus, char *color_code, int flag_hl)
+static int _print_in_box(char *ch, int x_start, int y_start, int width, int heigh, int hide, int focus, char *color_code, int flag_hl)
 {
 	int count = 0,
 	    line_num = 0;
@@ -112,8 +112,8 @@ int main()
 	int fy[2] = {2, 1}, hy[2] = {0, 0};
 	while (inp != 'q') {
 		printf("\033[2J\033[0;0H");
-		print_in_box(str[0], x[0], y[0], wd[0], hi[0], hy[0], fy[0], color[0][flag_color[0] - 1], 1);
-		print_in_box(str[1], x[1], y[1], wd[1], hi[1], hy[1], fy[1], color[1][flag_color[1] - 1], 1);
+		_print_in_box(str[0], x[0], y[0], wd[0], hi[0], hy[0], fy[0], color[0][flag_color[0] - 1], 1);
+		_print_in_box(str[1], x[1], y[1], wd[1], hi[1], hy[1], fy[1], color[1][flag_color[1] - 1], 1);
 		inp = _getch();
 		if (inp == 'w') y[flag_window - 1]--;
 		if (inp == 's') y[flag_window - 1]++;
