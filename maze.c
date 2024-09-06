@@ -102,8 +102,6 @@ void print_map()
 {				/*{{{ */
 	int l = L - 2;
 	int deep = L * L / 2 - Rank;    /* 并无实际意义，经验公式 */
-	struct winsize size;
-	ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
 
 	//画迷宫
 	for (int i = 1; i < L - 1; i++) {
@@ -124,7 +122,7 @@ void print_map()
 	printf("\033[%dC  | 延迟时间: %.4fs\n", l*2, (double)(int)TPS/SECOND);
 	printf("\033[%dC  | 遍历深度: %-3d [%4.1f%%]\n", l*2, level, (double)level / deep * 100);
 	printf("\033[1A\033[%dC [", l*2 + 25);
-	int lim = size.ws_col - (l*2 + 28);
+	int lim = get_winsize_col() - (l*2 + 28);
 	for (int i = 0; i < lim; i++) {
 		printf((double)i / lim < (double)level / deep ? "#" : " ");
 	}
