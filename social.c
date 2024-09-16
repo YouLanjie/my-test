@@ -10,149 +10,132 @@
 
 
 #include "include/tools.h"
-#include <cstdlib>
 #include <stdio.h>
 
+#define Pop 20
+#define Cap 1
+
 struct social {
-	int population;
-	int capital;
 	int prices;
 	int food;
 	int time;
-} Social = { 10, 1, 200, 0, 0 };
+} Social = { 200, 0, 0 };
 
 struct worker {
 	int flag;
-	int age;
-	int xp;
 	int food;
 	int money;
-	double save;
-	/* Note:
-	 * work_ability
-	 * cost_ability
-	 * life_level
-	 * happiness
-	 * */
-};
-
-struct link {
-	void *p;
-	struct link *np;
+	int xp;
+}worker[Pop] = {
+	{0, 5, 2000, 0}, {0, 6, 2000, 0}, {0, 7, 2000, 0}, {0, 8, 2000, 0}, {0, 9, 2000, 0},
+	{0, 10, 2000, 0}, {0, 11, 2000, 0}, {0, 12, 2000, 0}, {0, 13, 2000, 0}, {0, 14, 2000, 0},
+	{0, 16, 2000, 0}, {0, 17, 2000, 0}, {0, 18, 2000, 0}, {0, 19, 2000, 0}, {0, 20, 2000, 0},
+	{0, 21, 2000, 0}, {0, 22, 2000, 0}, {0, 23, 2000, 0}, {0, 24, 2000, 0}, {0, 25, 2000, 0},
 };
 
 struct capital {
-	struct link *worker;
+	int worker;
 	int wages;	/* 工资 */
 	int cupidity;	/* 贪心率 */
+	int money;
+	int food;
+}capital[Cap] = {
+	{0, 100, 0, 3000, 1}
 };
 
-
-struct link *worker = NULL;
-struct link *capital = NULL;
-
-
-#define T_WORK (0b01)
-int worker_flag(struct worker *p,int TYPE, int flag)
+static int wcount = 0;
+int cap_add_worker(struct capital *cap)
 {
-	if (!p) return -1;
-	p->flag ^= (TYPE & (flag ? ~0 : 0));
-	return (p->flag & TYPE ? 1 : 0);
-}
-
-int capital_add_worker(struct capital *cap)
-{
-	for (struct link *p = worker; p != NULL; p = p->np) {
-		if (worker_flag(p->p, T_WORK, 0)) continue;
-		worker_flag(p->p, T_WORK, 1);
-		if (!cap->worker) {
-			cap->worker = malloc(sizeof(struct link));
-			cap->worker->p = p->p;
-		}
-	}
+	if (wcount >= Pop) return -1;
+	
+	int i = 0;
+	for (i = 0; i < Pop && worker[i].flag; i++);
+	if (i == Pop) return -1;
+	worker[i].flag ^= 1;
+	cap->worker |= 1 << i;
+	wcount++;
 	return 0;
 }
 
-struct link *create_link(int len, void *context)
+int cap_del_worker(struct capital *cap)
 {
-	struct link *head = NULL, *p = NULL, *lp = NULL;
-
-	head = p = malloc(sizeof(struct link));
-	for (int i = 0; i < len; i++) {
-		p->p = context;
-		lp = p;
-		lp->np = p = malloc(sizeof(struct link));
-	}
-	lp->np = NULL;
-	free(p);
-	return head;
-}
-
-struct worker *create_worker()
-{
-	struct worker *p = malloc(sizeof(struct worker));
-	p->flag = 0;
-	p->age = 18;
-	p->xp = 0;
-	p->food = 0;
-	p->money = 0;
-	p->save = 0.5;
-	return p;
-}
-
-struct capital *create_capital()
-{
-	struct capital *p = malloc(sizeof(struct worker));
-	p->worker = NULL;
-	p->wages = 200;
-	p->cupidity = 1;
-	return p;
-}
-
-int init()
-{
-	struct link *p = NULL, *lp = NULL;
-
-	worker = create_link(Social.population, create_worker());
-	capital = create_link(Social.capital, create_capital());
+	if (wcount <= 0) return -1;
+	
+	int i = 0;
+	for (i = 0; i < Pop && !(worker[i].flag & 1); i++);
+	if (i == Pop) return -1;
+	worker[i].flag ^= 1;
+	cap->worker &= ~(1 << i);
+	wcount--;
 	return 0;
 }
 
 int run()
 {
-	for (int i = 0; i < 20; i++) {
+	printf("Head:\n");
+	printf("wages:%d, cupidity:%d, $:%d, food:%d\n", capital[0].wages, capital[0].cupidity, capital[0].money, capital[0].food);
+	for (int i = 0; i < Pop; i++) printf("fl:%d, fd:%d, $:%d, xp:%d%s", worker[i].flag, worker[i].food, worker[i].money, worker[i].xp, i % 2 ? " |\n" : "\t| ");
+	printf("\n");
+
+	int lm = capital[0].money;
+	for (int i = 0; i < 200 && capital[0].money >= 0 && capital[0].food > -5; i++) {
+		printf("=================================================\n");
 		Social.time++;
-		for (struct link *p = worker; p; p = p->np) {
-			((struct worker*)p->p)->age += 20 % Social.time == 0 ? 1 : 0;
-			((struct worker*)p->p)->xp += 20 % Social.time == 0 ? 1 : 0;
+		for (int i = 0; i < Pop; i++) {
+			if (worker[i].flag & 2) continue;    /* dead */
+			if (!(capital[0].worker & (1 << i))) continue;    /* no work */
+			worker[i].xp += 1;
+
+			worker[i].money += capital[0].wages*(4.0+2.0/(double)(-1-worker[i].xp));
+			capital[0].money -= capital[0].wages*(4.0+2.0/(double)(-1-worker[i].xp));
+			capital[0].food += 2+worker[i].xp/20;
+			/*printf("cap> wages:%d, cupidity:%d, $:%d, food:%d\n", capital[0].wages, capital[0].cupidity, capital[0].money, capital[0].food);*/
 		}
+
+		capital[0].food--;
+		/*printf("==========\n");*/
+		for (int i = 0; i < Pop; i++) {
+			if (worker[i].flag & 2) continue;    /* dead */
+			worker[i].food--;
+			if (worker[i].food < 5 && worker[i].money >= Social.prices && capital[0].food > 0) {
+				worker[i].money -= Social.prices;
+				capital[0].money += Social.prices;
+				worker[i].food++;
+				capital[0].food--;
+			}
+			if (worker[i].food < 0) {
+				worker[i].flag = 2;
+				if (capital[0].worker & (1 << i)) wcount--;
+				capital[0].worker &= ~(1 << i);    /* no work */
+			}
+			/*printf("cap> wages:%d, cupidity:%d, $:%d, food:%d\n", capital[0].wages, capital[0].cupidity, capital[0].money, capital[0].food);*/
+		}
+
+
+		if ((capital[0].money - lm > 0 && capital[0].food <= 5) || (capital[0].money - lm > -500 && capital[0].food <= 0))
+			cap_add_worker(&capital[0]);
+		else
+			cap_del_worker(&capital[0]);
+		lm = capital[0].money;
+
+		/*printf("====================\n");*/
+		printf("wages:%d, cupidity:%d, $:%d, food:%d ", capital[0].wages, capital[0].cupidity, capital[0].money, capital[0].food);
+		int i2 = 0, i3 = 0;
+		for (int j = 0; j < 32; j++) {
+			if (capital[0].worker & (1 << j)) i2++;
+			if (j < Pop && worker[j].flag & 0b10) i3++;
+		}
+		printf("Workers:%d, Dead:%d\n", i2, i3);
+		/*for (int i = 0; i < Pop; i++) printf("fl:%d, fd:%d, $:%d, xp:%d%s", worker[i].flag, worker[i].food, worker[i].money, worker[i].xp, i % 2 ? " |\n" : "\t| ");*/
 	}
+	return 0;
 }
 
 int main(int argc, char *argv[])
 {
-	int ch = 0;
-	while ((ch = getopt(argc, argv, "hp:c:")) != -1) {	/* 获取参数 */
-		switch (ch) {
-		case '?':
-		case 'h':
-			// help();
-			printf("Usage: xxx [-h] [-p <population>] [-c <capital>]\n");
-			return 0;
-			break;
-		case 'p':
-			Social.population = strtod(optarg, NULL);
-			break;
-		case 'c':
-			Social.capital = strtod(optarg, NULL);
-			break;
-		default:
-			break;
-		}
-	}
-	init();
-	printf("Pop:%d,Cap:%d\n", Social.population, Social.capital);
-	capital_add_worker(capital->p);
+	printf("Pop:%d,Cap:%d\n", Pop, Cap);
+	cap_add_worker(&capital[0]);
+	run();
 	return 0;
 }
 
