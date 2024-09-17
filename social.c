@@ -10,7 +10,7 @@
 
 
 #include "include/tools.h"
-#include <stdio.h>
+#include <math.h>
 
 #define Pop 20
 #define Cap 1
@@ -70,6 +70,8 @@ int cap_del_worker(struct capital *cap)
 	return 0;
 }
 
+#define sigmoid(x) (4.0 / (1.0 + exp(-0.1 * (x))))
+
 int run()
 {
 	printf("Head:\n");
@@ -79,15 +81,15 @@ int run()
 
 	int lm = capital[0].money;
 	for (int i = 0; i < 200 && capital[0].money >= 0 && capital[0].food > -5; i++) {
-		printf("=================================================\n");
+		/*printf("=================================================\n");*/
 		Social.time++;
 		for (int i = 0; i < Pop; i++) {
 			if (worker[i].flag & 2) continue;    /* dead */
 			if (!(capital[0].worker & (1 << i))) continue;    /* no work */
 			worker[i].xp += 1;
 
-			worker[i].money += capital[0].wages*(4.0+2.0/(double)(-1-worker[i].xp));
-			capital[0].money -= capital[0].wages*(4.0+2.0/(double)(-1-worker[i].xp));
+			worker[i].money += capital[0].wages*sigmoid(worker[i].xp);
+			capital[0].money -= capital[0].wages*sigmoid(worker[i].xp);
 			capital[0].food += 2+worker[i].xp/20;
 			/*printf("cap> wages:%d, cupidity:%d, $:%d, food:%d\n", capital[0].wages, capital[0].cupidity, capital[0].money, capital[0].food);*/
 		}
@@ -119,7 +121,7 @@ int run()
 		lm = capital[0].money;
 
 		/*printf("====================\n");*/
-		printf("wages:%d, cupidity:%d, $:%d, food:%d ", capital[0].wages, capital[0].cupidity, capital[0].money, capital[0].food);
+		printf("Round:%d, $:%d, food:%d ", i, capital[0].money, capital[0].food);
 		int i2 = 0, i3 = 0;
 		for (int j = 0; j < 32; j++) {
 			if (capital[0].worker & (1 << j)) i2++;
