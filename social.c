@@ -11,6 +11,7 @@
 
 #include "include/tools.h"
 #include <math.h>
+#include <stdio.h>
 
 #define Pop 20
 #define Cap 1
@@ -79,8 +80,8 @@ int run()
 	for (int i = 0; i < Pop; i++) printf("fl:%d, fd:%d, $:%d, xp:%d%s", worker[i].flag, worker[i].food, worker[i].money, worker[i].xp, i % 2 ? " |\n" : "\t| ");
 	printf("\n");
 
-	int lm = capital[0].money;
-	for (int i = 0; i < 200 && capital[0].money >= 0 && capital[0].food > -5; i++) {
+	int lm = capital[0].money, lf = capital[0].food;
+	for (int i = 0; i < 1000 && capital[0].money >= 0 && capital[0].food > -5; i++) {
 		/*printf("=================================================\n");*/
 		Social.time++;
 		for (int i = 0; i < Pop; i++) {
@@ -91,6 +92,7 @@ int run()
 			worker[i].money += capital[0].wages*sigmoid(worker[i].xp);
 			capital[0].money -= capital[0].wages*sigmoid(worker[i].xp);
 			capital[0].food += 2+worker[i].xp/20;
+			/*printf("wages:%d,XP:%d,sigmoid:%lf\n",capital[0].wages , worker[i].xp, sigmoid(worker[i].xp));*/
 			/*printf("cap> wages:%d, cupidity:%d, $:%d, food:%d\n", capital[0].wages, capital[0].cupidity, capital[0].money, capital[0].food);*/
 		}
 
@@ -113,12 +115,22 @@ int run()
 			/*printf("cap> wages:%d, cupidity:%d, $:%d, food:%d\n", capital[0].wages, capital[0].cupidity, capital[0].money, capital[0].food);*/
 		}
 
+		int flag = 0;
+		if (capital[0].food > 0) {
+			/*Social.food += capital[0].food;*/
+			/*capital[0].money += Social.prices*capital[0].food;*/
+			/*flag = 1;*/
+			/*Social.prices--;*/
+		}
 
-		if ((capital[0].money - lm > 0 && capital[0].food <= 5) || (capital[0].money - lm > -500 && capital[0].food <= 0))
+		if (capital[0].money - lm > -500 && capital[0].food - lf <= 10)
 			cap_add_worker(&capital[0]);
 		else
 			cap_del_worker(&capital[0]);
 		lm = capital[0].money;
+		lf = capital[0].food;
+
+		if (flag) capital[0].food = 0;
 
 		/*printf("====================\n");*/
 		printf("Round:%d, $:%d, food:%d ", i, capital[0].money, capital[0].food);
@@ -130,6 +142,7 @@ int run()
 		printf("Workers:%d, Dead:%d\n", i2, i3);
 		/*for (int i = 0; i < Pop; i++) printf("fl:%d, fd:%d, $:%d, xp:%d%s", worker[i].flag, worker[i].food, worker[i].money, worker[i].xp, i % 2 ? " |\n" : "\t| ");*/
 	}
+	printf("Food in social:%d\n", Social.food);
 	return 0;
 }
 
