@@ -11,9 +11,8 @@
 
 #include "include/tools.h"
 #include <math.h>
-#include <stdio.h>
 
-#define Pop 20
+#define Pop 50
 #define Cap 1
 
 struct social {
@@ -32,6 +31,12 @@ struct worker {
 	{0, 10, 2000, 0}, {0, 11, 2000, 0}, {0, 12, 2000, 0}, {0, 13, 2000, 0}, {0, 14, 2000, 0},
 	{0, 16, 2000, 0}, {0, 17, 2000, 0}, {0, 18, 2000, 0}, {0, 19, 2000, 0}, {0, 20, 2000, 0},
 	{0, 21, 2000, 0}, {0, 22, 2000, 0}, {0, 23, 2000, 0}, {0, 24, 2000, 0}, {0, 25, 2000, 0},
+	{0, 5, 2000, 0}, {0, 6, 2000, 0}, {0, 7, 2000, 0}, {0, 8, 2000, 0}, {0, 9, 2000, 0},
+	{0, 10, 2000, 0}, {0, 11, 2000, 0}, {0, 12, 2000, 0}, {0, 13, 2000, 0}, {0, 14, 2000, 0},
+	{0, 16, 2000, 0}, {0, 17, 2000, 0}, {0, 18, 2000, 0}, {0, 19, 2000, 0}, {0, 20, 2000, 0},
+	{0, 21, 2000, 0}, {0, 22, 2000, 0}, {0, 23, 2000, 0}, {0, 24, 2000, 0}, {0, 25, 2000, 0},
+	{0, 5, 2000, 0}, {0, 6, 2000, 0}, {0, 7, 2000, 0}, {0, 8, 2000, 0}, {0, 9, 2000, 0},
+	{0, 10, 2000, 0}, {0, 11, 2000, 0}, {0, 12, 2000, 0}, {0, 13, 2000, 0}, {0, 14, 2000, 0},
 };
 
 struct capital {
@@ -81,12 +86,15 @@ int run()
 	printf("\n");
 
 	int lm = capital[0].money, lf = capital[0].food;
-	for (int i = 0; i < 1000 && capital[0].money >= 0 && capital[0].food > -5; i++) {
+	for (int i = 0; i < 3000 && capital[0].money >= 0 && capital[0].food > -5; i++) {
 		/*printf("=================================================\n");*/
 		Social.time++;
 		for (int i = 0; i < Pop; i++) {
 			if (worker[i].flag & 2) continue;    /* dead */
-			if (!(capital[0].worker & (1 << i))) continue;    /* no work */
+			if (!(capital[0].worker & (1 << i))) {    /* no work */
+				worker[i].xp -= worker[i].xp > 0 ? 2 : 0;
+				continue;
+			}
 			worker[i].xp += 1;
 
 			worker[i].money += capital[0].wages*sigmoid(worker[i].xp);
@@ -143,6 +151,7 @@ int run()
 		/*for (int i = 0; i < Pop; i++) printf("fl:%d, fd:%d, $:%d, xp:%d%s", worker[i].flag, worker[i].food, worker[i].money, worker[i].xp, i % 2 ? " |\n" : "\t| ");*/
 	}
 	printf("Food in social:%d\n", Social.food);
+	for (int i = 0; i < Pop; i++) printf("fl:%d, fd:%d, $:%d, xp:%d%s", worker[i].flag, worker[i].food, worker[i].money, worker[i].xp, i % 2 ? " |\n" : "\t| ");
 	return 0;
 }
 
