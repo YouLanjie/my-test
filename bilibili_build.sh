@@ -33,8 +33,8 @@ running() {
 		main_title=$(cat "$line"|sed -n "s/.*\"title\":\"\\([^\"]*\\)\".*/\\1/p")
 
 		title=$main_title
-		[[ $subtitle != "" ]] && title="$title - $subtitle"
-		[[ $part != "" ]] && title="$title - $part"
+		[[ $subtitle != "" && $subtitle != $main_title ]] && title="$title - $subtitle"
+		[[ $part != "" && $part != $main_title ]] && title="$title - $part"
 
 		local ind_title=""
 		local index=""
