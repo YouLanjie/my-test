@@ -10,9 +10,11 @@
 
 
 #include "include/tools.h"
+#include <stdio.h>
+#include <unistd.h>
 
 #define SECOND 1000000
-int TPS = (SECOND / 20);
+#define TPS (SECOND / 20)
 
 #define Shape_max 9
 
@@ -74,9 +76,8 @@ int print_lock = 1;		/* 控制进程、自动下落时间 */
 int flag_move_lock = 0;		/* 防止两个进程同时移动 */
 int flag_fake = 1;		/* 设置下落最终位置显示 */
 int flag_debug = 0;		/* 调试设置 */
-int flag_difficult = 14;	/* 难度设置(0~19) */
-int flag_challenge = 0;
 int flag_info = 1;
+int flag_seed = 0;
 time_t game_time1 = 0, game_time2 = 0;
 int list[7] = {0, 0, 0, 0, 0, 0, 0};
 int list_num = 0;
@@ -85,7 +86,6 @@ int list_num = 0;
 static int create_list()
 {
 	static int times = 6;
-	struct timeval gettime;
 	int li[] = {1, 2, 3, 4, 5, 6, 7},
 	    num = 0;
 	int type  = 0,
@@ -100,18 +100,12 @@ static int create_list()
 	for (int i = 0; i <= times; i++) {
 		if (list[i]) continue;
 		do {
-			gettimeofday(&gettime, NULL);
-			srand(gettime.tv_usec + time(NULL));
 			num = rand() % (Shape_max - 2);
-			usleep(rand() % (TPS / 25));
 		} while (li[num] == 0);
 		type = li[num];
 		li[num] = 0;
 
-		gettimeofday(&gettime, NULL);
-		srand(gettime.tv_usec + time(NULL));
 		shape = rand() % 4;
-		usleep(rand() % (TPS / 25));
 
 		list[i] = type * 4 + shape;
 	}
@@ -206,7 +200,6 @@ static int clean()
 		}
 		map.line += 1;
 		y = map.height + 1;
-		if (flag_challenge && flag_difficult < 19 && map.line % 20 == 0) flag_difficult++;
 	}
 	map.score += (map.line - line) * (map.line - line);
 	return 0;
@@ -290,20 +283,18 @@ static void *print_ui()
 			info = flag_info;
 		}
 		if (flag_info) {
-			printf("Line:%3d /Score:%3d /Level:%2d /Time:(%02d:%02d:%02d) /CMode:%s\r\n\r\n", map.line, map.score, flag_difficult,
-			       dtime / 3600, dtime / 60, dtime % 60,
-			       flag_challenge ? "On" : "Off");
+			printf("Line:%3d /Score:%3d /Time:(%02d:%02d:%02d) /Seed:%d\r\n\r\n", map.line, map.score,
+			       dtime / 3600, dtime / 60, dtime % 60, flag_seed);
 			printf("<Game> [a/s/d] Move   [w/j/k] rotate  [SPACE] fast descend\r\n"
-				"<Setting>  [b] Debug      [i] this infos  [f] predicted position\r\n");
+			       "<Setting>  [b] Debug      [i] this infos  [f] predicted position\r\n");
 			printf("\033[%dA", 2);
 		} else {
-			printf("Ln:%3d /Sc:%3d /Lv:%2d /T:(%02d:%02d:%02d) /CM:%s\r\n\r\n", map.line, map.score, flag_difficult,
-			       dtime / 3600, dtime / 60, dtime % 60,
-			       flag_challenge ? "1" : "0");
+			printf("Ln:%3d /Sc:%3d /T:(%02d:%02d:%02d) /Sd:%d\r\n\r\n", map.line, map.score,
+			       dtime / 3600, dtime / 60, dtime % 60, flag_seed);
 		}
 		printf("\033[%dA", map.height + 3);
 		print_next();
-		if (print_lock && print_lock % (20 - flag_difficult) == 0) {    /* 默认每0.3s就移动一次 */
+		if (print_lock && print_lock % 6 == 0) {    /* 默认每0.3s就移动一次 */
 			int inp = 0;
 			inp = lmove(&map.y, 1);
 			print_lock = 1;
@@ -373,15 +364,13 @@ static void run()
 		case 'B':
 			flag_debug = flag_debug ? 0 : 1;
 			break;
-		case '+':
-		case '=':
-			if (!flag_challenge) flag_difficult += flag_difficult <= 20 ? 1 : 0;
-			break;
-		case '-':
-			if (!flag_challenge) flag_difficult -= flag_difficult >= 0 ? 1 : 0;
-			break;
 		case 'I':
 			flag_info ^= 1;
+			break;
+		case ':':
+			usleep(TPS*6);
+			if (kbhitGetchar() == 'c')
+				printf("\033[2J\033[0;0H");
 			break;
 		default:
 			break;
@@ -393,12 +382,12 @@ static void run()
 static void help()
 {
 	printf("Usage:\n"
-	       "    tetris [-c]\n"
+	       "    tetris [OPTIONS]\n"
 	       "    socket -h\n"
 	       "Option:\n"
-	       "    -c    Challenge Mode:speed increases over time\n"
-	       "    -i    Hide some of the info below the main ui\n"
-	       "    -h    Show this page\n"
+	       "    -i        Hide some of the info below the main ui\n"
+	       "    -s <SEED> Set a random number seed\n"
+	       "    -h        Show this page\n"
 	    );
 	return;
 }
@@ -406,9 +395,10 @@ static void help()
 int main(int argc, char *argv[])
 {
 	pthread_t pid;
+	flag_seed = time(NULL);
 
 	int ch = 0;
-	while ((ch = getopt(argc, argv, "hci")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "his:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 			help();
@@ -418,19 +408,18 @@ int main(int argc, char *argv[])
 			help();
 			return 0;
 			break;
-		case 'c':
-			TPS = SECOND / 80;
-			flag_challenge = 1;
-			flag_difficult = 6;
-			break;
 		case 'i':
 			flag_info = 0;
+			break;
+		case 's':
+			flag_seed = strtod(optarg, NULL);
 			break;
 		default:
 			break;
 		}
 	}
 
+	srand(flag_seed);
 	map.map = calloc(map.size = map.weight * map.height, sizeof(int));
 	memset(map.map, 0, map.size);
 
