@@ -10,8 +10,6 @@
 
 
 #include "include/tools.h"
-#include <stdio.h>
-#include <unistd.h>
 
 #define SECOND 1000000
 #define TPS (SECOND / 20)
@@ -219,7 +217,7 @@ static int lmove(int *v, int step)
 	create(map.x, map.y, map.type);
 	if (flag && v == &map.y) {
 		clean();
-		flag = create(3, 0, Shape_max * 4) == 0 ? flag : -1;
+		flag = create(map.weight / 2 - 2, 0, Shape_max * 4) == 0 ? flag : -1;
 	}
 	flag_move_lock = 0;
 	return flag;
@@ -258,7 +256,8 @@ static void print_map()
 		else printf("[]\033[0m");
 		printf("%s", (i + 1) % map.weight == 0 ? "|\r\n" : "");
 	}
-	printf("--------------------\r\n");
+	for (int i = 0; i < map.weight; i++) printf("--");
+	printf("-\r\n");
 	return;
 }
 
@@ -331,7 +330,7 @@ static void run()
 {
 	int input = 0;
 
-	create(map.x, map.y, Shape_max * 4);
+	create(map.weight / 2 - 2, map.y, Shape_max * 4);
 	while(input != 'Q' && print_lock) {
 		if (flag_fake) create_fake();
 		input = key(_getch());
@@ -387,6 +386,8 @@ static void help()
 	       "Option:\n"
 	       "    -i        Hide some of the info below the main ui\n"
 	       "    -s <SEED> Set a random number seed\n"
+	       "    -W <WIDE> Set the weight\n"
+	       "    -H <HIGH> Set the height\n"
 	       "    -h        Show this page\n"
 	    );
 	return;
@@ -398,21 +399,26 @@ int main(int argc, char *argv[])
 	flag_seed = time(NULL);
 
 	int ch = 0;
-	while ((ch = getopt(argc, argv, "his:")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "his:H:W:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
-			help();
-			return -1;
-			break;
 		case 'h':
 			help();
-			return 0;
+			return ch == '?' ? -1 : 0;
 			break;
 		case 'i':
 			flag_info = 0;
 			break;
 		case 's':
 			flag_seed = strtod(optarg, NULL);
+			break;
+		case 'H':
+			map.height = strtod(optarg, NULL);
+			map.height = map.height >= 10 ? map.height : 25;
+			break;
+		case 'W':
+			map.weight = strtod(optarg, NULL);
+			map.weight = map.weight >= 4 ? map.weight : 10;
 			break;
 		default:
 			break;
@@ -422,6 +428,8 @@ int main(int argc, char *argv[])
 	srand(flag_seed);
 	map.map = calloc(map.size = map.weight * map.height, sizeof(int));
 	memset(map.map, 0, map.size);
+
+	if (get_winsize_col() < 66) flag_info = 0;
 
 	time(&game_time1);
 	pthread_create(&pid, NULL, print_ui, NULL);
