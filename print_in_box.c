@@ -83,37 +83,62 @@ static int _print_in_box(char *ch, int x_start, int y_start, int width, int heig
 	return 0;
 }
 
+#define window_num 3
+
 int main()
 {
 	FILE *fp = fopen("./print_in_box.c", "r");
-	char str[2][1024*10] = {
+	char str[window_num][1024*10] = {
+		"##########################\n"
+		"#                        #\n"
+		"#       Upos......       #\n"
+		"#                        #\n"
+		"##########################\n"
 		"Something gose wrong.\n"
 		"The file `./print_in_box.c` was not found. :(\n"
 		"Try to write somethings in the file `./print_in_box.c` to change the text in this window. :)",
 
 		"Tips: [WASD] resize the window [wasd] move the window\n"
-		"Tips:  [Tab] switch window\n"
-		"Tips:  [jk]  move focus line    [hl]  move the text"};
+		"Tips:  [Tab] switch window        [i] hide info win\n"
+		"Tips:   [jk] move focus line     [hl] move the text",
+
+		"There is the data window."};
+
+	char *color[window_num][2] = {
+		{"\033[0;30;43m", "\033[0;37;41m"},
+		{"\033[0;37;44m", NULL},
+		{"\033[0;30;42m", "\033[0;30;47m"},
+	};
+	int flag_color[window_num] = {1, 1, 1};
+	int flag_window = 1;
+	int flag_info = 0;
+	int inp = 0;
+	int x[window_num] = {2, 1, 34},    /* number about window */
+	    y[window_num] = {5, 1, 5},
+	    wd[window_num] = {51, 53, 19},
+	    hi[window_num] = {15, 3, window_num + 2};
+	int fy[window_num] = {2, 1, 1},    /* number about control */
+	    hy[window_num] = {0, 0, 0};
+
+	printf("\033[?25l");
+
 	if (fp) {
-		int  ch = 0;
+		int ch = 0;
 		for (int i = 0; ch != EOF; i++) {
 			ch = fgetc(fp);
 			str[0][i] = ch;
 		}
 		fclose(fp);
-	}
-	printf("\033[?25l");
+	} else flag_color[0] = 2;
 
-	char *color[2][2] = {{"\033[0;37;43m", "\033[0;37;41m"}, {"\033[0;37;44m", NULL}};
-	int flag_color[2] = {1, 1};
-	int flag_window = 1;
-	int inp = 0;
-	int x[2] = {2, 1}, y[2] = {5, 1}, wd[2] = {51, 53}, hi[2] = {15, 3};
-	int fy[2] = {2, 1}, hy[2] = {0, 0};
 	while (inp != 'q') {
+		sprintf(str[2], " X  Y WD HI FY HY C\n");
+		for (int i = 0; i < window_num; i++)
+			sprintf(str[2], "%s%2d %2d %2d %2d %2d %2d %1d\n", str[2], x[i], y[i], wd[i], hi[i], hy[i], fy[i], flag_color[i]);
+		sprintf(str[2], "%sfocus window:%d\n", str[2], flag_window);
 		printf("\033[2J\033[0;0H");
-		_print_in_box(str[0], x[0], y[0], wd[0], hi[0], hy[0], fy[0], color[0][flag_color[0] - 1], 1);
-		_print_in_box(str[1], x[1], y[1], wd[1], hi[1], hy[1], fy[1], color[1][flag_color[1] - 1], 1);
+		for (int i = 0; i < window_num - flag_info; i++)
+			_print_in_box(str[i], x[i], y[i], wd[i], hi[i], hy[i], fy[i], color[i][flag_color[i] - 1], 1);
 		inp = _getch();
 		if (inp == 'w') y[flag_window - 1]--;
 		if (inp == 's') y[flag_window - 1]++;
@@ -130,7 +155,8 @@ int main()
 		if (inp == 'h') hy[flag_window - 1]--;
 		if (inp == 'l') hy[flag_window - 1]++;
 		if (inp == 'c') (flag_color[flag_window - 1] = 3 - flag_color[flag_window - 1]);
-		if (inp == '\t') (flag_window = 3 - flag_window);
+		if (inp == '\t') (flag_window = flag_window < window_num ? flag_window + 1 : 1);
+		if (inp == 'i') flag_info ^= 1;
 	}
 	printf("\033[?25h");
 	printf("\033[%d;%dH\n", get_winsize_row(), 0);
