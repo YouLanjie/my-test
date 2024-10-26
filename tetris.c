@@ -1,6 +1,6 @@
 /*
  *   Copyright (C) 2024 u0_a221
- *   
+ *
  *   文件名称：tetris.c
  *   创 建 者：u0_a221
  *   创建日期：2024年02月16日
@@ -10,6 +10,7 @@
 
 
 #include "include/tools.h"
+#include <stdio.h>
 
 #define SECOND 1000000
 #define TPS (SECOND / 20)
@@ -21,6 +22,7 @@
 #define Stat2(type) ((map.shape[type]) >> (15 - i) & 1)
 /* i为顺序号，(x,y)为地图坐标 */
 #define Map_for() for (int i = 0, x = 0, y = 0; x = map.x + i % 4, y = map.y + i / 4 % 4, i < 16; i++)
+#define mapp map.map[y * map.weight + x]
 /* 判断出界条件 */
 #define Cond_out (x < 0 || x >= map.weight || y >= map.height || \
 		  (map.map[y * map.weight + x] != 0 && map.map[y * map.weight + x] != 8))
@@ -118,7 +120,7 @@ static int create_list()
 /* 移除旧有方块 */
 static int delete()
 {
-	Map_for() Stat ? map.map[y * map.weight + x] = 0 : 0;
+	Map_for() Stat ? mapp = 0 : 0;
 	return 0;
 }
 
@@ -139,22 +141,19 @@ static int create(int x, int y, int type)
 	map.x = x;
 	map.y = y;
 	Map_for() {
-		if (Stat) {
-			if (map.map[y * map.weight + x] != 0 && map.map[y * map.weight + x] != 8)
-				return 1;
-			map.map[y * map.weight + x] = type / 4;
-		}
+		if (!Stat) continue;
+		if (mapp != 0 && mapp != 8)
+			return 1;
+		mapp = type / 4;
 	}
 	return 0;
 }
 
 static int delete_fake()
 {
-	for (int y = map.height - 1; y >= 0 ; y--) {
-		for (int x = map.weight - 1; x >= 0; x--) {
-			if (map.map[y * map.weight + x] == 8)
-				map.map[y * map.weight + x] = 0;
-		}
+	for (int i = 0; i < map.size; i++) {
+		if (map.map[i] == 8)
+			map.map[i] = 0;
 	}
 	return 0;
 }
@@ -171,7 +170,7 @@ static int create_fake()
 		Map_for() (Stat) && Cond_out && (flag = 1);
 	}
 	map.y -= 1;
-	Map_for() Stat ? map.map[y * map.weight + x] = 8 : 0;
+	Map_for() Stat ? mapp = 8 : 0;
 	map.x = x1;
 	map.y = y1;
 	create(map.x, map.y, map.type);
@@ -184,20 +183,16 @@ static int clean()
 	int x = 0, y = 0;
 	int line = map.line;
 	for (y = map.height - 1; y >= 0 ; y--) {
-		int count = map.weight;
-		for (x = map.weight - 1; x >= 0; x--) {
-			if (map.map[y * map.weight + x]) count--;
-		}
-		if (count)
-			continue;
+		for (x = map.weight - 1; x >= 0 && mapp; x--);
+		if (x >= 0) continue;
 		for (; y >= 0 ; y--) {
 			for (x = map.weight - 1; x >= 0; x--) {
-				if (y > 0) map.map[y * map.weight + x] = map.map[(y - 1) * map.weight + x];
-				else map.map[y * map.weight + x] = 0;
+				if (y > 0) mapp = *(&mapp - map.weight);
+				else mapp = 0;
 			}
 		}
 		map.line += 1;
-		y = map.height + 1;
+		y = map.height;
 	}
 	map.score += (map.line - line) * (map.line - line);
 	return 0;
@@ -254,7 +249,7 @@ static void print_map()
 		printf("%s", print_color[map.map[i]]);
 		if (flag_debug) printf("\033[37m%02d\033[0m", map.map[i]);
 		else printf("[]\033[0m");
-		printf("%s", (i + 1) % map.weight == 0 ? "|\r\n" : "");
+		if ((i + 1) % map.weight == 0) printf("|\r\n");
 	}
 	for (int i = 0; i < map.weight; i++) printf("--");
 	printf("-\r\n");
