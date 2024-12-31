@@ -81,7 +81,7 @@ get_info() {
 	_msg_info "专辑:" && read album
 	clear
 	# 获取没有后缀的下载链接
-	link=$(echo $link|sed "s/?authSecret=.*//")
+	link=$(echo $link|sed "s/?.*=.*//")
 	# 获取高清的封面链接
 	img_link=$(echo "$img_link" |sed 's/\(^.*\.jpg\).*/\1/')
 	# 设置文件名（没有扩展名）
