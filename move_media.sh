@@ -95,13 +95,14 @@ move() {
 	max_line=$(echo $file_list|wc -l)
 	for (( i=1; i <= $max_line; i++)) {
 		name=$(echo $file_list|sed -n "${i}p")
-		ymd=$(echo $name|sed "s|[^0-9]*\([0-9]\{4\}\)[-年]*\([0-9]\{2\}\)[-月]*\([0-9]\{2\}\).*|\1/\1_\2/\1_\2_\3|")
-		out="$output/$ymd/$name"
-		if [[ $out == "" ]] {
+		ymd=$(echo $name|sed -n "s|[^0-9]*\([0-9]\{4\}\)[-年]*\([0-9]\{2\}\)[-月]*\([0-9]\{2\}\).*|\1/\1_\2/\1_\2_\3|p")
+		if [[ $ymd == "" ]] {
 			continue
 		}
 		echo ""
-		out_d="$output/$ymd/"
+		out_d=$(find "$output" -maxdepth 3 -type d -wholename "*$ymd*"|sed -n '1p')
+		if [[ $out_d == "" ]] out_d="$output/$ymd/"
+		out="$out_d/$name"
 		if [[ ! -d $out_d ]] {
 			_msg_warning "No Out Dir : $out_d"
 			_msg_info "Make Dir : $out_d"
