@@ -91,11 +91,11 @@ check() {
 move() {
 	#update_file index.org
 	#echo $file_list
-	file_list=$(cd "$input";find ./ -maxdepth 1 -regex '.*\.\(mp4\|mkv\|png\|jpg\|dng\|jpeg\|gif\)')
+	file_list=$(cd "$input";find ./ -maxdepth 1 -iregex '.*\.\(mp4\|mkv\|png\|jpg\|dng\|jpeg\|gif\|3gp\|m4a\|webp\)'|sed 's|^./||')
 	max_line=$(echo $file_list|wc -l)
 	for (( i=1; i <= $max_line; i++)) {
 		name=$(echo $file_list|sed -n "${i}p")
-		ymd=$(echo $name|sed -n "s|[^0-9]*\([0-9]\{4\}\)[-年]*\([0-9]\{2\}\)[-月]*\([0-9]\{2\}\).*|\1/\1_\2/\1_\2_\3|p")
+		ymd=$(echo $name|sed -n "s|[^0-9]*\([0-9]\{4\}\)[-_年]*\([0-9]\{2\}\)[-_月]*\([0-9]\{2\}\).*|\1/\1_\2/\1_\2_\3|p")
 		if [[ $ymd == "" ]] {
 			continue
 		}
@@ -116,10 +116,12 @@ move() {
 			_msg_info "MD5 of  Input File: $(md5sum $name|awk '{print $1}')"
 			_msg_info "MD5 of Output File: $(md5sum $out|awk '{print $1}')"
 			if [[ $(md5sum $name|awk '{print $1}') == $(md5sum $out|awk '{print $1}') ]] {
-				_msg_info "Same file data. Skipping..."
+				_msg_info "Same file data. Rename the old file"
+				if [[ ! -f "OLDFILE_$name" ]] mv "$name" "OLDFILE_$name"
 				continue
 			}
-			_msg_warning "Different file data. The object file will be overwritten..."
+			_msg_warning "Different file data. Skipping..."
+			continue
 		}
 		if (( $move_type == 1 )) {
 			_msg_info "Moving!"
