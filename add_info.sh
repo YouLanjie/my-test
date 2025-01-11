@@ -64,20 +64,27 @@ usage() {
 usage: $app_name [options]
   options:
      -i           设置输入文件夹
+     -t           设置标题
+     -A           设置作曲家
+     -a           设置专辑
+     -p           设置封面
      -h           帮助信息"
 	exit $1
 }
 
 get_info() {
+	# 设置文件名（没有扩展名）
+	format="`echo "$1" |sed "s/.*\/\(.*\)\.mp3/\1/"`"
 	# 获取音频信息
-	title=`echo $1 |sed "s/.* - \(.*\)\.mp3/\1/"`
-	artist=`echo $1 |sed "s/.*\/\(.*\) - .*/\1/"`
+	[[ $title_1 == "" ]] && title=`echo "$1" |sed -n "s/.* - \(.*\)\.mp3/\1/p"`
+	[[ $artist_1 == "" ]] && artist=`echo "$1" |sed -n "s/.*\/\(.*\) - .*/\1/p"`
+	[[ $album_1 == "" ]] && album=`ffprobe -v quiet -show_format "$1"|grep "TAG:album="|sed 's|^TAG:album=||'`
+	[[ $album == "" ]] && album=$title
+	[[ $icon == "" ]] && icon=$(cd "$input_dir/";find ./ -maxdepth 1 -iregex ".*/$format\.\(png\|jpg\|jpeg\)"|sed -n '1p'|sed 's|^./||')
+	_msg_info "文件名:$1"
 	_msg_info "音乐名称:$title"
 	_msg_info "作者:$artist"
-	# 设置文件名（没有扩展名）
-	format="${artist} - ${title}"
-	# 获取文件后缀名
-	[[ $link != "" ]] && extension=$(echo $link|sed "s/.*\.//")
+	_msg_info "专辑:$album"
 }
 
 check_dir() {
@@ -96,74 +103,53 @@ check_dir() {
 
 add_info() {
 	# 输入文件
-	input_f="${format}.mp3"
+	input_f="$1"
 	# 输出文件
 	out_f="./out/${format}.mp3"
-	icon="${format}.jpg"
-
-	[[ $album == "" ]] && album=$title
+	[[ -f "$icon" ]] && icon_cmd="-i \"$icon\" -map 0:0 -map 1:0 -id3v2_version 3" || icon_cmd=""
+	cmd="\
+ffmpeg -i \"$input_f\" $icon_cmd -c copy -metadata album=\"$album\" -metadata artist=\"$artist\" -metadata title=\"$title\" \
+-metadata:s:v title='Album cover' -metadata:s:v comment='Cover (Front)' \"$out_f\" -v error"
 
 	# 检查
 	check_dir
-	if [[ -e $out ]] {
-		_msg_info $i
+	if [[ -e $out_f ]] {
 		_msg_info "输出文件已存在，跳过" "$F_yellow"
-		echo "$F_line"
 		return 0
 	}
 
-	echo "$F_line"
-	# 设置图标
-	_msg_info "以下为程序输出："
-	[[ $subtitle != "" ]] && title="${title}(${subtitle})"
-	if [[ -f "$icon" ]] {
-		(ffmpeg\
-	            -i "$input_f"                                 \
-	            -i "$icon" -map 0:0 -map 1:0 -id3v2_version 3 \
-	            -c copy                                       \
-	            -metadata artist="$artist"                    \
-	            -metadata title="$title"                      \
-	            -metadata TIT3="$subtitle"                    \
-	            -metadata:s:v title='Album cover'             \
-	            -metadata:s:v comment='Cover (Front)'         \
-	            "$out_f" &&
-	            _msg_info "'$input_f' 完成转换！" "$F_yellow"
-	        ) || _msg_warning "'$input_f' 转换出现问题！"
-	} else {
-		(ffmpeg\
-		    -i "$input_f"                                 \
-		    -c copy                                       \
-		    -metadata artist="$artist"                    \
-		    -metadata title="$title"                      \
-	            -metadata TIT3="$subtitle"                    \
-		    -metadata:s:v title='Album cover'             \
-		    -metadata:s:v comment='Cover (Front)'         \
-		    "$out_f" &&
-		    _msg_info "'$input_f' 完成转换！" "$F_yellow"
-		) || _msg_warning "'$input_f' 转换出现问题！"
-	}
+	#_msg_info "Command:$cmd"
+	#_msg_info "以下为程序输出："
+	(zsh -c $cmd && _msg_info "'$input_f' 完成转换！" "$F_yellow") || _msg_warning "'$input_f' 转换出现问题！"
 }
 
 running() {
 	for i ($input_dir/*.mp3) {
 		echo $F_line
+		i=$(echo $i|sed "s|//|/|g")
 		get_info $i
-		echo "$F_line"
-		add_info
+		add_info $i
 	}
 }
 
 title=""
-subtitle=""
 artist=""
 album=""
+icon=""
+title_1=""
+artist_1=""
+album_1=""
 
 format=""
 
 input_dir="."
-while {getopts "i:nh" OPTION} {
+while {getopts "i:t:A:a:p:nh" OPTION} {
 	case $OPTION {
 		i) input_dir=$OPTARG ;;
+		t) title=$OPTARG && title_1="1" ;;
+		A) artist=$OPTARG && artist_1="1" ;;
+		a) album=$OPTARG && album_1="1" ;;
+		p) icon=$OPTARG ;;
 		h|?) usage ;;
 		*) usage -1 ;;
 	}

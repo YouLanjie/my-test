@@ -89,6 +89,7 @@ get_info() {
 	[[ $subtitle == "" ]] && format="${artist} - ${title}"
 	# 获取文件后缀名
 	[[ $link != "" ]] && extension=$(echo $link|sed "s/.*\.//")
+	format="$(echo $format|sed 's|/|,|')"
 }
 
 local_sound() {
@@ -105,6 +106,7 @@ download_sound() {
 	name_f="${format}.${extension}"
 	if [[ $flag_local == "true" ]] {
 		local_sound
+		return 0
 	}
 	if [[ $link != "" && $link != "NULL" ]] {
 		echo $F_line
