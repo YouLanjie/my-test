@@ -1,4 +1,4 @@
-#!/usr/bin/env manim -pqh -s
+#!/usr/bin/manim -psqk
 # 泰拉瑞亚刷怪范围绘图
 
 from manim import *

@@ -1,4 +1,4 @@
-#!/usr/bin/env manim -pql -s
+#!/usr/bin/manim -psql
 # 关于物理学的动画演示源码
 
 from manim import *
