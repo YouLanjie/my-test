@@ -410,22 +410,42 @@ static void run()
 	}
 }
 
-static void help()
+static void help(int type)
 {
-	printf("Usage:\n"
-	       "    tetris [OPTIONS]\n"
-	       "    socket -h\n"
-	       "Option:\n"
-	       "    -i        简化主ui的信息显示\n"
-	       "    -s <SEED> 设置随机数种子\n"
-	       "    -W <WIDE> 设置棋盘宽度\n"
-	       "    -H <HIGH> 设置棋盘高度\n"
-	       "    -o <FILE> 保存历史记录的文件\n"
-	       "    -l <FILE> 加载指定的历史记录文件\n"
-	       "    -d <NUM>  设置回放速度(值越高速度越快)\n"
-	       "    -k        跳过回放显示直接加载存档\n"
-	       "    -h        显示帮助\n"
-	    );
+	char *help[] = {
+		"Usage:\n"
+		"    tetris [OPTIONS]\n"
+		"Option:\n"
+		"    -i        简化主ui的信息显示\n"
+		"    -s <SEED> 设置随机数种子\n"
+		"    -W <WIDE> 设置棋盘宽度\n"
+		"    -H <HIGH> 设置棋盘高度\n"
+		"    -o <FILE> 保存历史记录的文件\n"
+		"    -l <FILE> 加载指定的历史记录文件\n"
+		"    -d <NUM>  设置回放速度(值越高速度越快)\n"
+		"    -k        跳过回放显示直接加载存档\n"
+		"    -K        内部按键说明\n"
+		"    -h        显示帮助\n",
+		"内部按键说明：\n"
+		",------------+----+----------------------------------.\n"
+		"|            | a  | 左移                             |\n"
+		"|            | s  | 下移                             |\n"
+		"| 移动类     | d  | 右移                             |\n"
+		"|            |    | 方向键                           |\n"
+		"|            |    | 速降（空格）                     |\n"
+		"|------------+----+----------------------------------|\n"
+		"|            | w  | 右旋                             |\n"
+		"| 旋转类     | j  | 左旋                             |\n"
+		"|            | k  | 右旋                             |\n"
+		"|------------+----+----------------------------------|\n"
+		"|            | i  | 内置按键提示显示切换             |\n"
+		"|            | f  | 预期速降落点显示切换             |\n"
+		"| 显示信息类 | b  | 以调试方式打印地图               |\n"
+		"|            | :f | 显示当前运行帧数(调试用)（连按） |\n"
+		"|            | :c | 清屏（连按）                     |\n"
+		"`------------+----+----------------------------------'\n"
+	};
+	printf("%s", help[type]);
 	return;
 }
 
@@ -435,11 +455,11 @@ int main(int argc, char *argv[])
 	flag_seed = time(NULL);
 
 	int ch = 0;
-	while ((ch = getopt(argc, argv, "his:H:W:o:l:d:k")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "his:W:H:o:l:d:kK")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
-			help();
+			help(0);
 			return ch == '?' ? -1 : 0;
 			break;
 		case 'i':
@@ -448,13 +468,11 @@ int main(int argc, char *argv[])
 		case 's':
 			flag_seed = strtod(optarg, NULL);
 			break;
-		case 'H':
-			map.height = strtod(optarg, NULL);
-			map.height = map.height >= 10 ? map.height : 25;
-			break;
 		case 'W':
 			map.weight = strtod(optarg, NULL);
-			map.weight = map.weight >= 4 ? map.weight : 10;
+			break;
+		case 'H':
+			map.height = strtod(optarg, NULL);
 			break;
 		case 'o':
 			file_save = fopen(optarg, "w");
@@ -462,7 +480,7 @@ int main(int argc, char *argv[])
 		case 'l':
 			file_load = fopen(optarg, "r");
 			flag_load = file_load ? 1 : 0;
-			if (!flag_load) printf("NOTE: 存档加载失败，使用随机游戏\n");
+			if (!flag_load) printf("NOTE: 存档加载失败\n");
 			break;
 		case 'd':
 			flag_tps = strtod(optarg, NULL);
@@ -471,15 +489,21 @@ int main(int argc, char *argv[])
 		case 'k':
 			flag_skip = 1;
 			break;
+		case 'K':
+			help(1);
+			return 0;
+			break;
 		default:
 			break;
 		}
 	}
 
-	if (file_load) fscanf(file_load, "%d", &flag_seed);
-	if (file_save) fprintf(file_save, "%d\n", flag_seed);
+	if (file_load) fscanf(file_load, "%d%d%d", &flag_seed, &map.weight, &map.height);
+	map.weight = map.weight >= 4 ? map.weight : 10;
+	map.height = map.height >= 10 ? map.height : 25;
 	srand(flag_seed);
 	map.map = calloc(map.size = map.weight * map.height, sizeof(int));
+	if (file_save) fprintf(file_save, "%d %d %d\n", flag_seed, map.weight, map.height);
 	memset(map.map, 0, map.size);
 
 	if (get_winsize_col() < 66) flag_info = 0;
