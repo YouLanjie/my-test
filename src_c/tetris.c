@@ -76,6 +76,7 @@ int flag_move_lock = 0;		/* 防止两个进程同时移动 */
 int flag_fake = 1;		/* 设置下落最终位置显示 */
 int flag_debug = 0;		/* 调试设置 */
 int flag_info = 1;
+int flag_next = 1;
 int flag_farme = 0;
 int flag_seed = 0;
 int flag_load = 0;
@@ -337,16 +338,17 @@ static void *print_ui()
 		if (info ^ flag_info) {
 			printf("                                                               \r\n\r\n");
 			printf("                                                          \r\n"
-				"                                                                \r\n");
+				"                                                                \r");
 			fflush(stdout);
-			printf("\033[%dA", 4);
+			printf("\033[%dA", 3);
 			fflush(stdout);
 			info = flag_info;
 		}
 		printf(flag_info ?
-		       "消行:%3d /分数:%3d /时间:(%02d:%02d:%02d) /种子:%d":
-		       "Ln:%3d /Sc:%3d /T:(%02d:%02d:%02d) /Sd:%d",
-		       map.line, map.score, dtime / 3600, dtime / 60, dtime % 60, flag_seed);
+		       "消行:%3d /分数:%3d /时间:(%02d:%02d:%02d)":
+		       "Ln:%3d /Sc:%3d /T:(%02d:%02d:%02d)",
+		       map.line, map.score, dtime / 3600, dtime / 60, dtime % 60);
+		if (flag_next) printf(flag_info ? " /种子:%d" : " /Sd:%d", flag_seed);
 		if (flag_farme) printf(flag_info ? " /帧值:%d" : " /F:%d", print_lock);
 		static int flag_farme2 = 0;
 		if (flag_farme != flag_farme2) {
@@ -357,11 +359,11 @@ static void *print_ui()
 		if (flag_info) {
 			printf("\n\n\r");
 			printf("<游戏> [a/s/d] 移动   [w/j/k] 旋转    [SPACE] 速降\r\n"
-			       "<设置>     [b] Debug      [i] 按键提示    [f] 预期落点显示\r\n"
+			       "<设置>     [b] Debug      [i] 按键提示    [f] 预期落点显示\r"
 			       "\033[2A");
 		}
-		printf("\033[%dA", map.height + (flag_info ? 3 : 1));
-		print_next();
+		printf("\033[%dA", map.height + (flag_info ? 2 : 1));
+		if (flag_next) print_next();
 END_OF_PRINT:
 		if (print_lock && print_lock % 6 == 0) {    /* 默认每0.3s就移动一次 */
 			int inp = 0;
@@ -373,7 +375,7 @@ END_OF_PRINT:
 		if (print_lock) print_lock++;
 	}
 
-	printf("\033[%dB\r\n", map.height + 4);
+	printf("\033[%dB\r\n", map.height + (flag_info ? 4 : 1));
 	printf("\033[?25h游戏结束\r\n若程序未退出，请按'回车'\r\n");
 	if (flag_debug) {
 		printf("最终棋盘数据:\r\n");
@@ -405,6 +407,8 @@ static void run()
 				printf("\033[2J\033[0;0H");
 			else if (inp == 'f') {
 				flag_farme ^= 1;
+			} else if (inp == 'n') {
+				flag_next ^= 1;
 			}
 		}
 		input = control(input);
@@ -419,6 +423,7 @@ static void help(int type)
 		"    tetris [OPTIONS]\n"
 		"Option:\n"
 		"    -i        简化主ui的信息显示\n"
+		"    -n        隐藏下一步的信息显示\n"
 		"    -s <SEED> 设置随机数种子\n"
 		"    -W <WIDE> 设置棋盘宽度\n"
 		"    -H <HIGH> 设置棋盘高度\n"
@@ -443,6 +448,7 @@ static void help(int type)
 		"|            | i  | 内置按键提示显示切换             |\n"
 		"|            | f  | 预期速降落点显示切换             |\n"
 		"| 显示信息类 | b  | 以调试方式打印地图               |\n"
+		"|            | :n | 隐藏下一步和种子显示（连按）     |\n"
 		"|            | :f | 显示当前运行帧数(调试用)（连按） |\n"
 		"|            | :c | 清屏（连按）                     |\n"
 		"`------------+----+----------------------------------'\n"
@@ -457,7 +463,7 @@ int main(int argc, char *argv[])
 	flag_seed = time(NULL);
 
 	int ch = 0;
-	while ((ch = getopt(argc, argv, "his:W:H:o:l:d:kK")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "hins:W:H:o:l:d:kK")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -466,6 +472,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'i':
 			flag_info = 0;
+			break;
+		case 'n':
+			flag_next = 0;
 			break;
 		case 's':
 			flag_seed = strtod(optarg, NULL);
@@ -501,10 +510,11 @@ int main(int argc, char *argv[])
 	}
 
 	if (get_winsize_col() < 66) flag_info = 0;
+	if (get_winsize_col() < 43) flag_next = 0;
 	if (get_winsize_row() < 31) flag_info = 0;
-	if (get_winsize_row() < 27) {
-		printf("NOTE: 屏幕高度不足，会导致打印错误\n"
-		       "      最低屏高为27行\n");
+	if (get_winsize_col() < 28 || get_winsize_row() < 27) {
+		printf("NOTE: 终端尺寸不足，会导致打印错误\n"
+		       "      最小'高x宽'为27x28\n");
 		return -1;
 	}
 
