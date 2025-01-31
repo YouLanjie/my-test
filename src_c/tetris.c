@@ -4,13 +4,12 @@
  *   文件名称：tetris.c
  *   创 建 者：u0_a221
  *   创建日期：2024年02月16日
- *   描    述：
+ *   描    述：一个俄罗斯方块游戏
  *
  */
 
 
 #include "include/tools.h"
-#include <stdio.h>
 
 #define SECOND 1000000
 #define TPS (SECOND / 20)
@@ -349,13 +348,19 @@ static void *print_ui()
 		       "Ln:%3d /Sc:%3d /T:(%02d:%02d:%02d) /Sd:%d",
 		       map.line, map.score, dtime / 3600, dtime / 60, dtime % 60, flag_seed);
 		if (flag_farme) printf(flag_info ? " /帧值:%d" : " /F:%d", print_lock);
-		printf("\r\n\r\n");
+		static int flag_farme2 = 0;
+		if (flag_farme != flag_farme2) {
+			printf("             ");
+			flag_farme2 = flag_farme;
+		}
+		printf("\r");
 		if (flag_info) {
+			printf("\n\n\r");
 			printf("<游戏> [a/s/d] 移动   [w/j/k] 旋转    [SPACE] 速降\r\n"
 			       "<设置>     [b] Debug      [i] 按键提示    [f] 预期落点显示\r\n"
 			       "\033[2A");
 		}
-		printf("\033[%dA", map.height + 3);
+		printf("\033[%dA", map.height + (flag_info ? 3 : 1));
 		print_next();
 END_OF_PRINT:
 		if (print_lock && print_lock % 6 == 0) {    /* 默认每0.3s就移动一次 */
@@ -400,9 +405,6 @@ static void run()
 				printf("\033[2J\033[0;0H");
 			else if (inp == 'f') {
 				flag_farme ^= 1;
-				flag_info ^= 1;
-				usleep(TPS);
-				flag_info ^= 1;
 			}
 		}
 		input = control(input);
@@ -498,15 +500,21 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	if (get_winsize_col() < 66) flag_info = 0;
+	if (get_winsize_row() < 31) flag_info = 0;
+	if (get_winsize_row() < 27) {
+		printf("NOTE: 屏幕高度不足，会导致打印错误\n"
+		       "      最低屏高为27行\n");
+		return -1;
+	}
+
 	if (file_load) fscanf(file_load, "%d%d%d", &flag_seed, &map.weight, &map.height);
+	if (file_save) fprintf(file_save, "%d %d %d\n", flag_seed, map.weight, map.height);
 	map.weight = map.weight >= 4 ? map.weight : 10;
 	map.height = map.height >= 10 ? map.height : 25;
 	srand(flag_seed);
 	map.map = calloc(map.size = map.weight * map.height, sizeof(int));
-	if (file_save) fprintf(file_save, "%d %d %d\n", flag_seed, map.weight, map.height);
 	memset(map.map, 0, map.size);
-
-	if (get_winsize_col() < 66) flag_info = 0;
 
 	time(&game_time1);
 	pthread_create(&pid, NULL, print_ui, NULL);
