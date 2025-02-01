@@ -133,6 +133,10 @@ m4a_to_mp3() {
 	input_f="${format}.m4a"
 	# 输出文件
 	out_f="${format}.mp3"
+	# 输入文件比特率
+	bitrate=$(ffprobe -v error -show_format "$input_f"|grep "bit_rate="|sed 's|^bit_rate=||')
+	opt=""
+	if [[ $bitrate != "" ]] opt="-b:a"
 
 	# 检查
 	if [[ -e $out_f ]] {
@@ -142,10 +146,10 @@ m4a_to_mp3() {
         	return 0
 	}
 	_msg_info "输入文件：'$input_f'"
-	_msg_info "ffmpeg -i \"$input_f\" \"$out_f\""
+	_msg_info "ffmpeg -v error -i \"$input_f\" $opt $bitrate \"$out_f\""
 	echo "$F_line"
 	_msg_info "以下为程序输出："
-	(ffmpeg -i "$input_f" "$out_f" && rm "$input_f" && _msg_info "'$input_f' 完成转换！" "$F_yellow") || (_msg_warning "'$input_f' 转换出现问题！" && exit -1)
+	(ffmpeg -v error -i "$input_f" $opt $bitrate "$out_f" && rm "$input_f" && _msg_info "'$input_f' 完成转换！" "$F_yellow") || (_msg_warning "'$input_f' 转换出现问题！" && exit -1)
 }
 
 check_dir() {
@@ -191,6 +195,7 @@ add_info() {
 	[[ $subtitle != "" ]] && title="${title}(${subtitle})"
 	if [[ -f "$icon" ]] {
 		(ffmpeg\
+		    -v error                                      \
 	            -i "$input_f"                                 \
 	            -i "$icon" -map 0:0 -map 1:0 -id3v2_version 3 \
 	            -c copy                                       \
@@ -206,6 +211,7 @@ add_info() {
 	        ) || _msg_warning "'$input_f' 转换出现问题！"
 	} else {
 		(ffmpeg\
+		    -v error                                      \
 		    -i "$input_f"                                 \
 		    -c copy                                       \
 		    -metadata album="$album"                      \
@@ -225,8 +231,8 @@ running() {
 	for i ({1..100}) {
 		echo $F_line
 		download
-		[[ $file_type != "mp3" ]] && echo "$F_line"
-		[[ $file_type != "mp3" ]] && m4a_to_mp3
+		[[ $extension != "mp3" ]] && echo "$F_line"
+		[[ $extension != "mp3" ]] && m4a_to_mp3
 		echo "$F_line"
 		add_info
 	}
