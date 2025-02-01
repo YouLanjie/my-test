@@ -94,19 +94,18 @@ get_info() {
 
 local_sound() {
 	if [[ $input_dir == "" ]] {
-		return
+		return 0
 	}
 	[[ $flag_name == "true" ]] && grep_f="\.mp3\|\.m4a" || grep_f="${format}\.\(mp3\|\.m4a\)"
 	input_f=$(ls "$input_dir"|grep "$grep_f"|sed -n "1p")
 	_msg_info "mv \""$input_dir/$name_f"\" \"$name_f\""
-	[[ -f "$input_dir/$input_f" ]] && (mv "$input_dir/$input_f" "$name_f" || (_msg_warning "错误！移动文件出错" && exit -1))
+	[[ -f "$input_dir/$input_f" ]] && (mv "$input_dir/$input_f" "$name_f" || (_msg_warning "错误！移动文件出错" && exit -1)) || return -1
 }
 
 download_sound() {
 	name_f="${format}.${extension}"
 	if [[ $flag_local == "true" ]] {
-		local_sound
-		return 0
+		local_sound && return 0
 	}
 	if [[ $link != "" && $link != "NULL" ]] {
 		echo $F_line
