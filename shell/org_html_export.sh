@@ -28,24 +28,38 @@ _msg_error() {
 # }}}
 
 run() {
-	file_list=$(ls -F "$input_d"|sed -n 's|/$||p'|sort -n)
-	max_line=$(echo $file_list|wc -l)
-	final_output="#+title: INDEX:$title\n#+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>\n* $title\n"
-	final_output="$final_output$(echo $file_list|sed "s|\(.*\)|- [[$input_d/\1.html]]|"|sed "s|//|/|g")"
+	[[ $(echo $input_d|sed -n "s|^\([.]\{0,2\}/\)|\1|p") == "" ]] && input_d="./$input_d"
+	# $input目录下文件夹列表
+	dir_list=$(ls -F "$input_d"|sed -n 's|/$||p'|sort -n)
+	max_line=$(echo $dir_list|wc -l)
+	max_line_fail=0
+	for (( i=1; i <= $max_line; i++ )) {
+		dir="$(echo $dir_list|sed -n "${i}p")"
+		if [[ $(find "$input_d/$dir" -maxdepth 1 -type f,l|sort -n) == "" ]] {
+			dir_list=$(echo $dir_list|sed "$((i-max_line_fail))d")
+			((max_line_fail++))
+		}
+	}
+	max_line=$((max_line-max_line_fail))
+	final_output="$(echo $dir_list|sed "s|\(.*\)|- [[$input_d/\1.html]]|"|sed "s|//|/|g")"
+	final_output="#+title: INDEX:$title\n#+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>\n* $title\n$final_output"
 	#_msg_info "INDEX file:"
 	[[ ! -d $output_d ]] && mkdir $output_d
 	echo $final_output >"$output_d/index.org"
 	tmpfile="$(date +"%Y.%m.%d %H:%M:%S"|md5sum|awk '{print $1}').el"
 	echo $elisp_cmd >/tmp/$tmpfile
-	emacs -Q -nw /tmp/$tmpfile "$output_d/index.org" --eval "(eval-buffer \"$tmpfile\")"
+	[[ $max_line > 1 ]] && emacs -Q -nw /tmp/$tmpfile "$output_d/index.org" --eval "(eval-buffer \"$tmpfile\")"
 	for (( i=1; i <= $max_line; i++ )) {
 		final_output=""
-		file="$(echo $file_list|sed -n "${i}p")"
-		outp="$output_d/$file.org"
-		[[ -f $file ]] && continue
-		[[ -f $outp ]] && _msg_warning "Overwrite output file '$outp'"
-		final_output="#+title: $title / $i\n#+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>\n* $file / $i\n"
-		final_output="$final_output$(ls "$input_d/$file"|sort -n|sed "s|\(.*\)|[[$input_d/$file/\1]]|"|sed "s|//|/|g")"
+		dir="$(echo $dir_list|sed -n "${i}p")"
+		[[ -f $dir ]] && continue
+		outp="$output_d/$dir.org"
+		[[ $max_line == 1 ]] && outp="$output_d/index.org"
+		file_list=$(find "$input_d/$dir" -maxdepth 1 -type f,l|sort -n)
+		[[ $file_list == "" ]] && continue
+		final_output="$(echo "$file_list"|sed "s|\(.*\)|[[\1]]|"|sed "s|//|/|g")"
+		final_output="#+title: $title / $i\n#+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>\n* $file / $i\n$final_output"
+		[[ -f $outp ]] && _msg_warning "Overwrite output dir '$outp'"
 		_msg_info "OUTP: $outp"
 		echo $final_output >"$outp"
 		emacs -Q -nw /tmp/$tmpfile "$outp" --eval "(eval-buffer \"$tmpfile\")"
@@ -74,11 +88,21 @@ usage() {
 	usagetext="\
 usage: $app_name [options]
   options:
-     -i [dirname] 设置输入目录
-     -o [dirname] 设置输出目录
+     -i [dirname] 设置输入目录(默认./)
+     -o [dirname] 设置输出目录(不推荐)(默认./)
+     -c [cssfile] 设置css文件链接(默认../main.css)
      -t [title]   设置标题
-     -c [cssfile] 设置css文件链接
-     -h           帮助信息"
+     -h           帮助信息
+
+标准文件层级格式:
+input_dir                       output_dir
+├── expect_dir_1                ├── index.org
+│   ├── expect_file_1.image     ├── expect_dir_1.org
+│   ├── expect_file_2.image     ├── expect_dir_2.org
+│   ├── expect_file_3.image     ├── index.html
+│   └── expect_file_4.image     ├── expect_dir_1.html
+└── expect_dir_2                └── expect_dir_2.html
+    └── expect_file_1.image"
 	echo $usagetext
 	exit $1
 }
