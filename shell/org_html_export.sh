@@ -35,7 +35,7 @@ run() {
 	max_line_fail=0
 	for (( i=1; i <= $max_line; i++ )) {
 		dir="$(echo $dir_list|sed -n "${i}p")"
-		if [[ $(find "$input_d/$dir" -maxdepth 1 -type f,l|sort -n) == "" ]] {
+		if [[ $(find "$input_d/$dir" -maxdepth 1 -type f,l -iregex ".*\.\($format\)") == "" ]] {
 			dir_list=$(echo $dir_list|sed "$((i-max_line_fail))d")
 			((max_line_fail++))
 		}
@@ -51,14 +51,20 @@ run() {
 	[[ $max_line > 1 ]] && emacs -Q -nw /tmp/$tmpfile "$output_d/index.org" --eval "(eval-buffer \"$tmpfile\")"
 	for (( i=1; i <= $max_line; i++ )) {
 		final_output=""
+
 		dir="$(echo $dir_list|sed -n "${i}p")"
 		[[ -f $dir ]] && continue
-		outp="$output_d/$dir.org"
-		[[ $max_line == 1 ]] && outp="$output_d/index.org"
-		file_list=$(find "$input_d/$dir" -maxdepth 1 -type f,l|sort -n)
+		file_list=$(cd "$input_d/$dir" && find ./ -maxdepth 1 -type f,l -iregex ".*\.\($format\)"|sed "s|^\./||"|sort -n|sed "s|^|$input_d/$dir/|")
 		[[ $file_list == "" ]] && continue
+
+		outp="$output_d/$dir.org"
+		if [[ $max_line == 1 ]] {
+			outp="$output_d/index.org"
+			dir="$title"
+		}
 		final_output="$(echo "$file_list"|sed "s|\(.*\)|[[\1]]|"|sed "s|//|/|g")"
-		final_output="#+title: $title / $i\n#+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>\n* $file / $i\n$final_output"
+		final_output="#+title: $title / $i\n#+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>\n* $dir / $i\n$final_output"
+
 		[[ -f $outp ]] && _msg_warning "Overwrite output dir '$outp'"
 		_msg_info "OUTP: $outp"
 		echo $final_output >"$outp"
@@ -67,6 +73,7 @@ run() {
 	rm /tmp/$tmpfile
 }
 
+format='png\|jpg\|jpeg\|gif\|webp'
 input_d="./"
 output_d="./"
 title="<NULL>"
