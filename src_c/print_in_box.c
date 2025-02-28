@@ -36,7 +36,7 @@ static int _print_in_box(char *ch, int x_start, int y_start, int width, int heig
 		}
 	}
 	printf("\033[%d;%dH", y_start + line_num - (hide > line_num ? 0 : hide), x_start);
-	while (ch && *ch != '\0') {
+	while (ch && *ch != '\0' && width >= 8) {
 		char buf[20] = {*ch, '\0', '\0', '\0'};
 		if (*ch & 0x80) {
 			buf[1] = ch[1];
