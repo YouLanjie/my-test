@@ -15,7 +15,6 @@ static int _print_in_box(char *ch, int x_start, int y_start, int width, int heig
 {
 	int count = 0,
 	    line_num = 0;
-	char buf[20] = "0";
 
 	x_start = x_start > get_winsize_col() ? 1 : x_start;
 	if (x_start < 1) x_start = 1;
@@ -38,7 +37,19 @@ static int _print_in_box(char *ch, int x_start, int y_start, int width, int heig
 	}
 	printf("\033[%d;%dH", y_start + line_num - (hide > line_num ? 0 : hide), x_start);
 	while (ch && *ch != '\0') {
-		int cond_out = (count + (*ch & 0x80 ? 2 : 1) > width && ch && *ch != '\0');
+		char buf[20] = {*ch, '\0', '\0', '\0'};
+		if (*ch & 0x80) {
+			buf[1] = ch[1];
+			buf[2] = ch[2];
+			count++;
+			if (strcmp("…", buf) == 0) count--;
+		} else if (*ch == '\t') {
+			count += 7;
+			strcpy(buf, "        ");
+		}
+		count++;
+
+		int cond_out = (count > width && ch && *ch != '\0');
 		int cond_print = (line_num - hide >= 0 && line_num - hide < heigh);
 
 		if (cond_out || *ch == '\n' || *ch == '\r') {
@@ -52,31 +63,15 @@ static int _print_in_box(char *ch, int x_start, int y_start, int width, int heig
 			/* 字符指针下移 */
 			if (*ch == '\n' || *ch == '\r') {
 				ch++;
-				continue;
 			}
+			continue;
 		}
-
-		buf[0] = *ch;
-		buf[1] = '\0';
-		if (*ch & 0x80) {
-			buf[1] = ch[1];
-			buf[2] = ch[2];
-			buf[3] = '\0';
-			ch+=2;
-			count += 3;
-		} else if (*ch == '\t') {
-			count += 8;
-			strcpy(buf, "        ");
-		} else
-			count++;
 
 		int cond_hl = (line_num == focus && flag_hl);
 		cond_print = (line_num - hide >= 0 && line_num - hide < heigh);
 		if (cond_print) printf("%s%s%s", cond_hl ? "\033[7m" : "", buf, cond_hl ? color_code : "");
-		/*kbhitGetchar();*/
-		/*usleep(100000/10);*/
 		/* 字符指针下移 */
-		ch++;
+		ch += *ch & 0x80 ? 3 : 1;
 	}
 	printf("\033[0m");
 	kbhitGetchar();
@@ -85,24 +80,30 @@ static int _print_in_box(char *ch, int x_start, int y_start, int width, int heig
 
 #define window_num 3
 
-int main()
+int main(int argc, char *argv[])
 {
-	FILE *fp = fopen("./print_in_box.c", "r");
-	char str[window_num][1024*10] = {
+	char *filename = "./print_in_box.c";
+	if (argc == 2) {
+		filename = argv[1];
+	}
+	FILE *fp = fopen(filename, "r");
+	char *str[window_num] = {
 		"##########################\n"
 		"#                        #\n"
 		"#       Upos......       #\n"
 		"#                        #\n"
 		"##########################\n"
 		"Something gose wrong.\n"
-		"The file `./print_in_box.c` was not found. :(\n"
+		"The input file was not found. :(\n"
 		"Try to write somethings in the file `./print_in_box.c` to change the text in this window. :)",
 
 		"Tips: [WASD] resize the window [wasd] move the window\n"
 		"Tips:  [Tab] switch window        [i] hide info win\n"
 		"Tips:   [jk] move focus line     [hl] move the text",
 
-		"There is the data window."};
+		/*"There is the data window."*/
+		malloc(sizeof(char)*1024)
+	};
 
 	char *color[window_num][2] = {
 		{"\033[0;30;43m", "\033[0;37;41m"},
@@ -123,11 +124,7 @@ int main()
 	printf("\033[?25l");
 
 	if (fp) {
-		int ch = 0;
-		for (int i = 0; ch != EOF; i++) {
-			ch = fgetc(fp);
-			str[0][i] = ch;
-		}
+		str[0] = _fread(fp);
 		fclose(fp);
 	} else flag_color[0] = 2;
 
