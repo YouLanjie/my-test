@@ -5,7 +5,7 @@
 # 的脚本于run.sh中
 
 if [[ -f run.sh ]] {
-	echo "Please make sure the file 'run.sh' is not nessary and remove it by yourself."
+	echo "Error: 输出文件'run.sh'已存在"
 	exit 1
 }
 
