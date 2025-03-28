@@ -1,10 +1,10 @@
 #!/usr/bin/zsh
 
 #================================================================
-#   Copyright (C) 2023 YouLanjie
+#   Copyright (C) 2023 Chglish
 #   
 #   文件名称：music_download.sh
-#   创 建 者：youlanjie
+#   创 建 者：Chglish
 #   创建日期：2023年06月09日
 #   描    述：下载网易云音乐（一站式解决）
 #
@@ -63,10 +63,10 @@ usage() {
 	echo "\
 usage: $app_name [options]
   options:
-     -i           设置备用输入文件夹
-     -n           查找备用文件时使用通配符查找
-     -l           优先使用本地文件
-     -h           帮助信息"
+     -i <dir>  设置备用输入文件夹
+     -n        查找备用文件时使用通配符查找
+     -l        优先使用本地文件
+     -h        帮助信息"
 	exit $1
 }
 

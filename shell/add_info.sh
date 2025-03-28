@@ -1,12 +1,13 @@
 #!/usr/bin/zsh
 
 #================================================================
-#   Copyright (C) 2024 YouLanjie
+#   Copyright (C) 2024 Chglish
 #   
-#   文件名称：info_add_by_name.sh
-#   创 建 者：youlanjie
+#   文件名称：add_info.sh
+#   创 建 者：Chglish
 #   创建日期：2024年06月15日
-#   描    述：
+#   描    述：批量对mp3进行歌手、专辑、歌名、封面的添加工作
+#             若无指定则通过文件名设定
 #
 #================================================================
 
@@ -63,11 +64,11 @@ usage() {
 	echo "\
 usage: $app_name [options]
   options:
-     -i           设置输入文件夹
-     -t           设置标题
-     -A           设置作曲家
-     -a           设置专辑
-     -p           设置封面
+     -i <dir>     设置输入文件夹
+     -t <title>   设置标题
+     -A <artist>  设置作曲家
+     -a <album>   设置专辑
+     -p <file>    设置封面文件
      -h           帮助信息"
 	exit $1
 }
@@ -85,6 +86,7 @@ get_info() {
 	_msg_info "音乐名称:$title"
 	_msg_info "作者:$artist"
 	_msg_info "专辑:$album"
+	[[ $icon != "" ]] && _msg_info "封面:$icon"
 }
 
 check_dir() {

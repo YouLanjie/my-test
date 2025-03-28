@@ -2,7 +2,7 @@
 
 if [[ $1 == "" ]] || (( $1 <= 0 )) {
 	echo "\
-Usage: trans_bili <count>"
+Usage: bilibili_web_trans.sh <count>"
 	return -1
 }
 

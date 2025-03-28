@@ -95,10 +95,10 @@ usage() {
 	usagetext="\
 usage: $app_name [options]
   options:
-     -i [dirname] 设置输入目录(默认./)
-     -o [dirname] 设置输出目录(不推荐)(默认./)
-     -c [cssfile] 设置css文件链接(默认../main.css)
-     -t [title]   设置标题
+     -i <dirname> 设置输入目录(默认./)
+     -o <dirname> 设置输出目录(不推荐)(默认./)
+     -c <cssfile> 设置css文件链接(默认../main.css)
+     -t <title>   设置标题
      -h           帮助信息
 
 标准文件层级格式:

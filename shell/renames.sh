@@ -6,7 +6,7 @@
 #   文件名称：renames.sh
 #   创 建 者：Chglish
 #   创建日期：2025年03月14日
-#   描    述：
+#   描    述：使用修改日期和md5将文件重命名，支持增加前缀和后缀
 #
 #================================================================
 
@@ -28,7 +28,7 @@ usage: $app_name [options]
 file_rename() {
 	input="$1"
 	#ext=$(echo $input|sed 's|.*\.||')
-	ext=$(echo $input |sed -n "s/.*\\.\(.*\)/\1/p")
+	ext=${1:e}
 	mdfiytime=$(date -d "@$(stat $input -c "%Y")" +"$time_fmt")
 	md5=""
 	output=""

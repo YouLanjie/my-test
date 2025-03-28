@@ -1,15 +1,26 @@
-#!zsh
+#!/usr/bin/zsh
+
+#================================================================
+#   Copyright (C) 2023 Chglish
+#
+#   文件名称：bilibili_build.sh
+#   创 建 者：Chglish
+#   创建日期：2023年10月28日
+#   描    述：生成将bilibili的视频缓存转成视频或音频的脚本
+#             默认以mp3格式输出
+#
+#================================================================
 
 
 help() {
 	echo "\
 usage: $1 [options]
   options:
-     -i    show more info in output file
-     -h    show this message
-     -o    output file
-     -v    video output (3gp file)
-     -V    video output (mp4 file)"
+     -i         在输出文件中标注输入文件夹
+     -h         显示帮助
+     -o <file>  指定输出脚本
+     -v         输入3gp视频文件
+     -V         输入mp4视频文件"
 	exit $2
 }
 

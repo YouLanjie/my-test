@@ -1,8 +1,8 @@
 # my-test
 
 - 这是我的一个测试文件仓库
-- 全部存放c语言测试文件
-- 大都只适用于Linux系统
+- 在`src_c`文件夹存放c语言测试文件
+  - 大都只适用于Linux系统
 
 > 我英文渣，文件名都是乱取的 :|
 
@@ -28,7 +28,7 @@
 | farme.c                    | 多线程显示处理测试（已改为走迷宫，可和`maze.c`配合使用）                   |
 | maze.c                     | 可视化生成迷宫，数据将保存在`maze.txt`中                                   |
 | guess\_number.c            | 猜数字                                                                     |
-| tetris.c                   | 俄罗斯方块                                                                 |
+| **tetris.c**               | 俄罗斯方块                                                                 |
 | print\_in\_box.c           | 在一定的限定范围内打印                                                     |
 | arch-fast-install.c        | 快速按照Archlinux的测试程序                                                |
 | neuro.c                    | 神经网络测试程序，输入2个数判断它们的正负及大小，正确率在90%~94%左右浮动   |
@@ -51,6 +51,7 @@ git submodule update
 请在项目目录运行以下命令编译所有程序（注：该脚本需要使用zsh）：
 
 ```shell
+cd ./src_c
 ./build.sh
 ```
 
@@ -59,6 +60,7 @@ git submodule update
 或者使用以下命令编译大部分程序
 
 ```shell
+cd ./src_c
 ls -1|grep ".c$"|sed "/build.c\|gtk.c/d"|sed "s/^\(.*\).c$/gcc \1\.c $(find ./include/lib -name "*.c"|sed ":a;N;s/\n/ /g;b a"|sed 's/\//\\\//g') -lncurses -lm -o bin\/\1/"|sh
 ```
 
@@ -68,7 +70,7 @@ ls -1|grep ".c$"|sed "/build.c\|gtk.c/d"|sed "s/^\(.*\).c$/gcc \1\.c $(find ./in
 
 > 注：一下介绍的这些程序我都是自认有用的
 
-- Type_conversion.c
+- Type\_conversion.c
   - 寻找指定文件夹下的文件（单级）并创建多个进程同时调用ffmpge以快速地转换文件（格式）（不用打命令半天）
 
   - 命令格式
