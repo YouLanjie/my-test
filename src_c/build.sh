@@ -33,6 +33,7 @@ build_lib() {
 
 build_file() {
 	declare -A build_arg=(		\
+		["sin.c"]="-lm"		\
 		["input.c"]="-lm"	\
 		["neuro.c"]="-lm"	\
 		["social.c"]="-lm"	\

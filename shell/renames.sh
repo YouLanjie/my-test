@@ -20,6 +20,7 @@ usage: $app_name [options]
      -e <postfix> 后缀
      -m <mode>    模式选择(time|md5|auto)
      -f <format>  时间格式选择，默认'$time_fmt'
+     -v           详细输出
      -h           帮助信息"
 	#echo "usage: timename_dir <dir> <prefix> <postfix>"
 	exit $1
@@ -28,28 +29,39 @@ usage: $app_name [options]
 file_rename() {
 	input="$1"
 	#ext=$(echo $input|sed 's|.*\.||')
+	#ext=$(echo $input|sed -n "s/.*\\.\(.*\)/\1/p")
+	_postfix="$postfix"
+	[[ $postfix == '$NAME' ]] && _postfix="_${1:r}"
 	ext=${1:e}
 	mdfiytime=$(date -d "@$(stat $input -c "%Y")" +"$time_fmt")
 	md5=""
 	output=""
 
-	output="${prefix}${mdfiytime}${postfix}.${ext}"
+	output="${prefix}${mdfiytime}${_postfix}.${ext}"
 	if [[ "$mode" == "md5" ]] {
 		md5="$(md5sum "$input"|awk '{print $1}')"
-		output="${prefix}${md5}${postfix}.${ext}"
+		output="${prefix}${md5}${_postfix}.${ext}"
 	}
 
-	[[ "$input" -ef "$output" ]] && return 0
+	# 判断路径是否等价
+	if [[ "$input" -ef "$output" ]] {
+		[[ $verbose == "true" ]] && echo "等价的路径1：'$input'和'$output'"
+		return 0
+	}
 
 	if [[ -f "$output" && $mode != "time" && $mode != "md5" ]] {
 		md5="$(md5sum "$input"|awk '{print $1}')"
-		output="${prefix}${mdfiytime}_${md5}${postfix}.${ext}"
+		output="${prefix}${mdfiytime}_${md5}${_postfix}.${ext}"
 	}
 
-	[[ "$input" -ef "$output" ]] && return 0
+	# 判断路径是否等价
+	if [[ "$input" -ef "$output" ]] {
+		[[ $verbose == "true" ]] && echo "等价的路径：'$input'和'$output'"
+		return 0
+	}
 
 	if [[ -f "$output" ]] {
-		echo "Error: 重命名'$input'时目标文件'$output'已存在"
+		[[ $verbose == "true" ]] && echo "Error: 重命名'$input'时目标文件'$output'已存在"
 		return -1
 	}
 
@@ -80,14 +92,16 @@ prefix=""
 postfix=""
 time_fmt="%Y%m%d_%H%M%S"
 mode="auto"
+verbose="false"
 
-while {getopts "hi:p:e:m:f:" OPTION} {
+while {getopts "hi:p:e:m:f:v" OPTION} {
 	case $OPTION {
 		i) input_arg="$OPTARG" ;;
 		p) prefix="$OPTARG" ;;
 		e) postfix="$OPTARG" ;;
 		m) mode="$OPTARG" ;;
 		f) time_fmt="$OPTARG" ;;
+		v) verbose="true" ;;
 		h|?) usage ;;
 		*) usage -1 ;;
 	}
