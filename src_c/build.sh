@@ -32,11 +32,12 @@ build_lib() {
 }
 
 build_file() {
-	declare -A build_arg=(		\
-		["sin.c"]="-lm"		\
-		["input.c"]="-lm"	\
-		["neuro.c"]="-lm"	\
-		["social.c"]="-lm"	\
+	declare -A build_arg=(			\
+		["ALSA.c"]="-lm -lasound"	\
+		["sin.c"]="-lm"			\
+		["input.c"]="-lm"		\
+		["neuro.c"]="-lm"		\
+		["social.c"]="-lm"		\
 		["gtk.c"]="$(pkg-config --cflags --libs gtk+-3.0 2>/dev/null || echo "#")")
 	if [[ $build_arg[$(echo $1 | sed 's/^.*\///')] == "#" ]] {
 		return -1
