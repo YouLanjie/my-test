@@ -70,7 +70,7 @@ typedef struct {
 	uint32_t data_size;	// 音频数据大小
 } WavHeader;
 
-void create_wav_header(WavHeader *header, int duration)
+void create_wav_header(WavHeader *header, float duration)
 {
 	memcpy(header->RIFF, "RIFF", 4);
 	memcpy(header->WAVE, "WAVE", 4);
@@ -88,6 +88,8 @@ void create_wav_header(WavHeader *header, int duration)
 	int data_size = SAMPLE_RATE * duration * header->block_align;
 	header->data_size = data_size;
 	header->file_size = data_size + sizeof(WavHeader) - 8;
+	/*printf("DATA_SIZE:%d\nFILE_SIZE:%d\nDELTER:%d\n",
+	 * data_size,header->file_size,header->file_size-data_size);*/
 }
 
 /* 
@@ -175,13 +177,11 @@ int play_wav(snd_pcm_t *pcm_handle, short *wave, int size) {
 	return 0;
 }
 
-int melody(int id, char *filename, int stat)
+
+int melody(int id, char *filename, int stat, int speed)
 {
-	/*
-	 * 1 2 3 4 5 6 7
-	 * C D E F G A B
-	 * */
-	const char *note[4][125] = {
+	id %= 5;
+	const char *note[5][514] = {
 		{
 			"C","C","G","G","A","A","G*", "F","F","E","E","D","D","C*",    /* 一闪一闪亮晶晶 */ /* 满天都是小星星 */
 			"G","G","F","F","E","E","D*", "G","G","F","F","E","E","D*",    /* 挂在天上放光明 */ /* 好像许多小眼睛 */
@@ -206,13 +206,37 @@ int melody(int id, char *filename, int stat)
 			"c","d","e","f","g","a","b",
 			"C","D","E","F","G","A","B",
 			"1","2","3","4","5","6","7",    /* 10.5s音频测试 */
+		}, {
+			"3/.","2//","1/","A/", "G/","A//","G//","E/","G/", "1/","1//","1//","1/","1/", "1","C//","D//","E//","F//",
+			"G","E/.","D//", "C/","E/","G/","1/", "3","2/.","3//", "1*", "2","2/.","3//", "2/","1/","B/","A/",
+			"G","A/.","1//", "G*", "E/","E//","E//","D/","E/", "G/","E//","G//","A/","G/", "1","2", "3*",
+			"2/.","1//","B/","A/", "G/","A//","G/","E/","G/", "1","1/","1/", "1","G/.","A//", "E", "G", "1/","1/","2/","1/",
+			"G*", "G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*", "3","3/","5/", "4.","3/", "2/","B/","A/","G//","G//",
+			"3.","2/", "1","B/","A/", "G.","E/", "G/","G//","A//","B/","1/", "2*", "2","G/.","A//", "E","G",
+			"1/","1/","2/","1/", "G*", "G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*", "3","3/","5/", "4.","3/",
+			"2/", "B/","A/","G//","G//", "3.","2//", "1","B/","A/", "G.","E/", "G/","A/","B/","2/",
+			"1*", "1","C//","D//","E//","F//",    /* Specifit */
+			/* REPEAT NEXT */
+			"G","E/.","D//", "C/","E/","G/","1/", "3","2/.","3//", "1*", "2","2/.","3//", "2/","1/","B/","A/",
+			"G","A/.","1//", "G*", "E/","E//","E//","D/","E/", "G/","E//","G//","A/","G/", "1","2", "3*",
+			"2/.","1//","B/","A/", "G/","A//","G/","E/","G/", "1","1/","1/", "1","G/.","A//", "E", "G", "1/","1/","2/","1/",
+			"G*", "G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*", "3","3/","5/", "4.","3/", "2/","B/","A/","G//","G//",
+			"3.","2/", "1","B/","A/", "G.","E/", "G/","G//","A//","B/","1/", "2*", "2","G/.","A//", "E","G",
+			"1/","1/","2/","1/", "G*", "G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*", "3","3/","5/", "4.","3/",
+			"2/", "B/","A/","G//","G//", "3.","2//", "1","B/","A/", "G.","E/", "G/","A/","B/","2/",
+			"1*", "1",    /* 运动员进行曲 */
 		},
 	};
+	/*
+	 * 1 2 3 4 5 6 7
+	 * C D E F G A B
+	 * */
 
-	FILE *wav_file = fopen(filename, "wb");
+	FILE *wav_file;
 	WavHeader wav_header;
-	unsigned long size = 0;
+	double size = 0;
 	if (stat & (1 << 1)) {
+		wav_file =  fopen(filename, "wb");
 		 /* 创建并写入WAV文件头 */
 		if (!wav_file)
 			fprintf(stderr, "打开文件不成: %s\n", filename);
@@ -228,20 +252,21 @@ int melody(int id, char *filename, int stat)
 	}
 
 	for (int i = 0; note[id][i] != NULL; i++) {
-		int *wave = create_note_wave(note[id][i], 4, 4, 120);
+		int *wave = create_note_wave(note[id][i], 4, 4, speed);
 		if (!wave || wave[0] <= 10) {
 			printf("波形为空,Code:[%d]\n", wave ? wave[0] : -1);
 			continue;
 		}
-		size+=wave[0];
+		size+=(float)wave[0]/SAMPLE_RATE;
 		if (stat & (1 << 1)) fwrite(wave+1, sizeof(int), *wave, wav_file);
 		if (stat & 1) play_wav(pcm_handle, (short*)wave+1, *wave);
 		free(wave);
 	}
 	if (stat & (1 << 1)) {
 		fseek(wav_file, 0, SEEK_SET);
-		create_wav_header(&wav_header, size/SAMPLE_RATE);	// 重新生成准确的头信息
+		create_wav_header(&wav_header, size);	// 重新生成准确的头信息
 		fwrite(&wav_header, 1, sizeof(wav_header), wav_file);
+		fclose(wav_file);
 	}
 
 	if (stat & 1) {
@@ -252,11 +277,65 @@ int melody(int id, char *filename, int stat)
 	return 0;
 }
 
+int read_play_wave(char *filename)
+{
+	if (!filename) return -1;
+	FILE *fp = fopen(filename, "rb");
+	if (!fp) {
+		fprintf(stderr, "打开文件失败:%s\n", filename);
+		return 1;
+	}
+
+	char *content = NULL, *p = NULL;
+	char RIFF[5] = {0}, WAVE[5] = {0}, data[5] = {0};
+	fseek(fp, 0L, SEEK_END);
+	int size = ftell(fp);
+	fseek(fp, 0L, SEEK_SET);
+	content = malloc(sizeof(int)*size);
+	fread(content, size, 1, fp);
+	fclose(fp);
+
+	WavHeader header;
+	memcpy(&header, content, sizeof(WavHeader));
+	memcpy(RIFF, header.RIFF, 4);
+	memcpy(WAVE, header.WAVE, 4);
+	memcpy(data, header.data, 4);
+	if (strcmp(RIFF, "RIFF") || strcmp(WAVE, "WAVE")) {
+		fprintf(stderr, "这看起来不像是一个wav文件[思考]\n");
+		return 3;
+	}
+	SAMPLE_RATE = header.sample_rate;
+
+	/* 寻找data段 */
+	p = content+sizeof(WavHeader) - 8;
+	while((strcmp(data, "data") || *(p-1) != 0) && p != content+size) {
+		p++;
+		memcpy(data, p, 4);
+	}
+	memcpy(&header.data_size, p+4, 4);
+
+	printf("channels:%d\nsample_rate:%d\nbyte_rate:%d\nblock_align:%d\n"
+	       "bits_per_sample:%d\ndata_size:%d\nfile_size:%d\n",
+	       header.channels, header.sample_rate, header.byte_rate, header.block_align,
+	       header.bits_per_sample, header.data_size, header.file_size);
+
+	snd_pcm_t *pcm_handle = init();
+	if (! pcm_handle) return 2;
+
+	play_wav(pcm_handle, (short*)(p+8), header.data_size);
+
+	snd_pcm_drain(pcm_handle);
+	snd_pcm_close(pcm_handle);
+
+	free(content);
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
-	int ch = 0, id = 0, stat = 0;
+	int ch = 0, id = 0, stat = 0, speed = 120;
 	char filename[125] = "output.wav";
-	while ((ch = getopt(argc, argv, "hi:pso:")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "hi:pso:S:r:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -266,11 +345,14 @@ int main(int argc, char *argv[])
 			       "    -p        播放曲子\n"
 			       "    -s        保存曲子(单设-o无用)\n"
 			       "    -o <FILE> 输出文件(output.wav)\n"
+			       "    -S <NUM>  设置曲速(120)\n"
+			       "    -r <FILE> 输入文件（启用后其他选项无效）\n"
 			       "    -h        显示帮助\n"
 			       "  NUM: 0: 小星星\n"
 			       "       1: 中国人民志愿军战歌\n"
 			       "       2: 20s音频测试\n"
 			       "       3: 10.5升调音频测试\n"
+			       "       4: 运动员进行曲\n"
 			       );
 			return ch == '?' ? -1 : 0;
 			break;
@@ -286,11 +368,18 @@ int main(int argc, char *argv[])
 		case 'o':
 			strcpy(filename, optarg);
 			break;
+		case 'S':
+			speed = strtod(optarg, NULL);
+			break;
+		case 'r':
+			strcpy(filename, optarg);
+			return read_play_wave(filename);
+			break;
 		default:
 			break;
 		}
 	}
-	id %= 4;
-	melody(id, filename, stat);
+	speed = speed <= 2 ? 120 : speed;
+	melody(id, filename, stat, speed);
 	return 0;
 }
