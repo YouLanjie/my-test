@@ -18,6 +18,7 @@ usage: ${0##*/} [options]
      -o <dirname> 指定输出根文件夹
      -m           使用mv命令（默认）
      -c           使用cp命令
+     -f <format>  指定输出路径格式(\1/\1_\2/\1_\2_\3)
      -v           执行时显示更多输出
      -h           帮助信息"
 	echo $usagetext
@@ -29,6 +30,7 @@ output="."
 move_type=1
 # 1: mv
 # 2: cp
+format="\1/\1_\2/\1_\2_\3"
 verbose="false"
 
 check() {
@@ -38,6 +40,11 @@ check() {
 	}
 }
 
+quit() {
+	echo "无效的sed格式:$format"
+	exit -1
+}
+
 move() {
 	#update_file index.org
 	#echo $file_list
@@ -45,7 +52,7 @@ move() {
 	max_line=$(echo $file_list|wc -l)
 	for (( i=1; i <= $max_line; i++)) {
 		name=$(echo $file_list|sed -n "${i}p")
-		ymd=$(echo $name|sed -n "s|[^0-9]*\([0-9]\{4\}\)[-_年]*\([0-9]\{2\}\)[-_月]*\([0-9]\{2\}\).*|\1/\1_\2/\1_\2_\3|p")
+		ymd=$(echo $name|sed -n "s|[^0-9]*\([0-9]\{4\}\)[-_年]*\([0-9]\{2\}\)[-_月]*\([0-9]\{2\}\).*|$format|p" || quit)
 		if [[ $ymd == "" ]] {
 			continue
 		}
@@ -73,12 +80,13 @@ move() {
 	}
 }
 
-while {getopts 'i:o:mcvh?' arg} {
+while {getopts 'i:o:mcf:vh?' arg} {
 	case $arg {
 		i) check $OPTARG && input=$OPTARG ;;
 		o) check $OPTARG && output=$OPTARG ;;
 		m) move_type=1 ;;
 		c) move_type=2 ;;
+		f) format=$OPTARG ;;
 		v) verbose="true" ;;
 		h|?) usage 0;;
 		*) usage 1;;
