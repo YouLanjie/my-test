@@ -27,6 +27,24 @@ _msg_error() {
 }
 # }}}
 
+get_output() {
+	header=""
+	tail=""
+	if [[ $5 != "| |" ]] {
+		navigation="|LastPage|NextPage|\n|-|-|\n${5}"
+		header="* Header\n$navigation"
+		tail="* Tail\n$navigation"
+	}
+	final_output="$(echo $1|sed "s|\(.*\)|$2|"|sed "s|//|/|g")"
+	final_output="#+title: $3\n#+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>\n#+HTML_LINK_UP: ./\n$header\n* $4\n$final_output\n$tail"
+	echo $final_output
+}
+
+export_file() {
+	emacsclient -e "(progn (find-file \"$1\")(org-mode)(org-html-export-as-html)(write-file \"$2\")
+	(delete-window)(kill-buffer \"$3\")(kill-buffer))" 2>&1 >>/dev/null
+}
+
 run() {
 	[[ $(echo $input_d|sed -n "s|^\([.]\{0,2\}/\)|\1|p") == "" ]] && input_d="./$input_d"
 	# $input目录下文件夹列表
@@ -41,18 +59,26 @@ run() {
 		}
 	}
 	max_line=$((max_line-max_line_fail))
-	final_output="$(echo $dir_list|sed "s|\(.*\)|- [[$input_d/\1.html]]|"|sed "s|//|/|g")"
-	final_output="#+title: INDEX:$title\n#+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>\n* $title\n$final_output"
-	#_msg_info "INDEX file:"
-	[[ ! -d $output_d ]] && mkdir $output_d
+	final_output=$(get_output "$dir_list" "- [[$input_d/\1.html]]\n" "INDEX:$title" "$title" "| |")
+	[[ ! -d $output_d ]] && mkdir -p $output_d
 	echo $final_output >"$output_d/index.org"
-	tmpfile="$(date +"%Y.%m.%d %H:%M:%S"|md5sum|awk '{print $1}').el"
-	echo $elisp_cmd >/tmp/$tmpfile
-	[[ $max_line > 1 ]] && emacs -Q -nw /tmp/$tmpfile "$output_d/index.org" --eval "(eval-buffer \"$tmpfile\")"
+	if (( $max_line >= 1 )) {
+		_msg_info "创建Emacs服务"
+		emacs --bg-daemon "ORG_TO_HTML_SERVER" -Q
+		_msg_info "创建分页"
+		emacsclient -e "(progn (require 'package) (package-initialize)
+(setq-default make-backup-files nil auto-save-default nil)
+(setq-default org-src-fontify-natively t org-export-with-sub-superscripts '{} org-use-sub-superscripts '{})
+(require 'monokai-theme) (load-theme 'monokai t) (require 'htmlize))" 2>&1 >>/dev/null
+		export_file "$output_d/index.org" "$output_d/index.html" "index.html"
+	}
 	for (( i=1; i <= $max_line; i++ )) {
 		final_output=""
 
 		dir="$(echo $dir_list|sed -n "${i}p")"
+		navigation="| |"
+		(( i > 1 )) && navigation="|[[./$(echo $dir_list|sed -n "$(($i-1))p").html][LastPage: $(echo $dir_list|sed -n "$(($i-1))p")]] |"
+		(( i < $max_line )) && navigation="${navigation} [[./$(echo $dir_list|sed -n "$(($i+1))p").html][NextPage: $(echo $dir_list|sed -n "$(($i+1))p")]] |"
 		[[ -f $dir ]] && continue
 		file_list=$(cd "$input_d/$dir" && find ./ -maxdepth 1 -type f,l -iregex ".*\.\($format\)"|sed "s|^\./||"|sort -n|sed "s|^|$input_d/$dir/|")
 		[[ $file_list == "" ]] && continue
@@ -62,15 +88,14 @@ run() {
 			outp="$output_d/index.org"
 			dir="$title"
 		}
-		final_output="$(echo "$file_list"|sed "s|\(.*\)|[[\1]]|"|sed "s|//|/|g")"
-		final_output="#+title: $title / $i\n#+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>\n* $dir / $i\n$final_output"
+		final_output=$(get_output "$file_list" "[[\1]]\n" "$title / $i" "$dir / $i" "$navigation")
 
 		[[ -f $outp ]] && _msg_warning "Overwrite output dir '$outp'"
 		_msg_info "OUTP: $outp"
 		echo $final_output >"$outp"
-		emacs -Q -nw /tmp/$tmpfile "$outp" --eval "(eval-buffer \"$tmpfile\")"
+		export_file "$outp" "$(echo "$outp"|sed "s|org$|html|")" "$(echo $outp|sed "s|org$|html|"|sed "s|^$output_d/||")"
 	}
-	rm /tmp/$tmpfile
+	(( $max_line >= 1 )) && emacsclient -e "(kill-emacs)"
 }
 
 format='png\|jpg\|jpeg\|gif\|webp'
@@ -78,18 +103,6 @@ input_d="./"
 output_d="./"
 title="<NULL>"
 css_file="../main.css"
-elisp_cmd="\
-(require 'package)
-(package-initialize)
-(setq-default make-backup-files nil auto-save-default nil)
-(require 'monokai-theme)
-(load-theme 'monokai t)
-(require 'htmlize)
-(setq-default org-src-fontify-natively t org-export-with-sub-superscripts '{} org-use-sub-superscripts '{})
-
-(org-html-export-to-html)
-(kill-emacs)
-"
 
 usage() {
 	usagetext="\
