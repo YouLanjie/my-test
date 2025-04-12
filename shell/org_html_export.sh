@@ -34,7 +34,7 @@ run() {
 	max_line=$(echo $dir_list|wc -l)
 	max_line_fail=0
 	for (( i=1; i <= $max_line; i++ )) {
-		dir="$(echo $dir_list|sed -n "${i}p")"
+		dir="$(echo $dir_list|sed -n "$(($i-$max_line_fail))p")"
 		if [[ $(find "$input_d/$dir" -maxdepth 1 -type f,l -iregex ".*\.\($format\)") == "" ]] {
 			dir_list=$(echo $dir_list|sed "$((i-max_line_fail))d")
 			((max_line_fail++))
@@ -125,5 +125,6 @@ while {getopts 'i:o:t:c:h?' arg} {
 	}
 }
 
+#set -x
 run
 
