@@ -20,6 +20,7 @@ usage: $app_name [options]
      -e <postfix> 后缀
      -m <mode>    模式选择(time|md5|auto)
      -f <format>  时间格式选择，默认'$time_fmt'
+     -L           stat文件跟随链接
      -v           详细输出
      -h           帮助信息"
 	#echo "usage: timename_dir <dir> <prefix> <postfix>"
@@ -33,7 +34,7 @@ file_rename() {
 	_postfix="$postfix"
 	[[ $postfix == '$NAME' ]] && _postfix="_${1:r}"
 	ext=${1:e}
-	mdfiytime=$(date -d "@$(stat $input -c "%Y")" +"$time_fmt")
+	mdfiytime=$(date -d "@$(stat $follow_link $input -c "%Y")" +"$time_fmt")
 	md5=""
 	output=""
 
@@ -92,15 +93,17 @@ prefix=""
 postfix=""
 time_fmt="%Y%m%d_%H%M%S"
 mode="auto"
+follow_link=""
 verbose="false"
 
-while {getopts "hi:p:e:m:f:v" OPTION} {
+while {getopts "hi:p:e:m:f:Lv" OPTION} {
 	case $OPTION {
 		i) input_arg="$OPTARG" ;;
 		p) prefix="$OPTARG" ;;
 		e) postfix="$OPTARG" ;;
 		m) mode="$OPTARG" ;;
 		f) time_fmt="$OPTARG" ;;
+		L) follow_link="-L" ;;
 		v) verbose="true" ;;
 		h|?) usage ;;
 		*) usage -1 ;;
