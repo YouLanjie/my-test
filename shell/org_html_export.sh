@@ -30,13 +30,14 @@ _msg_error() {
 get_output() {
 	header=""
 	tail=""
-	if [[ $5 != "| |" ]] {
-		navigation="|LastPage|NextPage|\n|-|-|\n${5}"
+	if [[ $5 != "NULL" ]] {
+		navigation="|上一页|本页文件总数|下一页|\n|-|-|\n${5}"
 		header="* Header\n$navigation"
 		tail="* Tail\n$navigation"
 	}
 	final_output="$(echo $1|sed "s|\(.*\)|$2|"|sed "s|//|/|g")"
-	final_output="#+title: $3\n#+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>\n#+HTML_LINK_UP: ./\n$header\n* $4\n$final_output\n$tail"
+	final_output="$(echo $final_output|sed "s/^- \[\[\(.*\.\($format2\)\)\]\]/#+begin_export html\n<video controls><source src=\"\1\"><\/video>\n#+end_export/")"
+	final_output="#+title: $3\n#+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>\n#+HTML_LINK_UP: ./\n#+HTML_HEAD: <style>li{margin: 0px}</style>\n$header\n* $4\n$final_output\n$tail"
 	echo $final_output
 }
 
@@ -53,13 +54,13 @@ run() {
 	max_line_fail=0
 	for (( i=1; i <= $max_line; i++ )) {
 		dir="$(echo $dir_list|sed -n "$(($i-$max_line_fail))p")"
-		if [[ $(find "$input_d/$dir" -maxdepth 1 -type f,l -iregex ".*\.\($format\)") == "" ]] {
+		if [[ $(find "$input_d/$dir" -maxdepth 1 -type f,l -iregex ".*\.\($format\|$format2\)") == "" ]] {
 			dir_list=$(echo $dir_list|sed "$((i-max_line_fail))d")
 			((max_line_fail++))
 		}
 	}
 	max_line=$((max_line-max_line_fail))
-	final_output=$(get_output "$dir_list" "- [[$input_d/\1.html]]\n" "INDEX:$title" "$title" "| |")
+	final_output=$(get_output "$dir_list" "- [[$input_d/\1.html]]\n" "INDEX:$title" "$title" "NULL")
 	[[ ! -d $output_d ]] && mkdir -p $output_d
 	echo $final_output >"$output_d/index.org"
 	if (( $max_line >= 1 )) {
@@ -70,25 +71,30 @@ run() {
 (setq-default make-backup-files nil auto-save-default nil)
 (setq-default org-src-fontify-natively t org-export-with-sub-superscripts '{} org-use-sub-superscripts '{})
 (require 'monokai-theme) (load-theme 'monokai t) (require 'htmlize))" 2>&1 >>/dev/null
-		export_file "$output_d/index.org" "$output_d/index.html" "index.html"
+		(( $max_line > 1 )) && export_file "$output_d/index.org" "$output_d/index.html" "index.html"
 	}
 	for (( i=1; i <= $max_line; i++ )) {
 		final_output=""
 
 		dir="$(echo $dir_list|sed -n "${i}p")"
-		navigation="| |"
-		(( i > 1 )) && navigation="|[[./$(echo $dir_list|sed -n "$(($i-1))p").html][LastPage: $(echo $dir_list|sed -n "$(($i-1))p")]] |"
-		(( i < $max_line )) && navigation="${navigation} [[./$(echo $dir_list|sed -n "$(($i+1))p").html][NextPage: $(echo $dir_list|sed -n "$(($i+1))p")]] |"
 		[[ -f $dir ]] && continue
-		file_list=$(cd "$input_d/$dir" && find ./ -maxdepth 1 -type f,l -iregex ".*\.\($format\)"|sed "s|^\./||"|sort -n|sed "s|^|$input_d/$dir/|")
+		file_list=$(cd "$input_d/$dir" && find ./ -maxdepth 1 -type f,l -iregex ".*\.\($format\|$format2\)"|sed "s|^\./||"|sort -n|sed "s|^|$input_d/$dir/|")
 		[[ $file_list == "" ]] && continue
+
+		navigation="| |"
+		(( i > 1 )) && navigation="|[[./$(echo $dir_list|sed -n "$(($i-1))p").html][$(echo $dir_list|sed -n "$(($i-1))p")]] |"
+		navigation="${navigation} $(echo $file_list|wc -l) |"
+		(( i < $max_line )) && navigation="${navigation} [[./$(echo $dir_list|sed -n "$(($i+1))p").html][$(echo $dir_list|sed -n "$(($i+1))p")]]"
+		navigation="${navigation} |"
 
 		outp="$output_d/$dir.org"
 		if [[ $max_line == 1 ]] {
 			outp="$output_d/index.org"
 			dir="$title"
+			final_output=$(get_output "$file_list" "- [[\1]]\n" "$title" "$dir" "$navigation")
+		} else {
+			final_output=$(get_output "$file_list" "- [[\1]]\n" "$title" "$i / $dir" "$navigation")
 		}
-		final_output=$(get_output "$file_list" "[[\1]]\n" "$title / $i" "$dir / $i" "$navigation")
 
 		[[ -f $outp ]] && _msg_warning "Overwrite output dir '$outp'"
 		_msg_info "OUTP: $outp"
@@ -98,7 +104,8 @@ run() {
 	(( $max_line >= 1 )) && emacsclient -e "(kill-emacs)"
 }
 
-format='png\|jpg\|jpeg\|gif\|webp'
+format='png\|PNG\|JPG\|jpg\|jpeg\|gif\|webp'
+format2='mp4\|mkv\|3gp\|webm\|mov\|.mpeg'
 input_d="./"
 output_d="./"
 title="<NULL>"
