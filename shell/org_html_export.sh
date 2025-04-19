@@ -27,17 +27,27 @@ _msg_error() {
 }
 # }}}
 
+# $1: content; $2: repleace format; $3: MainTitle; $4: SubTitle
 get_output() {
 	header=""
 	tail=""
-	if [[ $5 != "NULL" ]] {
+	if [[ $5 != "| | |" ]] {
 		navigation="|上一页|本页文件总数|下一页|\n|-|-|\n${5}"
 		header="* Header\n$navigation"
 		tail="* Tail\n$navigation"
 	}
 	final_output="$(echo $1|sed "s|\(.*\)|$2|"|sed "s|//|/|g")"
 	final_output="$(echo $final_output|sed "s/^- \[\[\(.*\.\($format2\)\)\]\]/#+begin_export html\n<video controls><source src=\"\1\"><\/video>\n#+end_export/")"
-	final_output="#+title: $3\n#+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>\n#+HTML_LINK_UP: ./\n#+HTML_HEAD: <style>li{margin: 0px}</style>\n$header\n* $4\n$final_output\n$tail"
+	final_output="\
+#+title: $3
+#+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>
+#+HTML_LINK_UP: ../
+#+HTML_LINK_HOME: ./
+#+HTML_HEAD: <style>li{margin: 0px}</style>
+$header
+* $4
+$final_output
+$tail"
 	echo $final_output
 }
 
@@ -46,44 +56,56 @@ export_file() {
 	(delete-window)(kill-buffer \"$3\")(kill-buffer))" 2>&1 >>/dev/null
 }
 
+gettitle() {
+	[[ $title != "<NULL>" ]] && return 0
+	pwd=$(pwd)
+	cd $input_d
+	title=$(basename "$(pwd)")
+	cd "$pwd"
+}
+
 run() {
 	[[ $(echo $input_d|sed -n "s|^\([.]\{0,2\}/\)|\1|p") == "" ]] && input_d="./$input_d"
+	[[ ! -d $input_d ]] && _msg_error "不正确的输入目录:$input_d" 1
+	gettitle
 	# $input目录下文件夹列表
 	dir_list=$(ls -F "$input_d"|sed -n 's|/$||p'|sort -n)
 	max_line=$(echo $dir_list|wc -l)
 	max_line_fail=0
 	for (( i=1; i <= $max_line; i++ )) {
 		dir="$(echo $dir_list|sed -n "$(($i-$max_line_fail))p")"
-		if [[ $(find "$input_d/$dir" -maxdepth 1 -type f,l -iregex ".*\.\($format\|$format2\)") == "" ]] {
+		if [[ $(find "$input_d/$dir" -maxdepth 1 -type f,l -iregex ".*\.\($format\|$format2$format3\)") == "" ]] {
 			dir_list=$(echo $dir_list|sed "$((i-max_line_fail))d")
 			((max_line_fail++))
 		}
 	}
 	max_line=$((max_line-max_line_fail))
-	final_output=$(get_output "$dir_list" "- [[$input_d/\1.html]]\n" "INDEX:$title" "$title" "NULL")
 	[[ ! -d $output_d ]] && mkdir -p $output_d
-	echo $final_output >"$output_d/index.org"
 	if (( $max_line >= 1 )) {
 		_msg_info "创建Emacs服务"
 		emacs --bg-daemon "ORG_TO_HTML_SERVER" -Q
 		_msg_info "创建分页"
+		final_output=$(get_output "$dir_list" "- [[$input_d/\1.html]]\n" "INDEX:$title" "$title" "| | |")
+		echo $final_output >"$output_d/index.org"
 		emacsclient -e "(progn (require 'package) (package-initialize)
 (setq-default make-backup-files nil auto-save-default nil)
 (setq-default org-src-fontify-natively t org-export-with-sub-superscripts '{} org-use-sub-superscripts '{})
 (require 'monokai-theme) (load-theme 'monokai t) (require 'htmlize))" 2>&1 >>/dev/null
 		(( $max_line > 1 )) && export_file "$output_d/index.org" "$output_d/index.html" "index.html"
+	} else {
+		_msg_warning "好像没有找到识别范围内文件呢喵"
 	}
 	for (( i=1; i <= $max_line; i++ )) {
 		final_output=""
 
 		dir="$(echo $dir_list|sed -n "${i}p")"
 		[[ -f $dir ]] && continue
-		file_list=$(cd "$input_d/$dir" && find ./ -maxdepth 1 -type f,l -iregex ".*\.\($format\|$format2\)"|sed "s|^\./||"|sort -n|sed "s|^|$input_d/$dir/|")
+		file_list=$(cd "$input_d/$dir" && find ./ -maxdepth 1 -type f,l -iregex ".*\.\($format\|$format2$format3\)"|sed "s|^\./||"|sort -n|sed "s|^|$input_d/$dir/|")
 		[[ $file_list == "" ]] && continue
 
 		navigation="| |"
 		(( i > 1 )) && navigation="|[[./$(echo $dir_list|sed -n "$(($i-1))p").html][$(echo $dir_list|sed -n "$(($i-1))p")]] |"
-		navigation="${navigation} $(echo $file_list|wc -l) |"
+		(( $max_line > 1 )) && navigation="${navigation} $(echo $file_list|wc -l) |"
 		(( i < $max_line )) && navigation="${navigation} [[./$(echo $dir_list|sed -n "$(($i+1))p").html][$(echo $dir_list|sed -n "$(($i+1))p")]]"
 		navigation="${navigation} |"
 
@@ -105,7 +127,8 @@ run() {
 }
 
 format='png\|PNG\|JPG\|jpg\|jpeg\|gif\|webp'
-format2='mp4\|mkv\|3gp\|webm\|mov\|.mpeg'
+format2='mp4\|mkv\|3gp\|webm\|mov\|mpeg\|m4a\|mp3\|wav'
+format3=''
 input_d="./"
 output_d="./"
 title="<NULL>"
@@ -118,6 +141,7 @@ usage: $app_name [options]
      -i <dirname> 设置输入目录(默认./)
      -o <dirname> 设置输出目录(不推荐)(默认./)
      -c <cssfile> 设置css文件链接(默认../main.css)
+     -f <extern>  设置额外查找文件后缀
      -t <title>   设置标题
      -h           帮助信息
 
@@ -134,17 +158,18 @@ input_dir                       output_dir
 	exit $1
 }
 
-while {getopts 'i:o:t:c:h?' arg} {
+while {getopts 'i:o:t:c:f:xh?' arg} {
 	case $arg {
 		i) input_d=$OPTARG ;;
 		o) output_d=$OPTARG ;;
 		t) title=$OPTARG ;;
 		c) css_file=$OPTARG ;;
+		f) format3="\\|$OPTARG" ;;
+		x) set -x ;;
 		h|?) usage 0;;
 		*) usage 1;;
 	}
 }
 
-#set -x
 run
 
