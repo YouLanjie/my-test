@@ -36,7 +36,8 @@ get_output() {
 		header="* Header\n$navigation"
 		tail="* Tail\n$navigation"
 	}
-	final_output="$(echo $1|sed "s|\(.*\)|$2|"|sed "s|//|/|g")"
+	final_output="$(echo "$1"|sed "s|[][]|\\\&|g")"
+	final_output="$(echo $final_output|sed "s|\(.*\)|$2|"|sed "s|//|/|g")"
 	final_output="$(echo $final_output|sed "s/^- \[\[\(.*\.\($format2\)\)\]\]/#+begin_export html\n<video controls><source src=\"\1\"><\/video>\n#+end_export/")"
 	final_output="\
 #+title: $3
@@ -52,7 +53,7 @@ $tail"
 }
 
 export_file() {
-	emacsclient -e "(progn (find-file \"$1\")(org-mode)(org-html-export-as-html)(write-file \"$2\")
+	[[ $no_export == "false" ]] && emacsclient -e "(progn (find-file \"$1\")(org-mode)(org-html-export-as-html)(write-file \"$2\")
 	(delete-window)(kill-buffer \"$3\")(kill-buffer))" 2>&1 >>/dev/null
 }
 
@@ -83,11 +84,11 @@ run() {
 	[[ ! -d $output_d ]] && mkdir -p $output_d
 	if (( $max_line >= 1 )) {
 		_msg_info "创建Emacs服务"
-		emacs --bg-daemon "ORG_TO_HTML_SERVER" -Q
-		_msg_info "创建分页"
+		[[ $no_export == "false" ]] && emacs --bg-daemon "ORG_TO_HTML_SERVER" -Q
+		_msg_info "创建首页与分页"
 		final_output=$(get_output "$dir_list" "- [[$input_d/\1.html]]\n" "INDEX:$title" "$title" "| | |")
 		echo $final_output >"$output_d/index.org"
-		emacsclient -e "(progn (require 'package) (package-initialize)
+		[[ $no_export == "false" ]] && emacsclient -e "(progn (require 'package) (package-initialize)
 (setq-default make-backup-files nil auto-save-default nil)
 (setq-default org-src-fontify-natively t org-export-with-sub-superscripts '{} org-use-sub-superscripts '{})
 (require 'monokai-theme) (load-theme 'monokai t) (require 'htmlize))" 2>&1 >>/dev/null
@@ -123,7 +124,7 @@ run() {
 		echo $final_output >"$outp"
 		export_file "$outp" "$(echo "$outp"|sed "s|org$|html|")" "$(echo $outp|sed "s|org$|html|"|sed "s|^$output_d/||")"
 	}
-	(( $max_line >= 1 )) && emacsclient -e "(kill-emacs)"
+	[[ $no_export == "false" ]] && (( $max_line >= 1 )) && emacsclient -e "(kill-emacs)"
 }
 
 format='png\|PNG\|JPG\|jpg\|jpeg\|gif\|webp'
@@ -133,6 +134,7 @@ input_d="./"
 output_d="./"
 title="<NULL>"
 css_file="../main.css"
+no_export="false"
 
 usage() {
 	usagetext="\
@@ -158,13 +160,14 @@ input_dir                       output_dir
 	exit $1
 }
 
-while {getopts 'i:o:t:c:f:xh?' arg} {
+while {getopts 'i:o:t:c:f:nxh?' arg} {
 	case $arg {
 		i) input_d=$OPTARG ;;
 		o) output_d=$OPTARG ;;
 		t) title=$OPTARG ;;
 		c) css_file=$OPTARG ;;
 		f) format3="\\|$OPTARG" ;;
+		n) no_export="true" ;;
 		x) set -x ;;
 		h|?) usage 0;;
 		*) usage 1;;

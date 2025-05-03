@@ -18,7 +18,7 @@ usage: $app_name [options]
      -i <dir>     输入文件或文件夹，默认./
      -p <prefix>  前缀
      -e <postfix> 后缀
-     -m <mode>    模式选择(time|md5|auto)
+     -m <mode>    模式选择(time|md5|random|auto)
      -f <format>  时间格式选择，默认'$time_fmt'
      -L           stat文件跟随链接
      -v           详细输出
@@ -42,6 +42,9 @@ file_rename() {
 	if [[ "$mode" == "md5" ]] {
 		md5="$(md5sum "$input"|awk '{print $1}')"
 		output="${prefix}${md5}${_postfix}.${ext}"
+	} elif [[ "$mode" == "random" ]] {
+		md5="$(head /dev/random|md5sum|awk '{print $1}')"
+		output="${prefix}${md5}${_postfix}.${ext}"
 	}
 
 	# 判断路径是否等价
@@ -50,7 +53,7 @@ file_rename() {
 		return 0
 	}
 
-	if [[ -f "$output" && $mode != "time" && $mode != "md5" ]] {
+	if [[ -f "$output" && $mode == "auto" ]] {
 		md5="$(md5sum "$input"|awk '{print $1}')"
 		output="${prefix}${mdfiytime}_${md5}${_postfix}.${ext}"
 	}
