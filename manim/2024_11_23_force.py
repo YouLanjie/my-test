@@ -1,4 +1,4 @@
-#!/usr/bin/env manim -pql -s
+#!/usr/bin/env -S manim -ql
 # 关于物理学的动画演示源码
 
 from manim import *
@@ -10,7 +10,8 @@ class force(Scene):
         text2.set_color(RED)
         text2.shift(3*DOWN)
         self.play(Transform(text, text2))
-        self.wait(time)
+        if time > 0:
+            self.wait(time)
     def scene_1(self, st):
         arrow = Arrow(DOWN*2, UP*1.5, buff=0)
         self.wait(0.2)

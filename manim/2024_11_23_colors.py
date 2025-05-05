@@ -6,8 +6,8 @@ class Color(Scene):
     def construct(self):
         # plane = NumberPlane()
         # self.add(plane)
-        colors = dir(color.manim_colors)[:-10]
-        colors.remove("List")
+        colors = dir(color.manim_colors)[:-11]
+        # colors.remove("List")
         colors.remove("ManimColor")
         boxs = VGroup()
         for i in colors:

@@ -28,7 +28,8 @@ class Physical(Scene):
         text2.set_color(RED)
         text2.shift(3*DOWN)
         self.play(Transform(text, text2))
-        self.wait(time)
+        if time > 0:
+            self.wait(time)
 
     def scene_0(self):
         R = Text("R/Ω", color=BLUE).scale(2)

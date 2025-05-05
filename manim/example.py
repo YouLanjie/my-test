@@ -92,13 +92,13 @@ class OpeningManim(Scene):
         )
         self.wait()
 
-class test(Scene):
+class TextTest_Tex(Scene):
     def construct(self):
         text = Tex(r"TEXT")
         self.play(Create(text))
         self.wait()
 
-class test2(Scene):
+class TextTest_Tex_cn(Scene):
     def construct(self):
         text = Tex(r"中文渲染测试", tex_template=TexTemplateLibrary.ctex)
         text2 = Tex(r"这是第二段测试文字", tex_template=TexTemplateLibrary.ctex)
@@ -154,3 +154,39 @@ class MoreShapes(Scene):
         self.play(GrowArrow(arrow))
         self.play(GrowFromCenter(rectangle), GrowFromCenter(ellipse), GrowFromCenter(ring))
 
+class RateFuncExample(Scene):
+    def construct(self):
+        x = VGroup()
+        for k, v in rate_functions.__dict__.items():
+            if "function" in str(v):
+                if (
+                    not k.startswith("__")
+                    and not k.startswith("sqrt")
+                    and not k.startswith("bezier")
+                ):
+                    try:
+                        rate_func = v
+                        plot = (
+                            ParametricFunction(
+                                lambda x: [x, rate_func(x), 0],
+                                t_range=[0, 1, .01],
+                                use_smoothing=False,
+                                color=YELLOW,
+                            )
+                            .stretch_to_fit_width(1.5)
+                            .stretch_to_fit_height(1)
+                        )
+                        plot_bg = SurroundingRectangle(plot).set_color(WHITE)
+                        plot_title = (
+                            Text(rate_func.__name__, weight=BOLD)
+                            .scale(0.5)
+                            .next_to(plot_bg, UP, buff=0.1)
+                        )
+                        x.add(VGroup(plot_bg, plot, plot_title))
+                    except: # because functions `not_quite_there`, `function squish_rate_func` are not working.
+                        pass
+        x.arrange_in_grid(cols=8)
+        x.height = config.frame_height
+        x.width = config.frame_width
+        x.move_to(ORIGIN).scale(0.95)
+        self.add(x)
