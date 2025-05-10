@@ -1,13 +1,251 @@
 #!/usr/bin/env python
 # Created:2025.05.09
 
+# Dependences: curses(tui),
+#              ffmpeg(translate),
+#              mpv(play media)
+
 import os
 import sys
 import pathlib
 import getopt
 import json
 
-def help(ret=0, msg=""):
+class Video():
+    def __init__(self, file):
+        if file.is_file() is False:
+            return None
+        self.file = str(file)
+        # 针对分p视频的单个视频
+        self.dir_self = str(file.parents[0])
+        # 针对多p视频的总目录
+        self.dir_parent = str(file.parents[1])
+        content = file.read_text()
+        data = json.loads(content)
+        self.avid = str(data.get("avid")) #"AV"+
+        self.bvid = str(data.get("bvid")) #[]
+        # 分P总标题/合集分标题
+        self.maintitle = str(data.get("title"))
+        self.owner = str(data.get("owner_name"))
+        page_data = data.get("page_data")
+        # 分P分标题/合集总标题
+        self.part = str(page_data.get("part"))
+        # 分P总+分标题
+        self.subtitle = str(page_data.get("download_subtitle"))
+        # ???
+        self.indextitle = str(page_data.get("index_title"))
+        self.index = page_data.get("index")
+        if self.index is None:
+            self.index = 0
+        # set final title
+        self.title = self.maintitle
+        if self.part not in ("None", "", self.maintitle):
+            self.title = f"{self.title} - {self.part}"
+        if self.subtitle not in ("None", "", self.maintitle, f"{self.maintitle} {self.part}"):
+            self.title = f"{self.title} - {self.subtitle}"
+    def getlist(self):
+        return [self.owner, self.title, "AV"+self.avid, self.bvid, self.dir_self]
+
+class Ui():
+    width=os.get_terminal_size().columns
+    position=0
+    select=0
+    def __init__(self, stdscr, content : list) -> None:
+        info_height = 9
+        self.height=os.get_terminal_size().lines - info_height - 1
+        self.stdscr = stdscr
+        # self.stdscr = curses.initscr()
+        # curses.noecho()
+        # curses.cbreak()
+        curses.curs_set(0)
+        # curses.start_color()
+        curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLUE)
+        curses.init_pair(2, curses.COLOR_GREEN, curses.COLOR_BLACK)
+        curses.init_pair(3, curses.COLOR_WHITE, curses.COLOR_BLACK)
+        self.list = curses.newwin(self.height + 1, self.width, 0, 0)
+        self.info = curses.newwin(info_height, self.width, self.height + 1, 0)
+        self.content = content
+        # self.height = len(self.content)
+    def gsl(self, s, lim, start=0):
+        width = 0
+        count = 0
+        for c in s[start:]:
+            if ord(c) <= 127:
+                width += 1
+                count += 1
+            else:
+                width += 2
+                count += 1
+            if lim > 0 and width+1 >= lim - 2:
+                break
+        return s[start:count]
+    def print_list(self, content):
+        self.list.clear()
+        for i in range(self.position, self.position+self.height):
+            if i >= len(content):
+                break
+            p = content[i]
+            width = self.width - 2
+            color = None
+            if type(p) is list:
+                title = self.gsl((p[0].title if len(p)==1 else p[0].maintitle)+" "*width, width)
+                color = curses.color_pair(2) if len(p) != 1 else None
+            else:
+                title = self.gsl(p.title+" "*width, width)
+            if i == self.select:
+                self.list.addstr(f"> {title}\n", curses.color_pair(1))
+                continue
+            if color:
+                self.list.addstr(f"  {title}\n", color)
+            else:
+                self.list.addstr(f"  {title}\n")
+            # print(p.getlist())
+        self.list.refresh()
+    def print_info(self, content):
+        p = content[self.select]
+        sets = True
+        if type(p) is list:
+            sets = len(p) == 1
+            p = p[0]
+        self.info.clear()
+        self.info.addstr(f"BV:    {p.bvid:12} | AV: AV{p.avid}\n")
+        self.info.addstr("DIR:   ")
+        self.info.addstr(f"{p.dir_self if sets else p.dir_parent+" <SET>"}\n",
+                         curses.color_pair(3 if sets else 2))
+        self.info.addstr(f"OWNER: {p.owner}\n")
+        self.info.addstr(f"FULL_TITLE: {p.title if sets else p.maintitle}")
+        if p.indextitle != "None":
+            self.info.addstr(
+                f"\nINDEX: {p.index}\n"
+                f"INDEX_TITLE: {p.indextitle}"
+            )
+        self.info.refresh()
+    def check(self, content):
+        # if self.height > len(self.content):
+            # self.height = len(self.content)
+        if self.select < 0:
+            self.select = len(content)-1
+        elif self.select >= len(content):
+            self.select = 0
+        while self.position + self.height <= self.select:
+            self.position += 1
+        while self.position > self.select:
+            self.position -= 1
+    def cmd(self, cmd:str):
+        curses.def_prog_mode()
+        curses.endwin()
+        os.system(cmd)
+        curses.reset_prog_mode()
+    def main(self):
+        self.check(self.content)
+        # print("hit 'q' to quit,jk to move")
+        self.stdscr.refresh()
+        # curses.endwin()
+        # return None
+        inp = "0"
+        deep = 0
+        position = 0
+        select = 0
+        while inp != "q":
+            cont = [self.content, self.content[select]][deep]
+            obj = cont[self.select]
+            self.print_list(cont)
+            self.print_info(cont)
+            inp = "%c" % self.stdscr.getch()
+            if inp == "j":
+                self.select+=1
+            elif inp == "k":
+                self.select-=1
+            elif inp == "g":
+                self.select=0
+            elif inp == "G":
+                self.select=-1
+            elif inp == "p":
+                t = obj[0] if type(obj) == list else obj
+                # vid = list(pathlib.Path(t.dir_self).glob("**/video.m4s"))
+                aud = list(pathlib.Path(t.dir_self).glob("**/audio.m4s"))
+                self.cmd(f"echo \"Playing Now: {t.title}\" ; mpv \"{str(aud[0])}\"")
+            elif inp == "e":
+                self.cmd(save([obj], "mp3"))
+            elif inp == "E":
+                self.cmd(save([obj], "mp4"))
+            elif inp == "l" and len(self.content[self.select]) != 1 and deep == 0:
+                position,select,self.position,self.select = self.position, self.select, 0, 0
+                deep = 1
+            elif inp == "h" and deep == 1:
+                self.position,self.select = position,select
+                deep = 0
+            self.check([self.content, self.content[select]][deep])
+        # curses.endwin()
+        return None
+
+def save(li, mode) -> str:
+    t = ""
+    if type(li[0]) != list:
+        li = [li]
+    for i in li:
+        for j in i:
+            vid = list(pathlib.Path(j.dir_self).glob("**/video.m4s"))
+            aud = list(pathlib.Path(j.dir_self).glob("**/audio.m4s"))
+            if len(vid) == 0 or len(aud) == 0:
+                print(f"{j.dir_self}:no media file({j.title})")
+                continue
+            t+=f"# {j.title} <Dir: {j.dir_self}>\n"
+            if mode == "3gp":
+                t+=f"ffmpeg -i \"{str(vid[0])}\" -i \"{str(aud[0])}\""\
+                    +f" -r 12 -b:v 400k -s 352x288 -ab 12.2k -ac 1 -ar 8000 -c copy \"{j.title}.3gp\"\n"
+            elif mode == "mp4":
+                t+=f"ffmpeg -i \"{str(vid[0])}\" -i \"{str(aud[0])}\""\
+                    +f" -c copy \"{j.title}.mp4\"\n"
+            else:
+                t+=f"ffmpeg -i \"{str(aud[0])}\" \"{j.title}.mp3\"\n"
+    return t
+
+def main(argv):
+    list_mode = False
+    output = None
+    mode = "mp3"
+    try:
+        opts, args = getopt.getopt(argv, "hlo:m:", ["help", "list", "output=","mode="])
+    except getopt.GetoptError:
+        mhelp(1, msg="[!] Err: getopt error")
+        exit(-1)
+    for option, argument in opts:
+        if option in ("-h", "--help"):
+            mhelp()
+        elif option in ("-l", "--list"):
+            list_mode = True
+        elif option in ("-m", "--mode"):
+            mode = argument
+        elif option in ("-o"):
+            output = argument
+
+    input_f = list(pathlib.Path("./").glob("**/entry.json"))
+    if len(input_f) == 0:
+        mhelp(msg="[!] no input file was found")
+    print(f"{len(input_f)} files were found")
+    li = []
+    for i in range(len(input_f)):
+        v = Video(input_f[i])
+        if len(li) > 0 and li[-1][0].dir_parent == v.dir_parent:
+            li[-1].append(v)
+        else:
+            li.append([v])
+
+    if list_mode:
+        for i in li:
+            for j in i:
+                print(j.getlist(), end=" ")
+            print()
+        exit(0)
+    if output is not None:
+        file = open(output, "w")
+        file.write(save(li, mode))
+        file.close()
+        exit(0)
+    return li
+
+def mhelp(ret=0, msg=""):
     if msg != "":
         print(str(msg))
     print("Usage bilibili_build.py [OPTION]")
@@ -17,218 +255,12 @@ def help(ret=0, msg=""):
     print("    -H <num>   --height=num    set the height of printing")
     print("    -m <mode>  --mode=mode     set output format(mp3|mp4|3gp)")
     print("    -h         --help          show this help")
-    print("Tip: make sure there are file `entry.json`")
+    print("[*] make sure there are file `entry.json`")
+    print("[*] in the tui,press `hjkl` to move,`eE` to export media")
     exit(ret)
-def gsl(s, lim, start=0):
-    width = 0
-    count = 0
-    for c in s[start:]:
-        if ord(c) <= 127:
-            width += 1
-            count += 1
-        else:
-            width += 2
-            count += 1
-        if lim > 0 and width+1 >= lim - 2:
-            break
-    return s[start:count]
-
-# Code of Getch From:https://blog.csdn.net/su_cicada/article/details/81166214
-class Getch():
-    def __init__(self):
-        try:
-            self.impl = self._GetchWindows()
-        except ImportError:
-            self.impl = self._GetchUnix()
-
-    def __str__(self):
-        return str(self.impl)
-
-    def _GetchUnix(self):
-        import sys, tty, termios
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        try:
-            tty.setraw(sys.stdin.fileno())
-            ch = sys.stdin.read(1)
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        return ch
-
-    def _GetchWindows(self):
-        import msvcrt
-        return msvcrt.getch()
-
-class Video():
-    file="FILE"
-    dir1="DIR1"           # 针对分p视频的单个视频
-    dir2="DIR2"           # 针对多p视频的总目录
-    maintitle="MAINTITLE" # 分P总标题/合集分标题
-    part="PART"           # 分P分标题/合集总标题
-    subtitle="SUBTITLE"   # 分P总+分标题
-    index=0
-    indextitle="INDEXTITLE"
-    owner="OWNER"
-    def __init__(self, file):
-        if file.is_file() == False:
-            return None
-        self.file = str(file)
-        self.dir1 = str(file.parents[0])
-        self.dir2 = str(file.parents[1])
-        content = file.read_text()
-        data = json.loads(content)
-        self.maintitle = str(data.get("title"))
-        self.owner = str(data.get("owner_name"))
-        page_data = data.get("page_data")
-        self.part = str(page_data.get("part"))
-        self.subtitle = str(page_data.get("download_subtitle"))
-        self.indextitle = str(page_data.get("index_title"))
-        self.index = page_data.get("index")
-        if self.index == None:
-            self.index = 0
-    @property
-    def title(self):
-        t = self.maintitle
-        if self.part != "None" and self.part != "" and self.part != self.maintitle:
-            t = f"{t} - {self.part}"
-        if self.subtitle != "None" and self.subtitle != "" and self.subtitle != self.maintitle and self.subtitle != self.maintitle + " " + self.part:
-            t = f"{t} - {self.subtitle}"
-        return t
-    def getlist(self):
-        return [self.owner, self.title, self.index, self.indextitle, self.dir1]
-
-class Ui():
-    content : list
-    height=5
-    width=os.get_terminal_size().columns
-    positin=0
-    select=0
-    cours=0
-    def __init__(self, content) -> None:
-        self.content = content
-        # self.height = len(self.content)
-    def print_list(self):
-        print(f"\033[{self.cours}A", end="")
-        for i in range(self.positin, self.positin+self.height):
-            if i >= len(self.content):
-                break
-            p = self.content[i]
-            width = self.width - 2
-            title = gsl(p.title+" "*width, width)
-            if i == self.select:
-                print(f"> {title}")
-                continue
-            print(f"  {title}")
-            # print(p.getlist())
-        self.cours=self.height
-    def print_info(self):
-        print("\033[s", end="")
-        for i in range(7):
-            print(" "*self.width)
-        print("\033[u", end="")
-        print("-----------")
-        p = self.content[self.select]
-        print(f"FULL_TITLE: {p.title}")
-        print(f"OWNER: {p.owner}")
-        print(f"DIR: {p.dir1}")
-        if p.indextitle != "None":
-            print(f"INDEX: {p.index}")
-            print(f"INDEX_TITLE: {p.indextitle}")
-        print("-----------")
-        print("\033[u", end="")
-    def check(self):
-        # if self.height > len(self.content):
-            # self.height = len(self.content)
-        if self.select < 0:
-            self.select = len(self.content)-1
-        elif self.select >= len(self.content):
-            self.select = 0
-        while self.positin + self.height <= self.select:
-            self.positin += 1
-        while self.positin > self.select:
-            self.positin -= 1
-    def main(self):
-        self.check()
-        print("hit 'q' to quit,jk to move")
-        print("\n"*(self.height+6))
-        print(f"\033[{(self.height+6)}A", end="")
-        inp = "0"
-        while inp != "q":
-            self.print_list()
-            self.print_info()
-            inp = str(Getch())
-            if inp == "j":
-                self.select+=1
-            elif inp == "k":
-                self.select-=1
-            elif inp == "g":
-                self.select=0
-            elif inp == "G":
-                self.select=-1
-            elif inp == " ":
-                return self.select
-            self.check()
-        print("\n"*5)
-        return None
-
-def main(argv):
-    list_mode = False
-    height = -1
-    output = None
-    mode = "mp3"
-    try:
-        opts, args = getopt.getopt(argv, "hlH:o:m:", ["help", "list", "height=", "output=","mode="])
-    except getopt.GetoptError:
-        help(1, msg="Err: getopt error")
-        exit(-1)
-    for option, argument in opts:
-        if option in ("-h", "--help"):
-            help()
-        elif option in ("-l", "--list"):
-            list_mode = True
-        elif option in ("-m", "--mode"):
-            mode = argument
-        elif option in ("-H" "--height"):
-            try:
-                height = int(argument)
-            except ValueError as e:
-                height = -1
-                # raise e
-        elif option in ("-o"):
-            output = argument
-        # elif option in ("-v", "--verbose"):
-            # verbose = True
-    input_f = list(pathlib.Path("./").glob("**/entry.json"))
-    if len(input_f) == 0:
-        help(msg="no input file was found")
-    print(f"{len(input_f)} files were found")
-    li = [Video(input_f[i]) for i in range(len(input_f))]
-    if list_mode:
-        for i in li:
-            print(i.getlist())
-        return 0
-    if output is not None:
-        file = open(output, "w")
-        for i in li:
-            vid = list(pathlib.Path(i.dir1).glob("**/video.m4s"))
-            aud = list(pathlib.Path(i.dir1).glob("**/audio.m4s"))
-            if len(vid) == 0 or len(aud) == 0:
-                print(f"{i.dir1}:no media file({i.title})")
-                continue
-            file.write(f"# {i.title} <Dir: {i.dir1}>\n")
-            if mode == "3gp":
-                file.write(f"ffmpeg -i \"{str(vid[0])}\" -i \"{str(aud[0])}\" -r 12 -b:v 400k -s 352x288 -ab 12.2k -ac 1 -ar 8000  -c copy \"{i.title}.3gp\"\n")
-            elif mode == "mp4":
-                file.write(f"ffmpeg -i \"{str(vid[0])}\" -i \"{str(aud[0])}\" -c copy \"{i.title}.mp4\"\n")
-            else:
-                file.write(f"ffmpeg -i \"{str(vid[0])}\" \"{i.title}.mp3\"\n")
-        file.close()
-        return 0
-    ui = Ui(li)
-    if height > 5 and height <= os.get_terminal_size().lines - 10:
-        ui.height = height
-    ui.main()
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    li = main(sys.argv[1:])
+    import curses
+    curses.wrapper(lambda stdscr: Ui(stdscr, li).main())
 
