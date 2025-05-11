@@ -15,6 +15,7 @@ class Video():
     def __init__(self, file):
         if file.is_file() is False:
             return None
+        self.timestamp = file.stat().st_mtime
         self.file = str(file)
         # 针对分p视频的单个视频
         self.dir_self = str(file.parents[0])
@@ -28,6 +29,7 @@ class Video():
         self.maintitle = str(data.get("title"))
         self.owner = str(data.get("owner_name"))
         page_data = data.get("page_data")
+        self.page = page_data.get("page")
         # 分P分标题/合集总标题
         self.part = str(page_data.get("part"))
         # 分P总+分标题
@@ -160,53 +162,73 @@ class Ui():
                 self.select=0
             elif inp == "G":
                 self.select=-1
-            elif inp == "p":
-                t = obj[0] if type(obj) == list else obj
-                # vid = list(pathlib.Path(t.dir_self).glob("**/video.m4s"))
-                aud = list(pathlib.Path(t.dir_self).glob("**/audio.m4s"))
-                self.cmd(f"echo \"Playing Now: {t.title}\" ; mpv \"{str(aud[0])}\"")
-            elif inp == "e":
-                self.cmd(save([obj], "mp3"))
-            elif inp == "E":
-                self.cmd(save([obj], "mp4"))
             elif inp == "l" and len(self.content[self.select]) != 1 and deep == 0:
                 position,select,self.position,self.select = self.position, self.select, 0, 0
                 deep = 1
             elif inp == "h" and deep == 1:
                 self.position,self.select = position,select
                 deep = 0
+            elif inp == "r":
+                self.select = len(cont) - self.select - 1
+                cont.reverse()
+            elif inp == "p":
+                self.cmd(cmd_genal([obj], "play"))
+            elif inp == "c":
+                self.cmd(cmd_genal([obj], "copy"))
+            elif inp == "e":
+                self.cmd(cmd_genal([obj], "mp3"))
+            elif inp == "E":
+                self.cmd(cmd_genal([obj], "mp4"))
             self.check([self.content, self.content[select]][deep])
         # curses.endwin()
         return None
 
-def save(li, mode) -> str:
+def cmd_genal(li, mode) -> str:
     t = ""
     if type(li[0]) != list:
         li = [li]
+    t+=f"echo \"Running mode:{mode}\"\n"
     for i in li:
+        if len(i) != 1:
+            t+="# =========================\n"
+            t+=f"# SETS: {i[0].maintitle} AV<{i[0].avid}>\n"
         for j in i:
             vid = list(pathlib.Path(j.dir_self).glob("**/video.m4s"))
             aud = list(pathlib.Path(j.dir_self).glob("**/audio.m4s"))
             if len(vid) == 0 or len(aud) == 0:
-                print(f"{j.dir_self}:no media file({j.title})")
+                t+=f"# {j.dir_self}:no media file({j.title})"
                 continue
-            t+=f"# {j.title} <Dir: {j.dir_self}>\n"
+            t+=f"# {j.title if len(i) == 1 else j.part} <Dir: {j.dir_self}>\n"
             if mode == "3gp":
                 t+=f"ffmpeg -i \"{str(vid[0])}\" -i \"{str(aud[0])}\""\
-                    +f" -r 12 -b:v 400k -s 352x288 -ab 12.2k -ac 1 -ar 8000 -c copy \"{j.title}.3gp\"\n"
+                    +" -r 12 -b:v 400k -s 352x288 -ab 12.2k -ac 1 -ar 8000 -c copy"\
+                    +f" \"{cfg["outputd"]+j.title}.3gp\"\n"
             elif mode == "mp4":
                 t+=f"ffmpeg -i \"{str(vid[0])}\" -i \"{str(aud[0])}\""\
-                    +f" -c copy \"{j.title}.mp4\"\n"
+                    +f" -c copy \"{cfg["outputd"]+j.title}.mp4\"\n"
+            elif mode in ("m4a" "copy"):
+                t+=f"cp \"{str(aud[0])}\" \"{cfg["outputd"]+j.title}.m4a\"\n"
+            elif mode == "play":
+                t+=f"echo \"Now Playing:{j.title}\"\n{cfg["player"]} \"{str(aud[0])}\"\n"
             else:
-                t+=f"ffmpeg -i \"{str(aud[0])}\" \"{j.title}.mp3\"\n"
+                t+=f"ffmpeg -i \"{str(aud[0])}\" \"{cfg["outputd"]+j.title}.mp3\"\n"
+        if len(i) != 1:
+            t+=f"# END OF SETS: {i[0].maintitle} <AV{i[0].avid}>\n"
+            t+="# =========================\n\n"
+    t+="echo \"Done!\\n\"\n"
     return t
 
 def main(argv):
     list_mode = False
-    output = None
+    inputd = "./"
+    outputf = None
     mode = "mp3"
     try:
-        opts, args = getopt.getopt(argv, "hlo:m:", ["help", "list", "output=","mode="])
+        opts, args = getopt.getopt(argv,
+            "hli:o:O:m:p:",
+            ["help", "list", "input-dir=", "output-dir=",
+             "output-file=","mode=", "player="]
+        )
     except getopt.GetoptError:
         mhelp(1, msg="[!] Err: getopt error")
         exit(-1)
@@ -217,10 +239,16 @@ def main(argv):
             list_mode = True
         elif option in ("-m", "--mode"):
             mode = argument
-        elif option in ("-o"):
-            output = argument
+        elif option in ("-i", "--input-dir"):
+            inputd = argument
+        elif option in ("-o", "--output-dir"):
+            cfg["outputd"] = argument
+        elif option in ("-O", "--output-file"):
+            outputf = argument
+        elif option in ("-p", "--player"):
+            cfg["player"] = argument
 
-    input_f = list(pathlib.Path("./").glob("**/entry.json"))
+    input_f = list(pathlib.Path(inputd).glob("**/entry.json"))
     if len(input_f) == 0:
         mhelp(msg="[!] no input file was found")
     print(f"{len(input_f)} files were found")
@@ -231,6 +259,8 @@ def main(argv):
             li[-1].append(v)
         else:
             li.append([v])
+        li[-1] = sorted(li[-1], key=lambda x:x.page, reverse=False)
+    li = sorted(li, key=lambda x:x[0].timestamp, reverse=False)
 
     if list_mode:
         for i in li:
@@ -238,9 +268,9 @@ def main(argv):
                 print(j.getlist(), end=" ")
             print()
         exit(0)
-    if output is not None:
-        file = open(output, "w")
-        file.write(save(li, mode))
+    if outputf is not None:
+        file = open(outputf, "w")
+        file.write(cmd_genal(li, mode))
         file.close()
         exit(0)
     return li
@@ -250,17 +280,23 @@ def mhelp(ret=0, msg=""):
         print(str(msg))
     print("Usage bilibili_build.py [OPTION]")
     print("OPTION:")
-    print("    -l         --list          list media")
-    print("    -o <file>  --output=file   set output file")
-    print("    -H <num>   --height=num    set the height of printing")
-    print("    -m <mode>  --mode=mode     set output format(mp3|mp4|3gp)")
-    print("    -h         --help          show this help")
-    print("[*] make sure there are file `entry.json`")
+    print("    -h         --help           show this help")
+    print("    -l         --list           list media")
+    print("    -i <dir>   --input-dir=dir  set output file")
+    print("    -o <dir>   --output-dir=dir set output file")
+    print("    -O <file>  --output=file    set output file")
+    print("    -p <cmd>   --player=cmd     set default player")
+    print("    -m <mode>  --mode=mode      set output format")
+    print("[*] mode list:mp3(default)|mp4|m4a(copy)|3gp|play")
+    print("[*] make sure the file `entry.json` exist")
     print("[*] in the tui,press `hjkl` to move,`eE` to export media")
+    print("    `p` to play,`c` to copy audio file")
     exit(ret)
 
+cfg = {"player":"mpv", "outputd":""}
 if __name__ == "__main__":
-    li = main(sys.argv[1:])
+    video_list = main(sys.argv[1:])
+    video_list.reverse()
     import curses
-    curses.wrapper(lambda stdscr: Ui(stdscr, li).main())
+    curses.wrapper(lambda stdscr: Ui(stdscr, video_list).main())
 
