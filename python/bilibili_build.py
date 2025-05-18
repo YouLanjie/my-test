@@ -232,14 +232,23 @@ def cmd_genal(li, mode) -> str:
     for i in li:
         if len(i) != 1:
             t+="# =========================\n"
-            t+=f"# SETS: {i[0].maintitle} AV<{i[0].avid}>\n"
+            t+=f"# SETS: {i[0].maintitle} <AV{i[0].avid}>\n"
         for j in i:
             vid = list(pathlib.Path(j.dir_self).glob("**/video.m4s"))
             aud = list(pathlib.Path(j.dir_self).glob("**/audio.m4s"))
             if len(vid) == 0 or len(aud) == 0:
                 t+=f"# {j.dir_self}:no media file({j.title})"
                 continue
-            output = f"{cfg["outputd"]+j.title}"
+            # 替换vfat系统不允许出现的字符（包括部分正常文件系统特殊字符）
+            output = j.title
+            replacement = ["/", "／"]
+            if cfg["vfat_name"]:
+                replacement = ["\\/:*?\"<>", "＼／∶＊？＂〈〉｜"]
+            for k,l in zip(list(replacement[0]), list(replacement[1])):
+                output=output.replace(k, l)
+            output = cfg["outputd"]+output
+            if output[0] == "-":
+                output = "./"+output
             t+=f"# {j.title if len(i) == 1 else j.part} <Dir: {j.dir_self}>\n"
             if mode == "3gp":
                 t+=f"ffmpeg -i \"{str(vid[0])}\" -i \"{str(aud[0])}\""\
@@ -257,16 +266,6 @@ def cmd_genal(li, mode) -> str:
             else:
                 t+=f"ffmpeg -i \"{str(aud[0])}\" "
                 output+=".mp3"
-            # 替换vfat系统不允许出现的字符（包括部分正常文件系统特殊字符）
-            replacement = ["/", "／"]
-            if cfg["vfat_name"]:
-                replacement = ["\\/:*?\"<>", "＼／∶＊？＂〈〉｜"]
-            for k,l in zip(list(replacement[0]), list(replacement[1])):
-                if not cfg["vfat_name"]:
-                    break
-                output=output.replace(k, l)
-            if output[0] == "-":
-                output = "./"+output
             t+=f"\"{output}\"\n"
         if len(i) != 1:
             t+=f"# END OF SETS: {i[0].maintitle} <AV{i[0].avid}>\n"
