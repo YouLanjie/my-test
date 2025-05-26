@@ -9,15 +9,26 @@
  *
  */
 
+#define ENABLE_ALSA
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
-#include <alsa/asoundlib.h>
+#include <unistd.h>
 #include <string.h>
+#include <math.h>
+#ifdef ENABLE_ALSA
+#include <alsa/asoundlib.h>
+#endif
+
+#define FLG_PLAY (1 << 0)
+#define FLG_SAVE (1 << 1)
+#define FLG_INPUT (1 << 2)
+#define FLG_PLYARG (1 << 3)
 
 /* 采样率（Hz） */
 unsigned int SAMPLE_RATE = 44100;
 
+#ifdef ENABLE_ALSA
 snd_pcm_t *init()
 {
 	snd_pcm_t *pcm_handle = NULL;
@@ -52,6 +63,7 @@ snd_pcm_t *init()
 	}
 	return pcm_handle;
 }
+#endif
 
 // WAV文件头结构
 typedef struct {
@@ -96,6 +108,8 @@ void create_wav_header(WavHeader *header, float duration)
  * 生成固定声波
  * volume: 0% ~ 100%
  * 数学模型: f(x) = A*sin(ω*x)
+ * x: f(x)的x值
+ * f: 频率ω
  * */
 double wave(double x, double volume, double f)
 {
@@ -104,14 +118,18 @@ double wave(double x, double volume, double f)
 }
 
 /* 
+ * 解读字符串形式的音符并产生对应声波
  * note: C D E F G A B
- * type: n分音符
+ * type: n分音符(或者在note中控制)
  * base: 以n分音符为一拍
  * speed: 速度，n拍/分钟
  * */
-int *create_note_wave(const char *note, int type, int base, int speed)
+int *create_note_wave(const char *note, float type, int base, float speed)
 {
-	double slide = 0, slide_d = 0, slide_s = 0, amplitude = 0.5;
+	double slide = 0,    /* 控制滑音 */
+	       slide_d = 0,    /* 目标调 */
+	       amplitude = 0.5;
+	double offset = 0;
 	if (note == NULL) return NULL;
 	type = type <= 0 ? 4 : type;
 	base = base <= 0 ? 4 : base;
@@ -123,15 +141,25 @@ int *create_note_wave(const char *note, int type, int base, int speed)
 		else if (*p == '*')
 			type /= 2;
 		else if (*p == '.')
-			type *= (3/2);
+			type *= (3.0/2);
 		else if (*p == '~')
 			slide = 1;
 		else if (*p == '+')
 			amplitude += amplitude + 0.1 <= 1 ? 0.1 : 0;
 		else if (*p == '-')
 			amplitude -= amplitude - 0.1 >= 0 ? 0.1 : 0;
+		else if (*p == 'l')
+			offset-=10;
+		else if (*p == 'L')
+			offset-=100;
+		else if (*p == 'u')
+			offset+=10;
+		else if (*p == 'U')
+			offset+=100;
 	}
-	const unsigned int buffer_frames = SAMPLE_RATE*((float)base/type)*(60/(float)speed);
+	/* 缓冲区大小，同时控制声音片段大小
+	 * 缓冲区越大声音持续越久，也越慢 */
+	const unsigned int buffer_frames = SAMPLE_RATE*(base/type)*(60/speed);
 	int *buffer = malloc(sizeof(short)*(buffer_frames * 2 + 2));    /* 双声道 */
 	memset(buffer, 0, sizeof(short)*(buffer_frames * 2 + 2));
 	buffer[0] = buffer_frames;
@@ -142,7 +170,8 @@ int *create_note_wave(const char *note, int type, int base, int speed)
 			['C'] = 261.6, ['D'] = 293.6, ['E'] = 329.6, ['F'] = 349.2,
 			['G'] = 392.0, ['A'] = 440.0, ['B'] = 493.9,
 			['1'] = 523.2, ['2'] = 587.3, ['3'] = 659.2, ['4'] = 698.5,
-			['5'] = 784.0, ['6'] = 880.0, ['7'] = 987.8};
+			['5'] = 784.0, ['6'] = 880.0, ['7'] = 987.8,
+			['{'] = 20, ['}'] = 20000};
 		short result = 0, result2 = 0;
 		short *num = &result;
 		for (const char *p = note; *p != '\0'; p++) {
@@ -150,13 +179,19 @@ int *create_note_wave(const char *note, int type, int base, int speed)
 				num = &result2;
 			else if (*p == ',')
 				break;
+			/* 滑音触发判断 */
 			if (slide == 1) slide = note_freq[(int)*p];
-			else if (slide && !slide_s) slide_s = (note_freq[(int)*p] - slide) / (buffer_frames - i);
-			if (slide_s) {
-				slide_d += slide_s;
-				*num = (short)wave((float)i / SAMPLE_RATE, amplitude, slide+slide_d);
+			else if (slide && !slide_d) {
+				slide = log(slide);
+				slide_d = log(note_freq[(int)*p]) - slide;
+				/*printf("slide:%lf\nslide_d:%lf\nnote_freq[(int)*p]:%lf\nobj:%lf\nture_obj:%lf\n",*/
+				       /*slide,slide_d, note_freq[(int)*p], exp(slide+slide_d), exp(slide+slide_d)+offset);*/
+			}
+			/* SAMPLE_RATE: 每采样一个SAMPLE_RATE就相当于经过一秒 */
+			if (slide_d) {
+				*num = (short)wave((float)i/SAMPLE_RATE, amplitude, exp(slide+slide_d*((float)i/buffer_frames))+offset);
 			} else
-				*num += (short)wave((float)i / SAMPLE_RATE, amplitude, note_freq[(int)*p]);
+				*num += (short)wave((float)i/SAMPLE_RATE, amplitude, note_freq[(int)*p]+offset);
 		}
 		((short*)buffer)[i * 2 + 2] = result;    /* 左声道 */
 		((short*)buffer)[i * 2 + 3] = result2 ? result2 : result;    /* 右声道 */
@@ -164,6 +199,7 @@ int *create_note_wave(const char *note, int type, int base, int speed)
 	return buffer;
 }
 
+#ifdef ENABLE_ALSA
 int play_wav(snd_pcm_t *pcm_handle, short *wave, int size) {
 	if (!pcm_handle)
 		return 1;
@@ -176,9 +212,34 @@ int play_wav(snd_pcm_t *pcm_handle, short *wave, int size) {
 	}
 	return 0;
 }
+#endif
 
+char *str_in_group(char *p, char splitc, int id)
+{
+	if (!p) return NULL;
+	int i = 0, il = 0, count = 0;
+	for (; p[i]; i++) {
+		if (p[i] == splitc) {
+			if (count == id) {
+				break;
+			} else {
+				il = i+1;
+				count++;
+			}
+		}
+	}
+	if (id > count) return NULL;
+	if (!p[i]) return p+il;
+	/*printf("====\nid:%d\ncount:%d\nstr:%s\ni:%d\nil:%d\n",id, count, p,i,il);*/
+	char tmp = p[i];
+	p[i] = 0;
+	char *ret = malloc(strlen(p)+1);
+	strcpy(ret, p+il);
+	p[i] = tmp;
+	return ret;
+}
 
-int melody(int id, char *filename, int stat, int speed)
+int melody(int id, char *filename, int stat, int speed, char *input)
 {
 	id %= 5;
 	const char *note[5][514] = {
@@ -225,17 +286,24 @@ int melody(int id, char *filename, int stat, int speed)
 			"1/","1/","2/","1/", "G*", "G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*", "3","3/","5/", "4.","3/",
 			"2/", "B/","A/","G//","G//", "3.","2//", "1","B/","A/", "G.","E/", "G/","A/","B/","2/",
 			"1*", "1",    /* 运动员进行曲 */
+			/*"cd~","de~","ef~","fg~","ga~","ab~","bC~",*/
+			/*"CD~","DE~","EF~","FG~","GA~","AB~","B1~",*/
+			/*"12~","23~","34~","45~","56~","67~","7",    [> 10.5s音频测试 <]*/
+			/* 10.5s滑音测试1 */
+			/*"c7*****~",*/
+			/* 10.5s滑音测试1 */
 		},
 	};
 	/*
-	 * 1 2 3 4 5 6 7
+	 * c d e f g a b
 	 * C D E F G A B
+	 * 1 2 3 4 5 6 7
 	 * */
 
 	FILE *wav_file;
 	WavHeader wav_header;
 	double size = 0;
-	if (stat & (1 << 1)) {
+	if (stat & FLG_SAVE) {
 		wav_file =  fopen(filename, "wb");
 		 /* 创建并写入WAV文件头 */
 		if (!wav_file)
@@ -244,22 +312,34 @@ int melody(int id, char *filename, int stat, int speed)
 		fwrite(&wav_header, 1, sizeof(wav_header), wav_file);
 	}
 
+#ifdef ENABLE_ALSA
 	snd_pcm_t *pcm_handle = NULL;
-	if (stat & 1) {
+	if (stat & FLG_PLAY) {
 		// ALSA PCM设备配置
 		pcm_handle = init();
 		if (! pcm_handle) return 1;
 	}
+#endif
 
-	for (int i = 0; note[id][i] != NULL; i++) {
-		int *wave = create_note_wave(note[id][i], 4, 4, speed);
+	int i = 0;
+	char *p = stat&FLG_PLYARG ? input : (char*)note[id][i];
+	for (i = 0; (stat&FLG_PLYARG && p && p[0]) || (!(stat&FLG_PLYARG) &&note[id][i] != NULL); i++) {
+		p = stat&FLG_PLYARG ? \
+		    (input) : \
+		    (char*)note[id][i];
+		p = str_in_group(p, '|', i);
+		/*printf(" -> ret:%s\n", p);*/
+		if (!p) continue;
+		int *wave = create_note_wave(p, 4, 4, speed);
 		if (!wave || wave[0] <= 10) {
 			printf("波形为空,Code:[%d]\n", wave ? wave[0] : -1);
 			continue;
 		}
 		size+=(float)wave[0]/SAMPLE_RATE;
-		if (stat & (1 << 1)) fwrite(wave+1, sizeof(int), *wave, wav_file);
-		if (stat & 1) play_wav(pcm_handle, (short*)wave+1, *wave);
+		if (stat & FLG_SAVE) fwrite(wave+1, sizeof(int), *wave, wav_file);
+#ifdef ENABLE_ALSA
+		if (stat & FLG_PLAY) play_wav(pcm_handle, (short*)wave+1, *wave);
+#endif
 		free(wave);
 	}
 	if (stat & (1 << 1)) {
@@ -269,10 +349,12 @@ int melody(int id, char *filename, int stat, int speed)
 		fclose(wav_file);
 	}
 
-	if (stat & 1) {
+	if (stat & FLG_PLAY) {
 		// 等待播放完成并关闭设备
+#ifdef ENABLE_ALSA
 		snd_pcm_drain(pcm_handle);
 		snd_pcm_close(pcm_handle);
+#endif
 	}
 	return 0;
 }
@@ -319,6 +401,7 @@ int read_play_wave(char *filename)
 	       header.channels, header.sample_rate, header.byte_rate, header.block_align,
 	       header.bits_per_sample, header.data_size, header.file_size);
 
+#ifdef ENABLE_ALSA
 	snd_pcm_t *pcm_handle = init();
 	if (! pcm_handle) return 2;
 
@@ -326,6 +409,7 @@ int read_play_wave(char *filename)
 
 	snd_pcm_drain(pcm_handle);
 	snd_pcm_close(pcm_handle);
+#endif
 
 	free(content);
 	return 0;
@@ -334,25 +418,31 @@ int read_play_wave(char *filename)
 int main(int argc, char *argv[])
 {
 	int ch = 0, id = 0, stat = 0, speed = 120;
-	char filename[125] = "output.wav";
-	while ((ch = getopt(argc, argv, "hi:pso:S:r:")) != -1) {	/* 获取参数 */
+	char filename[125] = "output.wav",
+	     notes[500] = {0};
+	while ((ch = getopt(argc, argv, "hi:pso:S:r:C:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
-			printf("Usage: ALSA [-hips] [-o <file>]\n"
+			printf("Usage: ALSA [Option]\n"
 			       "Option:\n"
 			       "    -i <NUM>  选择曲子\n"
-			       "    -p        播放曲子\n"
+			       "    -p        播放曲子(使用ALSA)\n"
 			       "    -s        保存曲子(单设-o无用)\n"
 			       "    -o <FILE> 输出文件(output.wav)\n"
 			       "    -S <NUM>  设置曲速(120)\n"
 			       "    -r <FILE> 输入文件（启用后其他选项无效）\n"
+			       "    -C <STR>  额外指定音符(用`|`分割)\n"
 			       "    -h        显示帮助\n"
 			       "  NUM: 0: 小星星\n"
 			       "       1: 中国人民志愿军战歌\n"
 			       "       2: 20s音频测试\n"
 			       "       3: 10.5升调音频测试\n"
 			       "       4: 运动员进行曲\n"
+#ifndef ENABLE_ALSA
+			       "[!] 本程序在编译时关闭了`ENABLE_ALSA`\n"
+			       "    意味着无法提供任何ALSA方面的支持\n"
+#endif
 			       );
 			return ch == '?' ? -1 : 0;
 			break;
@@ -360,10 +450,10 @@ int main(int argc, char *argv[])
 			id = strtod(optarg, NULL);
 			break;
 		case 'p':
-			stat |= 1;
+			stat |= FLG_PLAY;
 			break;
 		case 's':
-			stat |= 1<<1;
+			stat |= FLG_SAVE;
 			break;
 		case 'o':
 			strcpy(filename, optarg);
@@ -375,11 +465,17 @@ int main(int argc, char *argv[])
 			strcpy(filename, optarg);
 			return read_play_wave(filename);
 			break;
+		case 'C':
+			stat |= FLG_PLYARG;
+			strcpy(notes, optarg);
+			if (!notes[0])
+				stat |= FLG_INPUT;
+			break;
 		default:
 			break;
 		}
 	}
 	speed = speed <= 2 ? 120 : speed;
-	melody(id, filename, stat, speed);
+	melody(id, filename, stat, speed, notes);
 	return 0;
 }

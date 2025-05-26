@@ -27,6 +27,11 @@ _msg_error() {
 }
 # }}}
 
+safety_name() {
+	output=$(cat|sed "s|[][]|\\\&|g")
+	echo $output
+}
+
 # $1: content; $2: repleace format; $3: MainTitle; $4: SubTitle
 get_output() {
 	header=""
@@ -36,8 +41,7 @@ get_output() {
 		header="* Header\n$navigation"
 		tail="* Tail\n$navigation"
 	}
-	final_output="$(echo "$1"|sed "s|[][]|\\\&|g")"
-	final_output="$(echo $final_output|sed "s|\(.*\)|$2|"|sed "s|//|/|g")"
+	final_output="$(echo $1|safety_name|sed "s|\(.*\)|$2|"|sed "s|//|/|g")"
 	final_output="$(echo $final_output|sed "s/^- \[\[\(.*\.\($format2\)\)\]\]/#+begin_export html\n<video controls><source src=\"\1\"><\/video>\n#+end_export/")"
 	final_output="\
 #+title: $3
@@ -83,7 +87,7 @@ run() {
 	max_line=$((max_line-max_line_fail))
 	[[ ! -d $output_d ]] && mkdir -p $output_d
 	if (( $max_line >= 1 )) {
-		_msg_info "创建Emacs服务"
+		[[ $no_export == "false" ]] && _msg_info "创建Emacs服务"
 		[[ $no_export == "false" ]] && emacs --bg-daemon "ORG_TO_HTML_SERVER" -Q
 		_msg_info "创建首页与分页"
 		final_output=$(get_output "$dir_list" "- [[$input_d/\1.html]]\n" "INDEX:$title" "$title" "| | |")
@@ -105,9 +109,9 @@ run() {
 		[[ $file_list == "" ]] && continue
 
 		navigation="| |"
-		(( i > 1 )) && navigation="|[[./$(echo $dir_list|sed -n "$(($i-1))p").html][$(echo $dir_list|sed -n "$(($i-1))p")]] |"
+		(( i > 1 )) && navigation="|[[./$(echo $dir_list|sed -n "$(($i-1))p"|safety_name).html][$(echo $dir_list|sed -n "$(($i-1))p"|safety_name)]] |"
 		(( $max_line > 1 )) && navigation="${navigation} $(echo $file_list|wc -l) |"
-		(( i < $max_line )) && navigation="${navigation} [[./$(echo $dir_list|sed -n "$(($i+1))p").html][$(echo $dir_list|sed -n "$(($i+1))p")]]"
+		(( i < $max_line )) && navigation="${navigation} [[./$(echo $dir_list|sed -n "$(($i+1))p"|safety_name).html][$(echo $dir_list|sed -n "$(($i+1))p"|safety_name)]]"
 		navigation="${navigation} |"
 
 		outp="$output_d/$dir.org"
@@ -124,7 +128,7 @@ run() {
 		echo $final_output >"$outp"
 		export_file "$outp" "$(echo "$outp"|sed "s|org$|html|")" "$(echo $outp|sed "s|org$|html|"|sed "s|^$output_d/||")"
 	}
-	[[ $no_export == "false" ]] && (( $max_line >= 1 )) && emacsclient -e "(kill-emacs)"
+	[[ $no_export == "false" && $no_kill == "false" ]] && (( $max_line >= 1 )) && emacsclient -e "(kill-emacs)"
 }
 
 format='png\|PNG\|JPG\|jpg\|jpeg\|gif\|webp'
@@ -135,17 +139,21 @@ output_d="./"
 title="<NULL>"
 css_file="../main.css"
 no_export="false"
+no_kill="false"
 
 usage() {
 	usagetext="\
 usage: $app_name [options]
-  options:
-     -i <dirname> 设置输入目录(默认./)
-     -o <dirname> 设置输出目录(不推荐)(默认./)
-     -c <cssfile> 设置css文件链接(默认../main.css)
-     -f <extern>  设置额外查找文件后缀
-     -t <title>   设置标题
-     -h           帮助信息
+options:
+   -i <dirname> 设置输入目录(默认./)
+   -o <dirname> 设置输出目录(不推荐)(默认./)
+   -c <cssfile> 设置css文件链接(默认../main.css)
+   -f <extern>  设置额外查找文件后缀
+   -t <title>   设置标题
+   -n           不导出文件(仅生成org文件)
+   -N           不杀死启动的emacs服务备用
+   -x           设置set -x调试
+   -h           帮助信息
 
 标准文件层级格式:
 input_dir                       output_dir
@@ -160,7 +168,7 @@ input_dir                       output_dir
 	exit $1
 }
 
-while {getopts 'i:o:t:c:f:nxh?' arg} {
+while {getopts 'i:o:t:c:f:nNxh?' arg} {
 	case $arg {
 		i) input_d=$OPTARG ;;
 		o) output_d=$OPTARG ;;
@@ -168,6 +176,7 @@ while {getopts 'i:o:t:c:f:nxh?' arg} {
 		c) css_file=$OPTARG ;;
 		f) format3="\\|$OPTARG" ;;
 		n) no_export="true" ;;
+		N) no_kill="true" ;;
 		x) set -x ;;
 		h|?) usage 0;;
 		*) usage 1;;

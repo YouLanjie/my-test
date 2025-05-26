@@ -7,6 +7,40 @@ import json
 
 ets_path = "/storage/emulated/0/Android/data/com.ets100.secondary/files/Download/ETS_SECONDARY/resource/"
 
+"""
+structure_type: type = collector.picture, collector.3q5a, collector.read
+info: (read)
+    value: text
+    image: empty
+    video: showing video file
+    audio: playing audio file
+info: (3q5a)
+    value: ai saying before 3Q5A
+    image: showing image
+    audio: audio file
+    question: []question list
+        std: []answer list
+            value: text of answer
+            ai: same of value
+            audio: answer audio file(may empty)
+        sucai: answer audio file
+        ask: printed chinese in 3Q | playing sound of 5A
+        answer: reply need to record | nothing
+        aswaudio: reply audio file in 3Q
+        askaudio: question audio file in 5A
+        xh: id
+info: (picture)
+    value: ai reading
+    image: showing image
+    audio: ai audio file
+    analyze: analyze
+    std: []answer list
+        value: text of answer
+        ai: same of value
+        audio: answer audio file(may empty)
+    topic: ...
+"""
+
 class Docum():
     def __init__(self, file : Path):
         if file.is_file() is False:
