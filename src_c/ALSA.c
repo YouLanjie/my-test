@@ -24,6 +24,9 @@
 #define FLG_SAVE (1 << 1)
 #define FLG_INPUT (1 << 2)
 #define FLG_PLYARG (1 << 3)
+#define FLG_FADE (1 << 4)
+
+int status = FLG_FADE;
 
 /* 采样率（Hz） */
 unsigned int SAMPLE_RATE = 44100;
@@ -117,6 +120,19 @@ double wave(double x, double volume, double f)
 	return (volume * max_vol) * sin(f * (2*M_PI) * x);
 }
 
+double amplitude_fade(double amplitude,int l, int x)
+{
+	/*double ret = amplitude*sin(sin(sin(1.5*M_PI*log((double)x/l+1))));*/
+	/*return ret > 0 ? ret : 0;*/
+	if (!(status&FLG_FADE)) return amplitude;
+	double inp = (double)x/l;
+	if (inp<0.25) return amplitude*sin(2*M_PI*(inp));
+	if (inp < 0.7) return amplitude;
+	if (inp > 0.95) return 0;
+	double ret2 = amplitude*sin(2*M_PI*(inp+0.55));
+	return ret2;
+}
+
 /* 
  * 解读字符串形式的音符并产生对应声波
  * note: C D E F G A B
@@ -189,9 +205,9 @@ int *create_note_wave(const char *note, float type, int base, float speed)
 			}
 			/* SAMPLE_RATE: 每采样一个SAMPLE_RATE就相当于经过一秒 */
 			if (slide_d) {
-				*num = (short)wave((float)i/SAMPLE_RATE, amplitude, exp(slide+slide_d*((float)i/buffer_frames))+offset);
+				*num = (short)wave((float)i/SAMPLE_RATE, amplitude_fade(amplitude, buffer_frames, i), exp(slide+slide_d*((float)i/buffer_frames))+offset);
 			} else
-				*num += (short)wave((float)i/SAMPLE_RATE, amplitude, note_freq[(int)*p]+offset);
+				*num += (short)wave((float)i/SAMPLE_RATE, amplitude_fade(amplitude, buffer_frames, i), note_freq[(int)*p]+offset);
 		}
 		((short*)buffer)[i * 2 + 2] = result;    /* 左声道 */
 		((short*)buffer)[i * 2 + 3] = result2 ? result2 : result;    /* 右声道 */
@@ -239,7 +255,7 @@ char *str_in_group(char *p, char splitc, int id)
 	return ret;
 }
 
-int melody(int id, char *filename, int stat, int speed, char *input)
+int melody(int id, char *filename, int speed, char *input)
 {
 	id %= 5;
 	const char *note[5][514] = {
@@ -303,7 +319,7 @@ int melody(int id, char *filename, int stat, int speed, char *input)
 	FILE *wav_file;
 	WavHeader wav_header;
 	double size = 0;
-	if (stat & FLG_SAVE) {
+	if (status & FLG_SAVE) {
 		wav_file =  fopen(filename, "wb");
 		 /* 创建并写入WAV文件头 */
 		if (!wav_file)
@@ -314,7 +330,7 @@ int melody(int id, char *filename, int stat, int speed, char *input)
 
 #ifdef ENABLE_ALSA
 	snd_pcm_t *pcm_handle = NULL;
-	if (stat & FLG_PLAY) {
+	if (status & FLG_PLAY) {
 		// ALSA PCM设备配置
 		pcm_handle = init();
 		if (! pcm_handle) return 1;
@@ -322,12 +338,12 @@ int melody(int id, char *filename, int stat, int speed, char *input)
 #endif
 
 	int i = 0;
-	char *p = stat&FLG_PLYARG ? input : (char*)note[id][i];
-	for (i = 0; (stat&FLG_PLYARG && p && p[0]) || (!(stat&FLG_PLYARG) &&note[id][i] != NULL); i++) {
-		p = stat&FLG_PLYARG ? \
+	char *p = status&FLG_PLYARG ? input : (char*)note[id][i];
+	for (i = 0; (status&FLG_PLYARG && p && p[0]) || (!(status&FLG_PLYARG) &&note[id][i] != NULL); i++) {
+		p = status&FLG_PLYARG ? \
 		    (input) : \
 		    (char*)note[id][i];
-		p = str_in_group(p, '|', i);
+		p = str_in_group(p, '|', status&FLG_PLYARG ?i:0);
 		/*printf(" -> ret:%s\n", p);*/
 		if (!p) continue;
 		int *wave = create_note_wave(p, 4, 4, speed);
@@ -336,20 +352,20 @@ int melody(int id, char *filename, int stat, int speed, char *input)
 			continue;
 		}
 		size+=(float)wave[0]/SAMPLE_RATE;
-		if (stat & FLG_SAVE) fwrite(wave+1, sizeof(int), *wave, wav_file);
+		if (status & FLG_SAVE) fwrite(wave+1, sizeof(int), *wave, wav_file);
 #ifdef ENABLE_ALSA
-		if (stat & FLG_PLAY) play_wav(pcm_handle, (short*)wave+1, *wave);
+		if (status & FLG_PLAY) play_wav(pcm_handle, (short*)wave+1, *wave);
 #endif
 		free(wave);
 	}
-	if (stat & (1 << 1)) {
+	if (status & FLG_SAVE) {
 		fseek(wav_file, 0, SEEK_SET);
 		create_wav_header(&wav_header, size);	// 重新生成准确的头信息
 		fwrite(&wav_header, 1, sizeof(wav_header), wav_file);
 		fclose(wav_file);
 	}
 
-	if (stat & FLG_PLAY) {
+	if (status & FLG_PLAY) {
 		// 等待播放完成并关闭设备
 #ifdef ENABLE_ALSA
 		snd_pcm_drain(pcm_handle);
@@ -417,10 +433,10 @@ int read_play_wave(char *filename)
 
 int main(int argc, char *argv[])
 {
-	int ch = 0, id = 0, stat = 0, speed = 120;
+	int ch = 0, id = 0, speed = 120;
 	char filename[125] = "output.wav",
 	     notes[500] = {0};
-	while ((ch = getopt(argc, argv, "hi:pso:S:r:C:")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "hi:psno:S:r:C:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -429,6 +445,7 @@ int main(int argc, char *argv[])
 			       "    -i <NUM>  选择曲子\n"
 			       "    -p        播放曲子(使用ALSA)\n"
 			       "    -s        保存曲子(单设-o无用)\n"
+			       "    -n        取消音符淡入淡出,可能产生杂音\n"
 			       "    -o <FILE> 输出文件(output.wav)\n"
 			       "    -S <NUM>  设置曲速(120)\n"
 			       "    -r <FILE> 输入文件（启用后其他选项无效）\n"
@@ -450,10 +467,13 @@ int main(int argc, char *argv[])
 			id = strtod(optarg, NULL);
 			break;
 		case 'p':
-			stat |= FLG_PLAY;
+			status |= FLG_PLAY;
 			break;
 		case 's':
-			stat |= FLG_SAVE;
+			status |= FLG_SAVE;
+			break;
+		case 'n':
+			status &= ~FLG_FADE;
 			break;
 		case 'o':
 			strcpy(filename, optarg);
@@ -466,16 +486,16 @@ int main(int argc, char *argv[])
 			return read_play_wave(filename);
 			break;
 		case 'C':
-			stat |= FLG_PLYARG;
+			status |= FLG_PLYARG;
 			strcpy(notes, optarg);
 			if (!notes[0])
-				stat |= FLG_INPUT;
+				status |= FLG_INPUT;
 			break;
 		default:
 			break;
 		}
 	}
 	speed = speed <= 2 ? 120 : speed;
-	melody(id, filename, stat, speed, notes);
+	melody(id, filename, speed, notes);
 	return 0;
 }

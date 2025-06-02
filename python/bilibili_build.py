@@ -276,7 +276,9 @@ def cmd_genal(li, mode) -> str:
 def run_main(argv):
     """运行主程序(需要argv)"""
     list_mode = False
-    inputd = "./"
+    inputd = [None,
+              "/sdcard/Android/data/tv.danmaku.bili/download/",
+              "/sdcard/Android/data/com.a10miaomiao.bilimiao/download/"]
     outputf = None
     mode = "mp3"
     try:
@@ -299,7 +301,9 @@ def run_main(argv):
         elif option in ("-m", "--mode"):
             mode = argument
         elif option in ("-i", "--input-dir"):
-            inputd = argument
+            if inputd[0] is None:
+                inputd = []
+            inputd.append(argument)
         elif option in ("-o", "--output-dir"):
             cfg["outputd"] = argument
         elif option in ("-O", "--output-file"):
@@ -307,7 +311,12 @@ def run_main(argv):
         elif option in ("-p", "--player"):
             cfg["player"] = argument
 
-    input_f = list(pathlib.Path(inputd).glob("**/entry.json"))
+    if inputd[0] is None:
+        inputd.pop(0)
+    input_fs = [list(pathlib.Path(i).glob("**/entry.json")) for i in inputd]
+    input_f = []
+    for i in input_fs:
+        input_f += i
     if len(input_f) == 0:
         mhelp(msg="[!] no input file was found")
     print(f"{len(input_f)} files were found")
