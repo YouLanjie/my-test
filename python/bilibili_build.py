@@ -278,7 +278,8 @@ def run_main(argv):
     list_mode = False
     inputd = [None,
               "/sdcard/Android/data/tv.danmaku.bili/download/",
-              "/sdcard/Android/data/com.a10miaomiao.bilimiao/download/"]
+              "/sdcard/Android/data/com.a10miaomiao.bilimiao/download/",
+              "./"]
     outputf = None
     mode = "mp3"
     try:

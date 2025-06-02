@@ -23,11 +23,12 @@
 #define FLG_PLAY (1 << 0)
 #define FLG_SAVE (1 << 1)
 #define FLG_INPUT (1 << 2)
-#define FLG_PLYARG (1 << 3)
-#define FLG_FADE (1 << 4)
+#define FLG_PLYARG (1 << 3)    /* 播放终端传入参数 */
+#define FLG_FADE (1 << 4)	/* 淡入淡出 */
+#define FLG_HARMONICS (1<<5)	/* 泛音 */
+#define FLG_SMMOTH_GLIDE (1<<6)
 
-int status = FLG_FADE;
-
+int status = FLG_FADE|FLG_HARMONICS;
 /* 采样率（Hz） */
 unsigned int SAMPLE_RATE = 44100;
 
@@ -117,21 +118,42 @@ void create_wav_header(WavHeader *header, float duration)
 double wave(double x, double volume, double f)
 {
 	const short max_vol = (unsigned short)(-1) / 2;
-	return (volume * max_vol) * sin(f * (2*M_PI) * x);
+	double value = 0.0;
+	// 基频 + 5个泛音（振幅递减）
+	value += 0.6 * sin(2 * M_PI * f * x);	// 基频
+	if (status&FLG_HARMONICS) {
+		value += 0.3 * sin(2 * M_PI * 2 * f * x);	// 二次谐波
+		value += 0.2 * sin(2 * M_PI * 3 * f * x);	// 三次谐波
+		value += 0.1 * sin(2 * M_PI * 4 * f * x);	// 四次谐波
+		value += 0.05 * sin(2 * M_PI * 5 * f * x);	// 五次谐波
+	}
+	return volume * max_vol * value;
 }
 
-double amplitude_fade(double amplitude,int l, int x)
+double adsr_envelope(int current, int total)
 {
-	/*double ret = amplitude*sin(sin(sin(1.5*M_PI*log((double)x/l+1))));*/
-	/*return ret > 0 ? ret : 0;*/
-	if (!(status&FLG_FADE)) return amplitude;
-	double inp = (double)x/l;
-	if (inp<0.25) return amplitude*sin(2*M_PI*(inp));
-	if (inp < 0.7) return amplitude;
-	if (inp > 0.95) return 0;
-	double ret2 = amplitude*sin(2*M_PI*(inp+0.55));
-	return ret2;
+	if (!(status&FLG_FADE)) return 1.0;
+	double t = (double)current / total;
+	double attack = 0.01, decay = 0.1, sustain = 0.7, release = 0.2;
+	if (t < attack)
+		return t / attack;	// 起振（线性增长）
+	else if (t < attack + decay)
+		return 1.0 - (1.0 - sustain) * (t - attack) / decay;	// 衰减
+	else if (t < 1.0 - release)
+		return sustain;	// 持续
+	else
+		return sustain * (1.0 - (t - (1.0 - release)) / release);	// 释放
 }
+
+double get_glide_freq(double start, double end, double x)
+{
+	double s = 1/(1+exp(-20*(x-0.5)));
+	if (status&FLG_SMMOTH_GLIDE)
+		s = x;
+	double ret = log(start) + (log(end)-log(start))*s;
+	return exp(ret);
+}
+
 
 /* 
  * 解读字符串形式的音符并产生对应声波
@@ -142,8 +164,8 @@ double amplitude_fade(double amplitude,int l, int x)
  * */
 int *create_note_wave(const char *note, float type, int base, float speed)
 {
-	double slide = 0,    /* 控制滑音 */
-	       slide_d = 0,    /* 目标调 */
+	double glide = 0,    /* 控制滑音 */
+	       glide_d = 0,    /* 目标调 */
 	       amplitude = 0.5;
 	double offset = 0;
 	if (note == NULL) return NULL;
@@ -157,9 +179,9 @@ int *create_note_wave(const char *note, float type, int base, float speed)
 		else if (*p == '*')
 			type /= 2;
 		else if (*p == '.')
-			type *= (3.0/2);
+			type *= (2/3.0);
 		else if (*p == '~')
-			slide = 1;
+			glide = 1;
 		else if (*p == '+')
 			amplitude += amplitude + 0.1 <= 1 ? 0.1 : 0;
 		else if (*p == '-')
@@ -196,18 +218,21 @@ int *create_note_wave(const char *note, float type, int base, float speed)
 			else if (*p == ',')
 				break;
 			/* 滑音触发判断 */
-			if (slide == 1) slide = note_freq[(int)*p];
-			else if (slide && !slide_d) {
-				slide = log(slide);
-				slide_d = log(note_freq[(int)*p]) - slide;
-				/*printf("slide:%lf\nslide_d:%lf\nnote_freq[(int)*p]:%lf\nobj:%lf\nture_obj:%lf\n",*/
-				       /*slide,slide_d, note_freq[(int)*p], exp(slide+slide_d), exp(slide+slide_d)+offset);*/
+			if (glide == 1) glide = note_freq[(int)*p];
+			else if (glide && !glide_d) {
+				glide_d = note_freq[(int)*p];
+				/*printf("glide:%lf\nglide_d:%lf\nnote_freq[(int)*p]:%lf\nobj:%lf\nture_obj:%lf\n",*/
+				       /*glide,glide_d, note_freq[(int)*p], exp(glide+glide_d), exp(glide+glide_d)+offset);*/
 			}
 			/* SAMPLE_RATE: 每采样一个SAMPLE_RATE就相当于经过一秒 */
-			if (slide_d) {
-				*num = (short)wave((float)i/SAMPLE_RATE, amplitude_fade(amplitude, buffer_frames, i), exp(slide+slide_d*((float)i/buffer_frames))+offset);
+			// 替换原amplitude_fade调用
+			double env = adsr_envelope(i, buffer_frames)*amplitude;
+			// amplitude_fade(amplitude, buffer_frames, i)
+			if (glide_d) {
+				double freq = get_glide_freq(glide,glide_d,((float)i/buffer_frames));
+				*num = (short)wave((float)i/SAMPLE_RATE, env, freq+offset);
 			} else
-				*num += (short)wave((float)i/SAMPLE_RATE, amplitude_fade(amplitude, buffer_frames, i), note_freq[(int)*p]+offset);
+				*num += (short)wave((float)i/SAMPLE_RATE, env, note_freq[(int)*p]+offset);
 		}
 		((short*)buffer)[i * 2 + 2] = result;    /* 左声道 */
 		((short*)buffer)[i * 2 + 3] = result2 ? result2 : result;    /* 右声道 */
@@ -230,23 +255,25 @@ int play_wav(snd_pcm_t *pcm_handle, short *wave, int size) {
 }
 #endif
 
-char *str_in_group(char *p, char splitc, int id)
+char *str_in_group(char *p, char *splits, int id)
 {
 	if (!p) return NULL;
-	int i = 0, il = 0, count = 0;
-	for (; p[i]; i++) {
-		if (p[i] == splitc) {
-			if (count == id) {
-				break;
-			} else {
-				il = i+1;
-				count++;
+	int i = 0, il = 0, count = 0, flag = 1;
+	for (; p[i] && flag; i++) {
+		for (char *sp = splits;flag && sp && *sp != '\0';sp++) {
+			if (p[i] == *sp) {
+				if (count == id) {
+					flag = 0;
+					break;
+				} else {
+					il = i+1;
+					count++;
+				}
 			}
 		}
 	}
 	if (id > count) return NULL;
 	if (!p[i]) return p+il;
-	/*printf("====\nid:%d\ncount:%d\nstr:%s\ni:%d\nil:%d\n",id, count, p,i,il);*/
 	char tmp = p[i];
 	p[i] = 0;
 	char *ret = malloc(strlen(p)+1);
@@ -257,17 +284,19 @@ char *str_in_group(char *p, char splitc, int id)
 
 int melody(int id, char *filename, int speed, char *input)
 {
-	id %= 5;
-	const char *note[5][514] = {
+	id %= 6;
+	const char *note[6][514] = {
 		{
+			"4 4",
 			"C","C","G","G","A","A","G*", "F","F","E","E","D","D","C*",    /* 一闪一闪亮晶晶 */ /* 满天都是小星星 */
 			"G","G","F","F","E","E","D*", "G","G","F","F","E","E","D*",    /* 挂在天上放光明 */ /* 好像许多小眼睛 */
 			"C","C","G","G","A","A","G*", "F","F","E","E","D","D","C*",    /* 一闪一闪亮晶晶 */ /* 满天都是小星星 */
 		}, {
+			"4 4",
 			"C/","C/","C",     "g/","a/","g",     "E/.","D//","C/","a/", "D*",
 			"E/","E/","E",     "G/","G/","G",     "A/.","G//","C/","E/", "D*",
 			"E*",              "G*",              "E/.","D//","C/","D/", "a*",
-			"A/","A1~","1/",   "G/.","GE~","E//", "C","E",               "G*",
+			"A1*~",            "GE*~",            "C","E",               "G*",
 			"A","G",           "E","G",           "1.++","A/",       "G","E",
 			"G/","/","D/","/", "C","* ",
 			"C/","C/","C",     "g/","a/","g",     "E/.","D//","C/","a/", "D*",
@@ -277,13 +306,16 @@ int melody(int id, char *filename, int speed, char *input)
 			"A","G",           "E","G",           "1.++","A/",       "G","E",
 			"C/","/","G/","/", "1"," "
 		}, {
+			"4 4",
 			"C","C","C","C","C","C","C","C","C","C",
 			"C","C","C","C","C","C","C","C","C","C",    /* 10s音频测试 */
 		}, {
+			"4 4",
 			"c","d","e","f","g","a","b",
 			"C","D","E","F","G","A","B",
 			"1","2","3","4","5","6","7",    /* 10.5s音频测试 */
 		}, {
+			"4 4",
 			"3/.","2//","1/","A/", "G/","A//","G//","E/","G/", "1/","1//","1//","1/","1/", "1","C//","D//","E//","F//",
 			"G","E/.","D//", "C/","E/","G/","1/", "3","2/.","3//", "1*", "2","2/.","3//", "2/","1/","B/","A/",
 			"G","A/.","1//", "G*", "E/","E//","E//","D/","E/", "G/","E//","G//","A/","G/", "1","2", "3*",
@@ -302,12 +334,18 @@ int melody(int id, char *filename, int speed, char *input)
 			"1/","1/","2/","1/", "G*", "G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*", "3","3/","5/", "4.","3/",
 			"2/", "B/","A/","G//","G//", "3.","2//", "1","B/","A/", "G.","E/", "G/","A/","B/","2/",
 			"1*", "1",    /* 运动员进行曲 */
-			/*"cd~","de~","ef~","fg~","ga~","ab~","bC~",*/
-			/*"CD~","DE~","EF~","FG~","GA~","AB~","B1~",*/
-			/*"12~","23~","34~","45~","56~","67~","7",    [> 10.5s音频测试 <]*/
-			/* 10.5s滑音测试1 */
-			/*"c7*****~",*/
-			/* 10.5s滑音测试1 */
+		}, {
+			"4 8 #bpm:180",
+			"GA~", "G/", "FE~", "D/", "C.", "g.",
+			"C/", "E/", "1/", "B/", "A./", "E//", "G*",
+			"A/", "B/", "A/", "GF~", "E/", "D.", "a.",
+			"b/", "a/", "g/", "G/", "C./", "D//", "E*",
+			"G/", "A/", "G/", "F/", "E/", "D/", "C.", "g.",
+			"C/", "E/", "1/", "B/", "2./", "1//", "A*",
+			"1/", "B/", "A/", "G.",
+			"A/", "G/", "F/", "E.",
+			"b", "a/", "g", "D/",
+			/* 我和我的祖国（未完成） */
 		},
 	};
 	/*
@@ -338,15 +376,18 @@ int melody(int id, char *filename, int speed, char *input)
 #endif
 
 	int i = 0;
-	char *p = status&FLG_PLYARG ? input : (char*)note[id][i];
-	for (i = 0; (status&FLG_PLYARG && p && p[0]) || (!(status&FLG_PLYARG) &&note[id][i] != NULL); i++) {
+	int type = 4, base = 4;
+	if (!(status&FLG_PLYARG))
+		sscanf(note[id][0], "%d %d", &type, &base);
+	char *p = status&FLG_PLYARG ? input : (char*)note[id][i+1];
+	for (i = 0; (status&FLG_PLYARG && p && p[0]) || (!(status&FLG_PLYARG) &&note[id][i+1] != NULL); i++) {
 		p = status&FLG_PLYARG ? \
 		    (input) : \
-		    (char*)note[id][i];
-		p = str_in_group(p, '|', status&FLG_PLYARG ?i:0);
+		    (char*)note[id][i+1];
+		p = str_in_group(p, "| ", status&FLG_PLYARG ?i:0);
 		/*printf(" -> ret:%s\n", p);*/
 		if (!p) continue;
-		int *wave = create_note_wave(p, 4, 4, speed);
+		int *wave = create_note_wave(p, type, base, speed);
 		if (!wave || wave[0] <= 10) {
 			printf("波形为空,Code:[%d]\n", wave ? wave[0] : -1);
 			continue;
@@ -436,7 +477,7 @@ int main(int argc, char *argv[])
 	int ch = 0, id = 0, speed = 120;
 	char filename[125] = "output.wav",
 	     notes[500] = {0};
-	while ((ch = getopt(argc, argv, "hi:psno:S:r:C:")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "hi:psnmHo:S:r:C:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -446,6 +487,8 @@ int main(int argc, char *argv[])
 			       "    -p        播放曲子(使用ALSA)\n"
 			       "    -s        保存曲子(单设-o无用)\n"
 			       "    -n        取消音符淡入淡出,可能产生杂音\n"
+			       "    -m        平滑滑音，滑音频率匀速增长\n"
+			       "    -H        取消泛音\n"
 			       "    -o <FILE> 输出文件(output.wav)\n"
 			       "    -S <NUM>  设置曲速(120)\n"
 			       "    -r <FILE> 输入文件（启用后其他选项无效）\n"
@@ -456,6 +499,7 @@ int main(int argc, char *argv[])
 			       "       2: 20s音频测试\n"
 			       "       3: 10.5升调音频测试\n"
 			       "       4: 运动员进行曲\n"
+			       "       5: 我和我的祖国（未完成）\n"
 #ifndef ENABLE_ALSA
 			       "[!] 本程序在编译时关闭了`ENABLE_ALSA`\n"
 			       "    意味着无法提供任何ALSA方面的支持\n"
@@ -474,6 +518,12 @@ int main(int argc, char *argv[])
 			break;
 		case 'n':
 			status &= ~FLG_FADE;
+			break;
+		case 'm':
+			status |= FLG_SMMOTH_GLIDE;
+			break;
+		case 'H':
+			status &= ~FLG_HARMONICS;
 			break;
 		case 'o':
 			strcpy(filename, optarg);
