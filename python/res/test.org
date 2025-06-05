@@ -1,0 +1,283 @@
+#+title: 《Org转html特性测试》
+#+title: 《多标题衔接测试1》
+   #+title: 《开头有空格的标题衔接测试2》
+字符阻挡meta测试 #+title: 《开头有其他字符的标题测试3》
+《空标题测试4》
+#+title:
+#+tiTle: 《大小写混合标题测试5》
+
+#+date: 2025-05-30 18:09
+#+date: 《日期测试1》
+
+#+author: 《作者衔接测试1》
+#+author: 《作者衔接测试2》
+
+#+description: 《description值测试》
+
+#+setupfile: ./setup.setup
+#+setupfile: 错误的setup文件测试
+
+* meta与注释测试
+#+nonexistmeta
+#+非法meta键
+# comment message
+# 注释信息
+#+ metawithspace
+#+ 有空格的meta
+#+nonexistwithvaluemeta: 《非法带值meta键测试》
+#+describe:
+#合法但空的meta/不带空格的注释
+# 带空格的注释
+** 子标题测试1
+**** 跳跃型子标题测试2
+*** 子标题测试3
+** TODO todo子标题测试4
+**** COMMENT 注释型子标题5
+*** DONE done子标题测试6
+
+* 标题与打断测试
+ ** 开头有空格的标题测试
+
+标题打断src block测试
+#+begin_src
+# test
+ # test
+** New
+#+end_src
+
+标题打断quote block测试
+#+begin_quote
+** Breaking Test
+#+end_quote
+
+标题打断list测试
+- level1
+  - level2
+** 打断列表的标题
+  - level2_1
+    - level3
+
+* 列表测试
+- level1(ind0)
+ 子内容-1(lv1)
+  子内容0(lv1)
+  - level2(ind2)
+   - level3(ind3)
+     子内容1(lv3)
+    子内容2(lv3)
+   子内容3(lv2)
+  子内容4(lv1)
+ 子内容5(lv1)
+   - level2.1跃进式(ind3)
+     子内容6(ind5,lv2)
+
+     空行测试
+
+     （实际上充分证明这个空格除以2向上取整的）
+    - level3.2正常缩进(ind4)
+     子内容7(ind5,lv3)
+  - level2.2正常缩进(ind2)
+ - level2.3不正常缩进(ind1)
+   子内容8(lv2)
+  - level3.1(ind2)
+    （说明ind下降超过1格退出一框架，只下降1格保留在当前环境，增加则进入一框架）
+
+    （即中间下沉也会把列表砸出去）
+  - level3.2(ind2)
+   - level4.1(ind3)
+    - level5.1(ind4)
+     - level6.1(ind5)
+       - level7.1(ind7)
+      - level7.2(ind6)
+   - level4.2(ind3)
+      - level5.2(ind6)
+  - level3.3(ind2)
+      - level4.3(ind6)
+ - level2.4(ind1)
+ 子内容9(lv1)
+子内容10(lv0)
+
+换行的子内容11(lv0)
+
+- level1
+    - 跳跃的level2
+      - 仅两个的level3
+  - level1.5
+
+- level1
+  内容测试1
+  
+  换行的内容测试2
+  仅链接测试:[[http://./]]
+  文字+链接测试：[[http://./][链接文本]]
+
+* block测试
+** src
+#+begin_src
+不缩进测试
+#+end_src
+
+#+begin_src
+大小写不一致测试
+#+END_SRC
+
+#+begin_src
+  有缩进测试
+#+end_src
+
+#+begin_src org
+  内部再嵌套一个src block测试/代码类型显示测试
+  #+begin_src
+    test
+  #+end_src
+#+end_src
+
+#+begin_src org
+  org内部嵌套测试
+  * 被嵌套标题1
+  ** 被嵌套标题2
+#+end_src
+
+#+begin_src org
+  内嵌src block经EMACS处理测试
+  ,#+begin_src
+   test
+  ,#+end_src
+  content without any dangerous
+  ,* 被嵌套标题3
+  ,** 被嵌套标题4
+#+end_src
+
+#+begin_src org
+  内嵌src block经EMACS处理测试
+  ,#+begin_src
+   test
+  ,#+end_src
+  content without any dangerous
+  * 被嵌套标题3
+  ** 被嵌套标题4
+#+end_src
+
+#+begin_src org
+内嵌src block half经EMACS处理测试but edit by hand after that1
+,#+begin_src
+ test
+,#+end_src
+content without any dangerous
+  * 被嵌套标题3
+  ** 被嵌套标题4
+#+end_src
+
+#+begin_src org
+  No.2
+  ,* 被嵌套标题3
+  ,** 被嵌套标题4
+内嵌src block half经EMACS处理测试but edit by hand after that
+,#+begin_src
+ test
+,#+end_src
+content without any dangerous
+#+end_src
+
+src块和quote块交错测试
+#+begin_src
+#+begin_quote
+#+end_src
+#+end_quote
+
+quote块和src块交错测试
+#+begin_quote
+#+begin_src
+#+end_quote
+#+end_src
+
+** quote测试
+
+quote in link:
+
+- LINE1
+  - LINE2
+    #+begin_quote
+  - LINE3
+    #+end_quote
+  - LINE4
+
+quote内嵌src测试
+#+begin_quote
+#+begin_src
+test2
+#+end_src
+#+end_quote
+
+quote内嵌图片测试
+#+begin_quote
+[[./test.jpg]]
+#+end_quote
+
+#+begin_quote
+[[./test.jpg]]
+#+CAPTION: 在下测试3
+
+中间分割物
+
+#+CAPTION: 在上测试4
+[[./test.jpg]]
+#+end_quote
+
+* 文本效果测试
+** 链接
+单链接测试：[[http://bing.com]]
+
+[[http://baidu.com][有文本链接测试]]
+
+[[./test.jpg][有文本图片链接测试]]
+
+图片测试1：
+[[./test.jpg]]
+
+CAPTION测试
+[[./test.jpg]]
+#+CAPTION: 在下测试1
+
+中间分割物
+
+#+CAPTION: 在上测试2
+[[./test.jpg]]
+
+** code
+这里是一长=code1=串用于客串用的字符串
+
+这里是一长串 =code2=用于客串用的字符串
+
+这里是一长串用=code3= 于客串用的字符串
+
+这里是一长串用于客 =code4= 串用的字符串
+
+这里是一长串用于客 =code5 = 串用的= 字符串
+
+这里是一长串 =用于 = code6= 客串用的字符串
+
+这里是一长串用于客串用的字符串 =code7
+(中间换行了)code8=
+
+=[[http://./][code内含链接]]=
+
+[[http://./][=link内含code=]]
+
+** 其他
+原内容：
+#+begin_src text
+换行的文本中
+间收否有空格问题如果both
+side均为英文则为空格，若one
+侧英文一侧中文则
+no空格
+#+end_src
+
+换行的文本中
+间收否有空格问题如果both
+side均为英文则为空格，若one
+侧英文一侧中文则
+no空格
+
+/斜体测试/

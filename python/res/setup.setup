@@ -1,0 +1,12 @@
+# -*- mode: org; -*-
+
+#+AUTHOR: 不要在意我的头像QwQ
+
+#+HTML_LINK_HOME: /
+#+LANGUAGE: zh
+
+#+HTML_HEAD: <link rel="stylesheet" type="text/css" href="./main.css"/>
+#+HTML_HEAD: <link rel="shortcut icon" href="/img/icon.jpg">
+
+#+LATEX_COMPILER: xelatex
+#+LATEX_HEADER: \usepackage[UTF8]{ctex}
