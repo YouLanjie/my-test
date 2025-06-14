@@ -5,8 +5,7 @@
 #+HTML_LINK_HOME: /
 #+LANGUAGE: zh
 
-#+HTML_HEAD: <link rel="stylesheet" type="text/css" href="./main.css"/>
-#+HTML_HEAD: <link rel="shortcut icon" href="/img/icon.jpg">
+#+HTML_HEAD: <link rel="stylesheet" type="text/css" href="http://youlanjie.github.io/theme/main.css"/>
 
 #+LATEX_COMPILER: xelatex
 #+LATEX_HEADER: \usepackage[UTF8]{ctex}

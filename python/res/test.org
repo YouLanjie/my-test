@@ -111,6 +111,32 @@
   仅链接测试:[[http://./]]
   文字+链接测试：[[http://./][链接文本]]
 
+- list内置quote测试
+  - level2
+    文字1
+    #+begin_quote
+    文字2
+     - test3
+
+      文字3
+    - test
+      - test2
+    #+end_quote
+    - level3
+
+- list内置quote测试2
+  - level2
+    文字1
+    #+begin_quote
+    文字2
+    - test3
+
+      文字3
+    - test
+      - test2
+    #+end_quote
+    - level3
+
 * block测试
 ** src
 #+begin_src
@@ -124,6 +150,27 @@
 #+begin_src
   有缩进测试
 #+end_src
+
+#+begin_src
+缩进不一致测试
+  #+end_src
+
+- li
+  #+begin_src
+  有缩进的测试
+缩进内塌测试
+#+begin_quote
+  #+end_src
+
+  #+begin_src
+
+  首行空行测试
+  #+end_src
+
+  #+begin_quote
+  有缩进的测试
+缩进内塌测试
+  #+end_quote
 
 #+begin_src org
   内部再嵌套一个src block测试/代码类型显示测试
@@ -179,6 +226,59 @@ content without any dangerous
 content without any dangerous
 #+end_src
 
+#+begin_src org
+测试挡板用逗号怎么处理
+,
+,
+,
+#+end_src
+
+#+begin_src org
+  测试挡板用逗号怎么处理(经过Emacs编辑处理)
+  ,* Title!!!
+  ,*NonTitle!!!
+  ,,*Title!!!
+  ,,* TALTIE
+  ,逗号with any char
+  ,with english
+  ,#with#
+  ,# with
+  # comment
+  ,
+  ,#+Author: testauthor
+
+  ,#+begin_src org
+    测试挡板用逗号怎么处理(经过Emacs编辑处理)
+    ,,* Title!!!
+    ,,,*Title!!!
+    ,,,* TALTIE
+    ,逗号with any char
+    ,with english
+    ,#with#
+    ,# with
+    # comment
+    ,
+    ,,#+begin_src org
+      测试挡板用逗号怎么处理(经过Emacs编辑处理)
+      ,,,* Title!!!
+      ,,,,*Title!!!
+      ,
+    ,,#+end_src
+  ,#+end_src
+
+  ,* meta与注释测试
+  ,#+nonexistmeta
+  ,#+非法meta键
+  # comment message
+  # 注释信息
+  ,#+ metawithspace
+  ,#+ 有空格的meta
+  ,#+nonexistwithvaluemeta: 《非法带值meta键测试》
+  ,#+describe:
+  #合法但空的meta/不带空格的注释
+  # 带空格的注释
+#+end_src
+
 src块和quote块交错测试
 #+begin_src
 #+begin_quote
@@ -192,6 +292,30 @@ quote块和src块交错测试
 #+end_src
 
 ** quote测试
+
+*** quote+list循环嵌套
+- Lv1
+#+begin_quote
+查看是否为List所属
+#+end_quote
+
+- Lv1
+  #+begin_quote
+    普通文字1
+    - Lv2
+    #+begin_quote
+      普通文字2
+      - Lv3
+      #+begin_quote
+中途下坠极端测试
+- Lv5(0缩进)
+  - Lv6
+    child内容
+      #+end_quote
+    #+end_quote
+  #+end_quote
+
+*** 其他测试
 
 quote in link:
 

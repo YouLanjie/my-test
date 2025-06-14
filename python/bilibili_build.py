@@ -195,6 +195,8 @@ class Ui():
                 cont.reverse()
             elif inp == "p":
                 self.cmd(cmd_genal(obj, "play"))
+            elif inp == "P":
+                self.cmd(cmd_genal(obj, "play_mp4"))
             elif inp == "c":
                 self.cmd(cmd_genal(obj, "copy"))
             elif inp == "e":
@@ -262,6 +264,9 @@ def cmd_genal(li, mode) -> str:
                 output+=".m4a"
             elif mode == "play":
                 t+=f"echo \"Now Playing:{j.title}\"\n{cfg["player"]} \"{str(aud[0])}\"\n"
+                continue
+            elif mode == "play_mp4":
+                t+=f"echo \"Now Playing:{j.title}\"\n{cfg["player"]} \"{str(vid[0])}\" &\n{cfg["player"]} \"{str(aud[0])}\"\n"
                 continue
             else:
                 t+=f"ffmpeg -i \"{str(aud[0])}\" "
