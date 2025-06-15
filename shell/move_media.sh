@@ -18,6 +18,7 @@ usage: ${0##*/} [options]
      -o <dirname> 指定输出根文件夹
      -m           使用mv命令（默认）
      -c           使用cp命令
+     -n           不执行移动等操作
      -f <format>  指定输出路径格式(\1/\1_\2/\1_\2_\3)
      -v           执行时显示更多输出
      -h           帮助信息"
@@ -32,6 +33,7 @@ move_type=1
 # 2: cp
 format="\1/\1_\2/\1_\2_\3"
 verbose="false"
+no_exec="false"
 
 check() {
 	if [[ ! -d $1 ]] {
@@ -61,31 +63,34 @@ move() {
 		out="$out_d/$name"
 		if [[ ! -d $out_d ]] {
 			[[ $verbose == "true" ]] && echo "mkdir $out_d"
-			mkdir -p "$out_d"
+			[[ $no_exec != "true" ]] && mkdir -p "$out_d"
 		}
 		if [[ -f $out ]] {
 			if [[ $(md5sum $name|awk '{print $1}') == $(md5sum $out|awk '{print $1}') ]] {
 				[[ $verbose == "true" ]] && echo "\033[1;30;40m相同的文件: $name\033[0m"
-				if [[ ! -f "$name.bak" ]] mv "$name" "$name.bak"
+				if [[ ! -f "$name.bak" && $no_exec != "true" ]] mv "$name" "$name.bak"
 				continue
 			}
 			echo "无法移动的重名文件: $name"
 			continue
 		}
-		if (( $move_type == 1 )) {
-			mv "$name" "$out"
-		} else {
-			cp "$name" "$out"
+		if [[ $no_exec != "true" ]] {
+			if (( $move_type == 1 )) {
+				mv "$name" "$out"
+			} else {
+				cp "$name" "$out"
+			}
 		}
 	}
 }
 
-while {getopts 'i:o:mcf:vh?' arg} {
+while {getopts 'i:o:mncf:vh?' arg} {
 	case $arg {
 		i) check $OPTARG && input=$OPTARG ;;
 		o) check $OPTARG && output=$OPTARG ;;
 		m) move_type=1 ;;
 		c) move_type=2 ;;
+		n) no_exec="true" ;;
 		f) format=$OPTARG ;;
 		v) verbose="true" ;;
 		h|?) usage 0;;

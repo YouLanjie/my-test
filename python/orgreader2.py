@@ -3,6 +3,7 @@
 import pdb
 import os
 from pprint import pprint
+from wcwidth import wcswidth
 import sys
 from pathlib import Path
 import re
@@ -10,6 +11,23 @@ import re
 def dp(s):
     if len(sys.argv) > 1 and sys.argv[-1] == "--debug":
         print(s)
+
+def gsl(s:str):
+    """计算字符串打印宽度"""
+    width = 0
+    count = 0
+    for c in s:
+        if ord(c) <= 127:
+            width += 1
+            count += 1
+        else:
+            width += 2
+            count += 1
+    return width
+
+def gsls(text:str, width:int, fill=' '):
+    """根据打印宽度截断字符串"""
+    return text + fill * max(0, width - wcswidth(text))
 
 class SignalBox:
     def __init__(self) -> None:
@@ -21,7 +39,9 @@ class Root:
     def __init__(self, lines:list[str], i:int) -> None:
         self.start = i
         self.childable = True
-        self.line = lines[i]
+        self.line = ""
+        if lines:
+            self.line = lines[i]
         self.breakable = True
         self.end_offset = 0
         self.child = []
@@ -47,7 +67,6 @@ class Root:
     def end(self, i:int, is_normal_end:bool) -> int:
         """进行层级关闭通知，返回落点(<i则倒退)"""
         if not is_normal_end and not self.breakable:
-            dp(f"ERR: {self.start}:{self}")
             return self.start
         # 由上级关闭引起的关闭
         return i if self.current == self else self.current.end(i, False)
@@ -216,11 +235,9 @@ class BlockCode(Root):
         match = re.match(RULES[type(self).__name__]["match"], lines[i], re.I)
         if match is None:
             return
-        self.lang = match.group(1) if match.group(1) else ""
-        dp(f">>> APP_SRC:{SIGNALBOX.is_in_src}")
+        self.lang = match.group(1)
     def add(self, obj):
         if type(obj).__name__ in ("BlockCode", "BlockQuote"):
-            dp(f"<<< POP_ERRINSRC:{SIGNALBOX.is_in_src}")
             SIGNALBOX.is_in_src.pop(-1)
         self.number+=1
         match = re.match(r"^( *)(.*)", self.line[obj.start])
@@ -236,7 +253,6 @@ class BlockCode(Root):
     def end(self, i: int, is_normal_end: bool) -> int:
         ret = super().end(i, is_normal_end)
         if ret == i or not is_normal_end:
-            dp(f"<<< POP_SRC: {i}, {SIGNALBOX.is_in_src}")
             index = SIGNALBOX.is_in_src.index(self.start)
             SIGNALBOX.is_in_src=SIGNALBOX.is_in_src[:index]
         return ret
@@ -253,10 +269,20 @@ class BlockCode(Root):
         return True
     def text_process(self, text: str, position: str) -> str:
         if position == "self" and isinstance(self.line, str):
-            ret = f",---- Lang:{self.lang}\n"
+            ret = f",----{f" Lang:{self.lang}" if self.lang else ""}\n"
             for i in self.line.splitlines():
                 ret += f"| {i}\n"
             ret += "`----"
+            return ret
+        return ""
+
+class BlockExport(BlockCode):
+    def text_process(self, text: str, position: str) -> str:
+        if position == "self" and isinstance(self.line, str):
+            ret = f",vvvv ExportMode:{self.lang}\n"
+            for i in self.line.splitlines():
+                ret += f"| {i}\n"
+            ret += "`^^^^"
             return ret
         return ""
 
@@ -266,11 +292,9 @@ class BlockQuote(Root):
         self.breakable = False
         self.end_offset = 1
         SIGNALBOX.is_in_src.append(self.start)
-        # dp(f">>> APP_QUOT:{SIGNALBOX.is_in_src}")
     def end(self, i: int, is_normal_end: bool) -> int:
         ret = super().end(i, is_normal_end)
         if ret == i or not is_normal_end:
-            dp(f"<<< POP_QUOT: {i}, {SIGNALBOX.is_in_src}")
             index = SIGNALBOX.is_in_src.index(self.start)
             SIGNALBOX.is_in_src=SIGNALBOX.is_in_src[:index]
         return ret
@@ -289,24 +313,79 @@ class BlockQuote(Root):
             return "`========"
         return ""
 
+class Table(Text):
+    def __init__(self, lines: list[str], i: int) -> None:
+        super().__init__(lines, i)
+        line = self.line
+        split = re.match(r"\|[-+]+|", line)
+        if split and split.group() != "":
+            line = re.sub(r"\+","|",line)
+        match = re.findall(r"\|([^|]*)", line)
+        if len(match)>1 and match[-1] == "":
+            match = match[:-1]
+        self.col = len(match)
+        self.lines = [[re.sub(r"^ *(.*?) *$", r"\1", i) for i in match]]
+        self.width = [gsl(i) for i in self.lines[0]]
+    def reset_width(self):
+        for i in self.lines:
+            if len(i) != len(self.width):
+                continue
+            for j in range(len(i)):
+                if gsl(i[j]) > self.width[j]:
+                    self.width[j] = gsl(i[j])
+    def add_line(self, obj):
+        if type(obj).__name__ != "Table":
+            return
+        line = obj.lines[0]
+        li = []
+        if obj.col > self.col:
+            for i in self.lines:
+                i += ["" for i in range(obj.col - self.col)]
+                li.append(li)
+            self.col = obj.col
+        else:
+            li = self.lines
+            t = ["" for i in range(self.col - obj.col)]
+            line += t
+            li.append(line)
+        self.lines = li
+        self.reset_width()
+    def text_process(self, text:str, position:str) -> str :
+        width = self.col+1
+        for i in self.width:
+            width+=i
+        if position == "self":
+            text=f"{gsls("",width,".")}\n"
+            for i in self.lines:
+                for j,k in zip(i, self.width):
+                    text+=f"|{gsls(j, k)}"
+                text+="|\n"
+        if position == "after":
+            text=f"{gsls("",width,"`")}\n"
+        return f"{text}"
+
 #^ *#\+begin_([^ \n]+)(?:[ ]+(.*?))?\n(.*?)^ *#\+end_\1\n?
 RULES = {
-        "Meta":      {"match":r"^[ ]*#\+([^:]*):[ ]*(.*)", "class":Meta},
-        "Title":     {"match":r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)",
-                      "class":Title,
-                      "end":r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)"},
-        "BlockCode": {"match":r"^ *#\+begin_src(?:[ ]+(.*))?",
-                      "class":BlockCode,
-                      "end":r"^ *#\+end_src"},
-        "BlockQuote":{"match":r"^ *#\+begin_quote",
-                      "class":BlockQuote,
-                      "end":r"^ *#\+end_quote"},
-        "Comment":   {"match":r"^[ ]*#[ ]+(.*)","class":Comment},
-        "List":      {"match":r"^( *)- +(.*)",
-                      "class":List,
-                      "end":r"^( *)(.*)"},
-        "Text":      {"match":"", "class":Text},
-        "Root":      {"match":r"","class":Comment,"end":r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)"},
+        "Meta":       {"match":r"^[ ]*#\+([^:]*):[ ]*(.*)", "class":Meta},
+        "Title":      {"match":r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)",
+                       "class":Title,
+                       "end":r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)"},
+        "BlockCode":  {"match":r"^ *#\+begin_src(?:[ ]+(.*))?",
+                       "class":BlockCode,
+                       "end":r"^ *#\+end_src"},
+        "BlockExport":{"match":r"^ *#\+begin_export(?:[ ]+(.*))?",
+                        "class":BlockExport,
+                        "end":r"^ *#\+end_export"},
+        "BlockQuote": {"match":r"^ *#\+begin_quote",
+                       "class":BlockQuote,
+                       "end":r"^ *#\+end_quote"},
+        "Comment":    {"match":r"^[ ]*#[ ]+(.*)","class":Comment},
+        "List":       {"match":r"^( *)- +(.*)",
+                       "class":List,
+                       "end":r"^( *)(.*)"},
+        "Table":      {"match":r"^ *\|", "class":Table},
+        "Text":       {"match":"", "class":Text},
+        "Root":       {"match":r"","class":Comment,"end":r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)"},
         }
 SIGNALBOX = SignalBox()
 
@@ -318,17 +397,18 @@ def merge_text(node:Root):
             merge_text(i)
             last = None
             continue
-        dp(f"@-> i:{i.line}")
         if last is None or last.line == "":
             if isinstance(i, Text):
                 last = i
-                dp("@set last")
             continue
-        if isinstance(i, Text) and i.line != "":
-            last.line += i.line
-            remove_list.append(i)
+        if type(i) == type(last):
+            if type(i).__name__ == "Text" and i.line != "":
+                last.line += i.line
+                remove_list.append(i)
+            elif isinstance(last, Table):
+                last.add_line(i)
+                remove_list.append(i)
         else:
-            dp("@clear last")
             last = None
     for i in remove_list:
         node.remove(i)
@@ -339,9 +419,7 @@ def build_tree(lines:list[str]):
     root = Root(lines, 0)
     root.line = "TEST DOCUMENT"
     while i < len(lines):
-        dp(f"-> {i:2}, {last:3}, {str([lines[i]]):>25}")
         if i <= last:
-            dp(f"  -> Force to text(call back)")
             t = Text(lines, i)
             root.add(t)
         else:
@@ -356,42 +434,38 @@ def build_tree(lines:list[str]):
         i+=1
         if i >= len(lines):
             break
-        watch = lines[i]
         _,i=root.checkend(lines, i)
     merge_text(root)
     print(root.get_text())
     return root
 
-def main():
-    inpf = list(Path(".").glob("**/*.org"))
-    if len(inpf) == 0:
-        return
-    if not inpf[-1].is_file():
-        return
-    inp = """\
-- Lv1
-  #+begin_quote
-    普通文字1
-    - Lv2
-    #+begin_quote
-      普通文字2
-      - Lv3
-      #+begin_quote
-中途下坠极端测试
-- Lv5(0缩进)
-  - Lv6
-    child内容
-      #+end_quote
-    #+end_quote
-  #+end_quote
-"""
+def main(mode = 0):
+    inp = DEBUGINPUT
     flag = False
-    # flag = True
+    flag = True
+    ret = None
     if flag:
-        build_tree(inp.splitlines())
+        inpf = list(Path(".").glob("**/*.org"))
+        if len(inpf) == 0:
+            return
+        if not inpf[-1].is_file():
+            return
+        inp = inpf[-1].read_text()
+    if mode == 1:
+        # pip install org-python
+        import orgpython
+        ret = orgpython.to_html(inp)
+        print(ret)
     else:
-        build_tree(inpf[-1].read_text().splitlines())
+        ret = build_tree(inp.splitlines())
     # pprint(vars(SIGNALBOX))
+    return ret
+
+DEBUGINPUT = """\
+"""
 
 if __name__ == "__main__":
-    main()
+    arg = 0
+    if len(sys.argv) > 1 and sys.argv[-1] == "--diff":
+        arg = 1
+    main(arg)
