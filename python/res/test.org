@@ -56,6 +56,25 @@
 ** 打断列表的标题
   - level2_1
     - level3
+** TEST!
+*** TODO NO1                                                   :SAO:TAGS01:
+*** DONE NO2
+#+seq_todo: TODO(t!) MAYBE(m!) WAIT(w!) PLAN(p!) INBOX(i) | DONE(d@/!) CANCELED(c@/!)
+*** INBOX inbox!                                                      :SAO:
+*** CANCELED NO3                                              :TAGS01:TAG2:
+- State "CANCELED"   from "TODO"       [2025-06-21 六 01:35] \\
+  cancle
+- State "TODO"       from "WAIT"       [2025-06-21 六 01:35]
+- State "WAIT"       from "DONE"       [2025-06-21 六 01:35]
+- State "DONE"       from "DONE"       [2025-06-21 六 01:34] \\
+  使用@表示进入该状态需要记笔记
+
+  使用!表示进入该状态需要记录时间
+
+  斜杠用于分隔
+切换快捷键： =C-c C-t= 
+*** FASDAF :TEST:
+这样的标签也是可行的
 
 * 列表测试
 - level1(ind0)
@@ -100,9 +119,9 @@
 换行的子内容11(lv0)
 
 - level1
-    - 跳跃的level2
-      - 仅两个的level3
-  - level1.5
+  - 跳跃的level2
+    - 仅两个的level3
+- level1.5
 
 - level1
   内容测试1
@@ -136,7 +155,51 @@
       - test2
     #+end_quote
     - level3
+** 其他列表测试
+- li1: =-=
+  + li2: =+=
+    * li3: =*=
+  + li4
+    1. li4: 有序 =1.=
+       1) li5: 有序 =1)=
+- li6
+- [ ] 创建快捷键： =Alt+Shift+Enter=
+  - [ ] test1空测试
+  - [ ] TEST2
+- li7
+- [-] li8: 半测试
+  - [ ] oahafds
+  - [X] oihyuqerw
+- [X] li9: 全测试
+  - [X] oahafds
+  - [X] oihyuqerw
+- 子任务测试
+  - 分数测试 [3/5]
+    - [ ] Check box1
+    - [ ]Check box2
+    - [X] Check box3
+    - [X] Check box4
+    -   [X] Check box5
+    - [ ] Check box6
+  - 百分比测试 [60%]
+    - [ ] Check box1
+    - [ ]Check box2
+    - [X] Check box3
+    -    [X] Check box4
+    - [X] Check box5
+    - [ ] Check box6
 
+- [20%] 百分 [1/5] 比测试 [20%]
+  - [ ] Check box1
+  - [-] Check box2 [1/2] [50%]
+    - [X] Check box3
+    - [ ] Check Box7
+  - [X] Check box4 [100%] [2/2]
+    - [X] Check Box8
+    - [X] Check Box9
+  - [ ] Check box5
+  - [ ] Check box6
+    
 * block测试
 ** src
 #+begin_src
@@ -356,6 +419,7 @@ quote内嵌图片测试
 |    1-9     |       快捷栏       |
 |     E      |        勾爪        |
 
+
 |     R      |     坐骑/矿车      | Extra Content Test
 |     B      |      快速增益      |
 |     H      |      磕回血药      |
@@ -366,6 +430,7 @@ APPEND TEST|     M      |       大地图       |
 |    +/-     |      视角缩放      |
 |  Shift+F9  |    切换光照类型    |
 
+
 |    Tab     | 切换小地图显示类型 |
 |   Shift    |  按住智能切换物品  |
 |    Ctrl    |    切换智能光标    |
@@ -373,15 +438,21 @@ APPEND TEST|     M      |       大地图       |
 
 |
 
+
 ||
+
 
 | |
 
+
 |独行成表1|
+
 
 |独行成表2但无末
 
+
 |独行成表3无末|但有两条杠
+
 
 | [[https://terraria.wiki.gg/images/2/24/Squire_Slime.png]] | 侍卫史莱姆   | 扔铜头盔或铜短剑给史莱姆转换成       |
 | [[https://terraria.wiki.gg/images/7/7a/Nerdy_Slime.png]]  | 书呆子史莱姆 | =史莱姆王= 后                        |
@@ -392,18 +463,22 @@ APPEND TEST|     M      |       大地图       |
 | [[https://terraria.wiki.gg/images/7/7c/Surly_Slime.png]]  | 暴躁史莱姆   | 可以在血月时钓到                     |
 | [[https://terraria.wiki.gg/images/7/73/Mystic_Slime.png]] | 神秘史莱姆   | 用净化粉净化丛林刷出的神秘青蛙转换成 |
 
+
   | 药水/草药        | 太阳花 | 月光草 | 火焰花 | 闪耀根 | 寒颤棘 | 雏菊/水叶草 | 备注                               |
-  |                  |  <c>   |  <c>   |  <c>   |  <c>   |  <c>   |     <c>     |                                    |
+  |                  |  <c>   |  <c>   |  <c>   |  <c>   |  <c>   |         <r> | <l>                                |
   |------------------+--------+--------+--------+--------+--------+-------------+------------------------------------|
   | 铁皮药水（荐）   |   +    |        |        |        |        |             | +8防御                             |
   | 再生药水         |   +    |        |        |        |        |             | +生命回复，还须蘑菇                |
-  | 生命力药水       |        |   +    |        |        |   +    |      +      | +20%生命上限，还需要七彩矿鱼       |
+  | 生命力药水       |        |   +    |        |        |   +    |           + | +20%生命上限，还需要七彩矿鱼       |
   | 耐力药水         |        |        |        |   +    |        |             | 10%减伤，还需装甲洞穴鱼            |
   |------------------+--------+--------+--------+--------+--------+-------------+------------------------------------|
+  |                  |  <c>   |  <l>   |  <r>   |  <c>   |  <c>   |         <c> | <c>                                |
   | 重力药水         |        |        |   +    |   +    |        |             | 还需要死亡草和羽毛                 |
   | 洞穴探险药水     |        |   +    |        |   +    |        |             | 探灵矿/叶绿矿/生命果，还须(铂)金矿 |
-  | 危险感知药水     |        |        |        |        |   +    |             |                                    |
-  | 黑曜石皮药水     |        |        |   +    |        |        |      +      | 还需要黑曜石                       |
+  | 危险感知药水     |        |        |        |        |   +    |             | <r>                                |
+  | 黑曜石皮药水     |        |        |   +    |        |        |           + | 还需要黑曜石                       |
+  |                  |        |        |        |  <l>   |        |             |                                    |
+  |                  |        |        |        |  <d>   |  <l>   |             |                                    |
   |------------------+--------+--------+--------+--------+--------+-------------+------------------------------------|
   | 生物群系视觉药水 |        |   +    |   +    |   +    |        |             | 净化环境用                         |
 
@@ -464,3 +539,54 @@ side均为英文则为空格，若one
 no空格
 
 /斜体测试/
+
++删除线测试+
+
+~代码块测试1~
+
+=代码块测试2=
+
+*粗体测试*
+
+** 脚注测试
+包盖脚注1的文本[fn:1]ok?
+
+包盖脚注2的文本[fn:2]ok?
+
+包盖脚注3的文本[fn:3]ok?
+
+包盖脚注3的文本[fn:4]ok?
+
+fn5:[fn:5]
+
+[fn:2] TEST
+
+** Empty title
+some text here
+*** Footnotes
+真的是66666666
+
+** Footnotes
+
+这也步行？
+*** 那真的是会草了
+
+* footnotes
+test9phjjky0yuo
+
+* Footnotes                                                            :TEST:
+
+[fn:5] 哈哈，自动识别搞到这里来了 
+一个提前的Footnotes
+
+** What will happend if a sub title
+
+** Haha 内容在目录上可见但是在内容不可见么？呵呵                      :SAO:
+
+* Footnote
+[fn:3] testhaha
+
+* Footnotes
+[fn:4] Created
+
+[fn:1] testhaha
