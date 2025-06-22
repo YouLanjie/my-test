@@ -4,8 +4,15 @@
 #include <signal.h>
 #include <sys/time.h>
 
-void run();
-void quit();
+void run(int i) {
+	printf("Time is up!\n");
+	return;
+}
+
+void quit(int i) {
+	printf("\nExiting...\n");
+	exit(i);
+}
 
 int main() {
 	int stat = 0;
@@ -32,15 +39,5 @@ int main() {
 		// sleep(1);
 	// }
 	return 0;
-}
-
-void run() {
-	printf("Time is up!\n");
-	return;
-}
-
-void quit() {
-	printf("\nExiting...\n");
-	exit(0);
 }
 

@@ -100,7 +100,7 @@ struct tm *gtime()
 	return gmtime(&tp);
 }
 
-void *get_msg()
+void *get_msg(void *p)
 {
 	struct winsize size;
 

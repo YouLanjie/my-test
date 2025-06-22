@@ -309,7 +309,7 @@ static int control(int input) {
 	return input;
 }
 
-static void *print_ui()
+static void *print_ui(void *p)
 {
 	int farme = 0;
 	int dtime = 0;

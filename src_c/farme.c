@@ -16,8 +16,8 @@
 
 #define Max 22
 
-void *input();
-void *logic();
+void *input(void*);
+void *logic(void*);
 int is_move(int *v, int l);
 
 void b_2_func(void);
@@ -114,7 +114,7 @@ RUN:
 	return 0;
 }/*}}}*/
 
-void *input()
+void *input(void *p)
 {/*{{{*/
 	while (inp != 'q') {
 		inp = _getch();
@@ -123,7 +123,7 @@ void *input()
 	return NULL;
 }/*}}}*/
 
-void *logic()
+void *logic(void *p)
 {/*{{{*/
 	while (inp != 'q') {
 		usleep(TPS);
