@@ -28,6 +28,7 @@
 #+describe:
 #合法但空的meta/不带空格的注释
 # 带空格的注释
+*** 跳跃型子标题测试1
 ** 子标题测试1
 **** 跳跃型子标题测试2
 *** 子标题测试3
@@ -529,6 +530,25 @@ CAPTION测试
 #+CAPTION: 在上测试2
 [[./test.jpg]]
 
+#+CAPTION: 在上测试3,但是隔了老远
+倘若中间隔了一段文字，Caption无效
+[[./test.jpg]]
+
+#+CAPTION: 在上测试4,隔了个空行
+
+[[./test.jpg]]
+即使是隔了个空行也不行
+
+#+CAPTION: =样式于caption=
+[[./test.jpg]]
+
+*** [[http://bilibili.com][标题链接]]
+
+*** [[./test.jpg]]
+
+#+CAPTION: 标题图片*2
+*** [[./test.jpg]]
+
 ** code
 这里是一长=code1=串用于客串用的字符串
 
@@ -575,22 +595,52 @@ no空格
 
 *粗体测试*
 
+(=边界测试1=)
+
+#=边界测试2=#
+
+,=边界测试3=,
+
+.=边界测试4=.
+
+-=边界测试5=-
+
+[=边界测试6=]
+
+*/叠加测试1/*
+
+=*/叠加测试2/*=
+
+*/=叠加测试3=/*
+
 ** 脚注测试
-包盖脚注1的文本[fn:1]ok?
+包盖脚注1的文本(fn1)[fn:1]ok?
 
-包盖脚注2的文本[fn:2]ok?
+包盖脚注2的文本(fn2)[fn:2]ok?
 
-包盖脚注3的文本[fn:3]ok?
+包盖脚注3的文本(fn3)[fn:3]ok?
 
-包盖脚注3的文本[fn:4]ok?
+包盖脚注4的文本(fn4)[fn:4]ok?
+
+文字脚注测试2(fn:fuckname)[fn:fuckname]
+
+脚注格式测试(fn6)[fn:6]
 
 fn5:[fn:5]
 
-[fn:2] TEST
+[fn:2] TEST(fn2)
+
+文字脚注测试(fn:name)[fn:name]
+
+** 阻断使用
+
+[fn:6]fn6 no founded
 
 ** Empty title
 some text here
 *** Footnotes
+
+[fn:name] (fn:name)????脚注自动识别到这里来了？
 真的是66666666
 
 ** Footnotes
@@ -603,7 +653,7 @@ test9phjjky0yuo
 
 * Footnotes                                                            :TEST:
 
-[fn:5] 哈哈，自动识别搞到这里来了 
+[fn:5] (fn5)哈哈，自动识别搞到这里来了 
 一个提前的Footnotes
 
 ** What will happend if a sub title
@@ -611,9 +661,11 @@ test9phjjky0yuo
 ** Haha 内容在目录上可见但是在内容不可见么？呵呵                      :SAO:
 
 * Footnote
-[fn:3] testhaha
+[fn:3] testhaha(fn3)
 
 * Footnotes
-[fn:4] Created
+[fn:fuckname] Fuck!(fn:fuckname)
 
-[fn:1] testhaha
+[fn:4] Created(fn4)
+
+[fn:1] testhaha(fn1)

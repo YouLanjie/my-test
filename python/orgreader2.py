@@ -2,6 +2,7 @@
 
 from pprint import pprint
 from pathlib import Path
+import time
 import argparse
 import re
 import requests
@@ -38,17 +39,17 @@ class Strings:
     def __init__(self, s:str, node, parse_able : bool = True) -> None:
         self.s = s
         self.parse_able = parse_able
-        self.upward = None
         if isinstance(node, Root):
             self.upward = node
     def parse_inline_text(self, s:str) -> list[str]:
         pattern = [
                 ("link", re.compile(r"\[\[([^]]*)\](?:\[([^]]*)\])?\]")),
-                ("code", re.compile(r"=([^ ].*?(?<! ))=( |$)")),
-                ("code", re.compile(r"~([^ ].*?(?<! ))~( |$)")),
-                ("italic", re.compile(r"/([^ ].*?(?<! ))/( |$)")),
-                ("bold", re.compile(r"\*([^ ].*?(?<! ))\*( |$)")),
-                ("del", re.compile(r"\+([^ ].*?(?<! ))\+( |$)")),
+                ("code", re.compile(r"=([^ ].*?(?<! ))=(?=[ ()-]|$)")),
+                ("code", re.compile(r"~([^ ].*?(?<! ))~(?=[ ()-]|$)")),
+                ("italic", re.compile(r"/([^ ].*?(?<! ))/(?=[ ()-]|$)")),
+                ("bold", re.compile(r"\*([^ ].*?(?<! ))\*(?=[ ()-]|$)")),
+                ("del", re.compile(r"\+([^ ].*?(?<! ))\+(?=[ ()-]|$)")),
+                ("fn", re.compile(r"\[fn:([^]]*)\]")),
                 ]
         li = []
         i = 0
@@ -58,8 +59,11 @@ class Strings:
                 ret = current_pattern[1].match(s[i:])
                 if not ret:
                     continue
+                if current_pattern[0] not in ("link", "fn") and i-1 > 0 and s[i-1] not in " ()-":
+                    continue
                 if last != i and re.findall(r"[^ ]", s[last:i]):
                     li.append(s[last:i])
+                last = i
                 i+=ret.span()[1]
                 if current_pattern[0] == "link":
                     mode = "link"
@@ -69,13 +73,22 @@ class Strings:
                     if not alt and ret:
                         mode = "img"
                         alt = ret.group(1)
+                        caption = self.upward.document.meta["caption"]
+                        if not isinstance(self.upward, Title) and\
+                                caption[0] == self.upward.start-1 and last == 0:
+                            mode = "figure"
+                            alt = caption[1]
                     elif not alt:
                         alt = link
-                    if alt:
+                    if alt and mode != "img":
                         alt = self.parse_inline_text(alt)
                     li.append([mode, link, alt])
-                else:
+                elif current_pattern[0] == "code":
+                    li.append([current_pattern[0], [ret.group(1)]])
+                elif current_pattern[0] == "fn":
                     li.append([current_pattern[0], ret.group(1)])
+                else:
+                    li.append([current_pattern[0], self.parse_inline_text(ret.group(1))])
                 last = i
                 i -= 1
                 break
@@ -97,20 +110,35 @@ class Strings:
                 continue
             if mode == "text":
                 if i[0] == "link":
-                    ret += f""" [{self.list_to_text(i[2])}]({i[1]})"""
+                    ret += f""" [{self.list_to_text(i[2], mode)}]({i[1]})"""
                 elif i[0] == "img":
                     ret += f""" ![{self.list_to_text(i[2], mode)}]({i[1]})"""
+                elif i[0] == "figure":
+                    ret += f""" ![{self.list_to_text(i[2], mode)}]({i[1]})"""
                 elif i[0] in rules:
-                    ret += f""" {rules[i[0]][0]}{i[1]}{rules[i[0]][1]}"""
+                    ret += f""" {rules[i[0]][0]}{self.list_to_text(i[1], mode)}{rules[i[0]][1]}"""
                 else:
                     ret += str(i)
             else:
                 if i[0] == "link":
-                    ret += f"""\n<a href="{i[1]}">{self.list_to_text(i[2])}</a>"""
+                    ret += f"""\n<a href="{i[1]}">{self.list_to_text(i[2], mode)}</a>"""
                 elif i[0] == "img":
                     ret += f"""\n<img src="{i[1]}" alt="{self.list_to_text(i[2], mode)}"></img>"""
+                elif i[0] == "figure":
+                    self.upward.document.counter["figure_count"]+=1
+                    ret += f"""\n<div class="figure">\n<p><img src="{i[1]}" alt="{i[1]}"></img></p>\n"""
+                    ret += f"""<p><span class="figure-number">Figure {self.upward.document.counter["figure_count"]}: </span>{self.list_to_text(i[2])}</p></div>"""
+                elif i[0] == "fn":
+                    self.upward.document.counter["footnote_count"]+=1
+                    num = self.upward.document.counter["footnote_count"]
+                    fns = self.upward.document.footnotes
+                    fn = fns[i[1]]
+                    fn.id = num
+                    name = fn.name if fn.type == "str" else num
+                    ret += f"""<sup><a id="fnr.{name}" class="footref" """
+                    ret += f"""href="#fn.{name}" role="doc-backlink">{num}</a></sup>"""
                 elif i[0] in rules:
-                    ret += f"""\n{rules[i[0]][0]}{i[1]}{rules[i[0]][1]}"""
+                    ret += f"""\n{rules[i[0]][0]}{self.list_to_text(i[1], mode)}{rules[i[0]][1]}"""
                 else:
                     ret += str(i)
         if ret and ret[0] == "\n":
@@ -228,30 +256,48 @@ class Meta(Root):
         elif isinstance(self.document.meta[self.key], str):
             self.document.meta[self.key] = self.value
 
-        if self.key != "setupfile":
+        if self.key == "setupfile":
+            if self.value in self.document.setupfiles:
+                return
+            content = ""
+            try:
+                req = requests.get(self.value, timeout=3)
+                print(f"WARN 在文件中插入外部链接可能拖慢转译速度({req.elapsed})[{self.value}]")
+                if req.status_code == 200:
+                    req.encoding = req.apparent_encoding
+                    content = req.text
+            except:
+                setupfile=Path(f"{Path(self.document.file_name).parent}/{self.value}")
+                if setupfile.is_file():
+                    content = setupfile.read_text(encoding="utf8")
+            self.document.setupfiles.append(self.value)
+            doc = Document(content.splitlines(), setupfiles=self.document.setupfiles)
+            self.document.setupfiles=list(set(self.document.setupfiles)&set(doc.setupfiles))
+            for i in doc.meta:
+                if isinstance(self.document.meta[i], list):
+                    self.document.meta[i] += doc.meta[i]
+                elif doc.meta[i] != "":
+                    self.document.meta[i] = doc.meta[i]
+        elif self.key == "seq_todo":
+            value = self.value.split("|")
+            todo, done = [], []
+            if len(value) == 1:
+                done = value[0].split(" ")
+            elif len(value) == 2:
+                todo, done = value[0].split(" "), value[1].split(" ")
+            else:
+                todo = value[0].split(" ")
+                done = " ".join(value[1:]).split(" ")
+            while "" in todo:
+                todo.remove("")
+            while "" in done:
+                done.remove("")
+            self.document.meta["seq_todo"]["todo"]+=[re.sub(r"\(.*\)", "", i) for i in todo]
+            self.document.meta["seq_todo"]["done"]+=[re.sub(r"\(.*\)", "", i) for i in done]
             return
-        if self.value in self.document.setupfiles:
-            return
-        content = ""
-        try:
-            req = requests.get(self.value, timeout=3)
-            print(f"WARN 在文件中插入外部链接可能拖慢转译速度({req.elapsed})[{self.value}]")
-            if req.status_code == 200:
-                req.encoding = req.apparent_encoding
-                content = req.text
-        except:
-            setupfile=Path(f"{Path(self.document.file_name).parent}/{self.value}")
-            if setupfile.is_file():
-                content = setupfile.read_text(encoding="utf8")
-        self.document.setupfiles.append(self.value)
-        doc = Document(content.splitlines(), setupfiles=self.document.setupfiles)
-        self.document.setupfiles=list(set(self.document.setupfiles)&set(doc.setupfiles))
-        for i in doc.meta:
-            if isinstance(self.document.meta[i], list):
-                self.document.meta[i] += doc.meta[i]
-            elif doc.meta[i] != "":
-                self.document.meta[i] = doc.meta[i]
     def get_text(self, mode:str="text") -> str:
+        if self.key == "caption":
+            self.document.meta["caption"] = (self.start, self.value)
         return ""
 
 class Title(Root):
@@ -264,7 +310,8 @@ class Title(Root):
         self.level = len(match.group(1))
         self.comment = match.group(2) != ""
         self.line = Strings(match.group(3), self)
-        self.TAG = Strings(match.group(4), self)
+        self.tag = Strings(match.group(4), self)
+        self.todo = []
 
         last = self.document.table_of_content[-1] if self.document.table_of_content else []
         li = []
@@ -276,9 +323,12 @@ class Title(Root):
             li.append(last[num])
         li[num] += 1
         text = self.line.get_text("text")
-        li.append(text + f"{get_str_in_width("",50-get_str_width(text), align="<r>")+":"+self.TAG.s+":" if self.TAG.s else ""}")
+        li.append({"title":text, "tag":self.tag.s, "todo":None})
         self.id = li
-        self.document.table_of_content.append(li)
+        if not self.comment:
+            self.document.table_of_content.append(li)
+
+        self.document.counter["lowest_title"] = min(self.document.counter["lowest_title"], self.level)
     def end_condition(self, match: re.Match | None) -> bool:
         if match is None:
             return False
@@ -293,19 +343,32 @@ class Title(Root):
     def get_text(self, mode:str="text") -> str:
         if self.comment:
             return ""
-        text = self.line.get_text(mode)
+        title = self.line.get_text(mode)
 
         lv = ""
-        for i in self.id[:-1]:
+        for i in self.id[self.document.counter["lowest_title"]-1:-1]:
             lv+=f"{i}."
         lv = lv[:-1]
         if mode == "text":
-            text = f"{lv}: {text}"
-            if self.TAG.s:
+            text = f"{lv}: {title}"
+            if self.tag.s:
                 text = text[:-1]
-                text += f"\t\t<:{self.TAG.s}:>\n"
+                text += f"\t\t<:{self.tag.s}:>\n"
         else:
-            text = f"<div class=\"outline-{self.level+1}\">\n<h{self.level+1}><span class=\"section-number-{self.level+1}\">{lv}.</span> {text}</h{self.level+1}>"
+            text = f"""<div class="outline-{self.level+1}">\n<h{self.level+2-self.document.counter["lowest_title"]} id="org-title-{re.sub(r"\.","-",lv)}">"""
+            text += f"""<span class="section-number-{self.level+2-self.document.counter["lowest_title"]}">{lv}.</span>"""
+            if self.todo:
+                text+=f" <span class=\"todo {self.todo[1]}\">{self.todo[1]}</span>"
+            text += f" {title}"
+            if self.tag.s:
+                text += f"""{"&nbsp;"*3}<span class="tag">"""
+                tags = self.tag.s.split(":")
+                li = []
+                for i in tags:
+                    li.append(f"""<span class="{i}">{i}</span>""")
+                text += "&nbsp;".join(li)
+                text += """</span>"""
+            text += f"</h{self.level+2-self.document.counter["lowest_title"]}>"
 
         for i in self.child:
             if mode == "text":
@@ -329,6 +392,21 @@ class Footnotes(Title):
         self.level = len(match.group(1))
         self.comment = match.group(2) != ""
         self.line = Strings(match.group(3), self)
+    def get_text(self, mode:str="text") -> str:
+        return ""
+
+class Footnote(Text):
+    def __init__(self, document) -> None:
+        super().__init__(document)
+        match = RULES[type(self).__name__]["match"].match(self.line.s)
+        if match is None:
+            return
+        fn = {"name"}
+        self.name = match.group(1)
+        self.type = "str" if re.findall("[^0-9]", self.name) else "int"
+        self.line = Strings(match.group(2), self)
+        self.id = -1
+        self.document.footnotes[self.name] = self
     def get_text(self, mode:str="text") -> str:
         return ""
 
@@ -686,6 +764,7 @@ RULES = {
                        "class":List,
                        "end":re.compile(r"^( *)(.*)", re.I)},
         "Table":      {"match":re.compile(r"^ *\|", re.I), "class":Table},
+        "Footnote":   {"match":re.compile(r"^\[fn:([^]]*)\](.*)"), "class":Footnote},
         "Text":       {"match":re.compile(""), "class":Text},
         "Root":       {"match":re.compile(""),
                        "class":Comment,
@@ -699,6 +778,7 @@ class Document:
         self.current_line = 0
         self.is_in_src = []
         self.table_of_content = []
+        self.footnotes = {}
         self.setupfiles = setupfiles
         self.meta={
             "title":[],
@@ -708,8 +788,11 @@ class Document:
             "setupfile":[],
             "html_link_home":"",
             "html_link_up":"",
+            "caption":(-2, ""),
             "html_head":[],
+            "seq_todo":{"todo":[], "done":[]},
         }
+        self.counter = {"figure_count":0, "footnote_count":0, "lowest_title":50, "clean_up":False}
 
         self.root = Root(self)
         self.root.line.s = self.file_name if self.file_name else "<DOCUMENT IN STRINGS>"
@@ -741,7 +824,22 @@ class Document:
     def merge_text(self, node:Root):
         last = None
         remove_list = []
+        count_title = 0
         for i in node.child:
+            if isinstance(i, Title):
+                key = i.line.s.split(" ")[0]
+                todo = None
+                if key in self.meta["seq_todo"]["todo"]:
+                    todo = ["todo", key]
+                elif key in self.meta["seq_todo"]["done"]:
+                    todo = ["done", key]
+                if todo:
+                    i.line.s = i.line.s[len(key):]
+                    i.todo = todo
+                    self.table_of_content[count_title][-1]["todo"] = todo
+                    self.table_of_content[count_title][-1]["title"] = i.line.get_text()
+                if not i.comment:
+                    count_title += 1
             if i.childable:
                 self.merge_text(i)
                 last = None
@@ -750,12 +848,15 @@ class Document:
                 if isinstance(i, Text):
                     last = i
                 continue
-            if type(i) == type(last):
-                if type(i).__name__ == "Text" and i.line.s != "":
+            if type(i) == type(last) or (type(last) == Footnote and type(i) == Text):
+                if type(i) == Text and i.line.s != "":
                     last.line.s += f" {i.line.s}"
                     remove_list.append(i)
                 elif isinstance(last, Table):
                     last.add_line(i)
+                    remove_list.append(i)
+                elif type(last) == Footnote:
+                    last.line.s += f" {i.line.s}"
                     remove_list.append(i)
                 else:
                     last = None
@@ -764,21 +865,69 @@ class Document:
         for i in remove_list:
             node.remove(i)
         return
-    def get_table_of_content(self) -> str:
-        ret = ""
+    def get_table_of_content(self, mode = "text") -> str:
+        if mode == "text":
+            ret = ""
+            for i in self.table_of_content:
+                i = i[self.counter["lowest_title"]-1:]
+                count = 0
+                lastest = 0
+                j = ""
+                for j in i:
+                    if isinstance(j, int):
+                        lastest = j
+                        count+=1
+                    else:
+                        break
+                if isinstance(j, dict):
+                    ret1 = f"{"."*((count-1)*3-1)}{" " if count>1 else ""}{lastest}. "
+                    ret1+=f"{f"{j["todo"][1]} " if j["todo"] else ""}{j["title"]}"
+                    if j["tag"]:
+                        ret1=get_str_in_width(f"{ret1}", 40, align="<l>")
+                        ret1+=f":{j["tag"]}:"
+                    ret+=ret1 + "\n"
+            return ret
+        if not self.table_of_content:
+            return ""
+        ret = """\n<div id="table-of-contents" role="doc-toc">\n<h2>Table of Contents</h2>\n"""
+        ret += """<div id="text-table-of-contents" role="doc-toc">\n"""
+        last = self.counter["lowest_title"]-1
         for i in self.table_of_content:
-            count = 0
-            lastest = 0
-            j = ""
-            for j in i:
-                if isinstance(j, int):
-                    lastest = j
-                    count+=1
-                else:
-                    break
-            ret+=f"{"."*((count-1)*3-1)}{" " if count>1 else ""}{lastest}. {j}\n"
+            level = ""
+            for j in i[self.counter["lowest_title"]-1:-1]:
+                level+=f"{j}."
+            text = f"{level} "
+            if i[-1]["todo"]:
+                text+=f"<span class=\"todo {i[-1]["todo"][0]}\">{i[-1]["todo"][1]}</span>"
+            text+=f"{i[-1]["title"]}"
+            if i[-1]["tag"]:
+                text+=f"""{"&nbsp;"*3}<span class="tag">"""
+                tags = i[-1]["tag"].split(":")
+                li = []
+                for i in tags:
+                    li.append(f"""<span class="{i}">{i}</span>""")
+                text += "&nbsp;".join(li)
+                text += """</span>"""
+
+            if len(i[:-1]) > last:
+                ret+="<ul><li>"*(len(i[:-1])-last)
+            elif len(i[:-1]) == last:
+                ret+="</li><li>"
+            else:
+                ret+="</li></ul>"*(last-len(i[:-1]))
+                ret+="</li><li>"
+            ret+=f"""<a href="#org-title-{re.sub(r"\.","-",level[:-1])}">{text}</a>"""
+            last = len(i[:-1])
+
+        ret += "</div></div>"
         return ret
+    def to_text(self) -> str:
+        self.counter["figure_count"] = 0
+        self.counter["footnote_count"] = 0
+        return self.root.get_text()
     def to_html(self) -> str:
+        self.counter["figure_count"] = 0
+        self.counter["footnote_count"] = 0
         meta = f"""\n{"\n".join(\
                 [f"""<meta name="{i}" content="{" ".join(self.meta[i])}" />"""\
                 for i in ("author", "description")])}"""
@@ -791,13 +940,47 @@ class Document:
 <title>{" ".join(self.meta["title"])}</title>{html_head}
 </head>
 <body>
-<div id="content" class="content">{title}
 """
+        if self.meta["html_link_home"] or self.meta["html_link_up"]:
+            html += f"""\
+<div id="org-div-home-and-up">
+ <a accesskey="h" href="{self.meta["html_link_up"]}"> UP </a>
+ |
+ <a accesskey="H" href="{self.meta["html_link_home"]}"> HOME </a>
+</div>
+"""
+        html += f"""<div id="content" class="content">{title}{self.get_table_of_content("html")}"""
         line = self.root.line.s
         self.root.line.s = ""
         html += self.root.get_text("html")
         self.root.line.s = line
-        html += "</div>\n</body>\n</html>"
+        if self.footnotes:
+            html += """\
+<div id="footnotes">
+<h2 class="footnotes">Footnotes: </h2>
+<div id="text-footnotes">
+"""
+            for i in sorted([self.footnotes[i] for i in self.footnotes], key=lambda x:x.id):
+                i.line.get_text("html")
+            for i in sorted([self.footnotes[i] for i in self.footnotes], key=lambda x:x.id):
+                html += f"""\
+<div class="footdef">
+<sup><a id="fn.{i.name if i.type == "str" else i.id}" class="footnum" href="#fnr.{i.name if i.type == "str" else i.id}" role="doc-backlink">{i.id}</a></sup>
+<div class="footpara" role="doc-footnote"><p class="footpara"> {i.line.get_text("html")} </p></div>
+</div>"""
+            html += "</div></div>"
+        html += "</div>\n"
+
+        html += f"""\
+<div id="postamble" class="status">
+{f"<p class=\"date\">标记时间: {" ".join(self.meta["date"])}</p>" if self.meta["date"] else ""}
+{f"<p class=\"author\">作者: {" ".join(self.meta["author"])}</p>" if self.meta["author"] else ""}
+{f"<p class=\"description\">描述: {" ".join(self.meta["description"])}</p>" if self.meta["description"] else ""}
+<p class="date">文件生成时间: {time.strftime("%Y-%m-%d")}{"一二三四五六日"[int(time.strftime("%w"))]}\
+{time.strftime("%H:%M:%S")}</p>
+</div>
+"""
+        html += "</body>\n</html>"
         return html
 
 def main():
@@ -824,9 +1007,12 @@ def main():
     else:
         ret = Document(inp.splitlines(), file_name=inp_f)
         if args.text_mode:
-            print(ret.root.get_text())
+            print(" Table of Contents")
+            print("===================")
             print(ret.get_table_of_content())
-            pprint(ret.meta)
+            print(ret.to_text())
+            # pprint(ret.meta)
+            # pprint(ret.table_of_content)
             # pprint(ret.setupfiles)
             # pprint(vars(ret))
         else:
