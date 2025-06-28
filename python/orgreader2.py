@@ -35,16 +35,91 @@ def get_str_in_width(text:str, width:int, fill:str=' ', align:str="<c>"):
     return ret_text
 
 class Strings:
-    def __init__(self, s:str, parse_able : bool = True) -> None:
+    def __init__(self, s:str, node, parse_able : bool = True) -> None:
         self.s = s
         self.parse_able = parse_able
+        self.upward = None
+        if isinstance(node, Root):
+            self.upward = node
+    def parse_inline_text(self, s:str) -> list[str]:
+        pattern = [
+                ("link", re.compile(r"\[\[([^]]*)\](?:\[([^]]*)\])?\]")),
+                ("code", re.compile(r"=([^ ].*?(?<! ))=( |$)")),
+                ("code", re.compile(r"~([^ ].*?(?<! ))~( |$)")),
+                ("italic", re.compile(r"/([^ ].*?(?<! ))/( |$)")),
+                ("bold", re.compile(r"\*([^ ].*?(?<! ))\*( |$)")),
+                ("del", re.compile(r"\+([^ ].*?(?<! ))\+( |$)")),
+                ]
+        li = []
+        i = 0
+        last = i
+        while i < len(s):
+            for current_pattern in pattern:
+                ret = current_pattern[1].match(s[i:])
+                if not ret:
+                    continue
+                if last != i and re.findall(r"[^ ]", s[last:i]):
+                    li.append(s[last:i])
+                i+=ret.span()[1]
+                if current_pattern[0] == "link":
+                    mode = "link"
+                    link = ret.group(1)
+                    alt = ret.group(2)
+                    ret = re.match(r".*/(.*\.(?:jpg|png|jpeg|gif))",link,re.I)
+                    if not alt and ret:
+                        mode = "img"
+                        alt = ret.group(1)
+                    elif not alt:
+                        alt = link
+                    if alt:
+                        alt = self.parse_inline_text(alt)
+                    li.append([mode, link, alt])
+                else:
+                    li.append([current_pattern[0], ret.group(1)])
+                last = i
+                i -= 1
+                break
+            i+=1
+        if last != i and re.findall(r"[^ ]", s[last:i]):
+            li.append(s[last:i])
+        return li
+    def list_to_text(self, li:list, mode:str="text") -> str:
+        if not li:
+            return ""
+        rules = {"code":("<code>","</code>"),
+                 "italic":("<i>", "</i>"),
+                 "bold":("<b>", "</b>"),
+                 "del":("<del>", "</del>")}
+        ret = ""
+        for i in li:
+            if isinstance(i, str):
+                ret+=i
+                continue
+            if mode == "text":
+                if i[0] == "link":
+                    ret += f""" [{self.list_to_text(i[2])}]({i[1]})"""
+                elif i[0] == "img":
+                    ret += f""" ![{self.list_to_text(i[2], mode)}]({i[1]})"""
+                elif i[0] in rules:
+                    ret += f""" {rules[i[0]][0]}{i[1]}{rules[i[0]][1]}"""
+                else:
+                    ret += str(i)
+            else:
+                if i[0] == "link":
+                    ret += f"""\n<a href="{i[1]}">{self.list_to_text(i[2])}</a>"""
+                elif i[0] == "img":
+                    ret += f"""\n<img src="{i[1]}" alt="{self.list_to_text(i[2], mode)}"></img>"""
+                elif i[0] in rules:
+                    ret += f"""\n{rules[i[0]][0]}{i[1]}{rules[i[0]][1]}"""
+                else:
+                    ret += str(i)
+        if ret and ret[0] == "\n":
+            ret = ret[1:]
+        return ret
     def get_text(self, mode:str="text") -> str:
         if not self.parse_able:
             return self.s
-        # links
-        ret = re.sub(r"\[\[([^]]*)\](?:\[(.*)\])?\]",
-                     lambda m: f"{f"[{m.group(2)}]" if m.group(2) else f"<{m.group(1)}>"}", self.s)
-        return ret
+        return self.list_to_text(self.parse_inline_text(self.s), mode)
 
 class Root:
     def __init__(self, document) -> None:
@@ -53,9 +128,9 @@ class Root:
         self.document = document
         self.start = document.current_line
         self.childable = True
-        self.line = Strings("")
+        self.line = Strings("", self)
         if document.lines:
-            self.line = Strings(document.lines[document.current_line])
+            self.line = Strings(document.lines[document.current_line], self)
         self.breakable = True
         self.end_offset = 0
         self.child = []
@@ -98,13 +173,18 @@ class Root:
         if not self.childable:
             return
         self.child.remove(obj)
-    def get_text(self, mode:str="text"):
-        ret = self.text_process(self.line.get_text(), "self")
+    def get_text(self, mode:str="text") -> str:
+        r"""For Sub class"""
+        text = self.line.get_text(mode) + "\n"
         for i in self.child:
             for j in i.get_text(mode).splitlines():
-                ret += self.text_process(j, "child")
-        ret += self.text_process("", "after")
-        return ret
+                if len(j) > 0 and j[-1] != "\n":
+                    j+="\n"
+                if mode == "text":
+                    text += f"|   {j}"
+                else:
+                    text += j
+        return text
     def end_condition(self, match: re.Match | None) -> bool:
         """For Sub class"""
         if match is None:
@@ -112,30 +192,25 @@ class Root:
         if not isinstance(self.current, Title):
             return True
         return False
-    def text_process(self, text:str, position:str) -> str :
-        r"""For Sub class"""
-        if len(text) > 0 and text[-1] != "\n":
-            text+="\n"
-        if position == "child":
-            text = f"|   {text}"
-        return f"{text}"
 
 class Text(Root):
     def __init__(self, document) -> None:
         super().__init__(document)
         self.childable = False
         self.line.s = re.sub(r"^ *", "", self.line.s)
-    def text_process(self, text:str, position:str) -> str :
-        if len(text) > 0 and text[-1] != "\n":
-            text+="\n"
+    def get_text(self, mode:str="text") -> str:
+        text = self.line.get_text(mode)
+        if mode == "html":
+            if text != "":
+                text = f"<p>{text}</p>"
         return f"{text}"
 
 class Comment(Root):
     def __init__(self, document) -> None:
         super().__init__(document)
         self.childable = False
-    def text_process(self, text:str, position:str) -> str :
-        return f""
+    def get_text(self, mode:str="text") -> str:
+        return ""
 
 class Meta(Root):
     def __init__(self, document) -> None:
@@ -176,7 +251,7 @@ class Meta(Root):
                 self.document.meta[i] += doc.meta[i]
             elif doc.meta[i] != "":
                 self.document.meta[i] = doc.meta[i]
-    def text_process(self, text:str, position:str) -> str :
+    def get_text(self, mode:str="text") -> str:
         return ""
 
 class Title(Root):
@@ -188,8 +263,8 @@ class Title(Root):
         self.id = []
         self.level = len(match.group(1))
         self.comment = match.group(2) != ""
-        self.line = Strings(match.group(3))
-        self.TAG = Strings(match.group(4))
+        self.line = Strings(match.group(3), self)
+        self.TAG = Strings(match.group(4), self)
 
         last = self.document.table_of_content[-1] if self.document.table_of_content else []
         li = []
@@ -200,7 +275,7 @@ class Title(Root):
                 continue
             li.append(last[num])
         li[num] += 1
-        text = self.line.get_text()
+        text = self.line.get_text("text")
         li.append(text + f"{get_str_in_width("",50-get_str_width(text), align="<r>")+":"+self.TAG.s+":" if self.TAG.s else ""}")
         self.id = li
         self.document.table_of_content.append(li)
@@ -215,24 +290,34 @@ class Title(Root):
         if type(self.current).__name__ in ("BlockCode", "BlockQuote"):
             return True
         return False
-    def text_process(self, text:str, position:str) -> str :
-        if position == "self" and self.comment:
-            text = f"{text}(COMMENTED)"
-        if len(text) > 0 and text[-1] != "\n":
-            text+="\n"
-        if position == "self":
-            lv = ""
-            for i in self.id[:-1]:
-                lv+=f"{i}."
-            lv = lv[:-1]
-            ret = f"{lv}: {text}"
+    def get_text(self, mode:str="text") -> str:
+        if self.comment:
+            return ""
+        text = self.line.get_text(mode)
+
+        lv = ""
+        for i in self.id[:-1]:
+            lv+=f"{i}."
+        lv = lv[:-1]
+        if mode == "text":
+            text = f"{lv}: {text}"
             if self.TAG.s:
-                ret = ret[:-1]
-                ret += f"\t\t<:{self.TAG.s}:>\n"
-            return ret
-        if position == "child":
-            return f"|   {text}"
-        return ""
+                text = text[:-1]
+                text += f"\t\t<:{self.TAG.s}:>\n"
+        else:
+            text = f"<div class=\"outline-{self.level+1}\">\n<h{self.level+1}><span class=\"section-number-{self.level+1}\">{lv}.</span> {text}</h{self.level+1}>"
+
+        for i in self.child:
+            if mode == "text":
+                if text and text[-1] != "\n":
+                    text+="\n"
+                for j in i.get_text(mode).splitlines():
+                    text+=f"|   {j}\n"
+            else:
+                text += i.get_text(mode)
+        if mode != "text":
+            text += "</div>"
+        return text
 
 class Footnotes(Title):
     def __init__(self, document) -> None:
@@ -243,8 +328,8 @@ class Footnotes(Title):
         self.id = []
         self.level = len(match.group(1))
         self.comment = match.group(2) != ""
-        self.line = Strings(match.group(3))
-    def text_process(self, text:str, position:str) -> str :
+        self.line = Strings(match.group(3), self)
+    def get_text(self, mode:str="text") -> str:
         return ""
 
 class List(Root):
@@ -257,7 +342,7 @@ class List(Root):
         self.level = 1
         ids = re.sub("[^0-9]*", "", match.group(2))
         self.id = int(ids) if ids != "" else -1
-        self.line = Strings(match.group(3))
+        self.line = Strings(match.group(3), self)
     def add(self, obj):
         if type(obj).__name__ == "List":
             obj.level = self.level+1
@@ -277,16 +362,39 @@ class List(Root):
                 return False
             return True
         return False
-    def text_process(self, text: str, position: str) -> str:
-        if position == "self":
-            ret = f"{self.level}" if self.id <= 0 else f"{self.level}[{self.id}]"
-            return f"- L{ret} {text}"
-        if position == "child":
-            if self.child and isinstance(self.child[0], Text) and text==self.child[0].line:
-                return f"{text}"
-            if len(text) > 0 and text[0] != "\n":
-                text=f"\n|   {text}"
-            return f"{text}"
+    def get_text(self, mode:str="text") -> str:
+        if mode == "text":
+            level = f"{self.level}" if self.id <= 0 else f"{self.level}[{self.id}]"
+            text = f"- L{level} {self.line.get_text(mode)}"
+            index = 0
+            for i in self.child:
+                if isinstance(i, Text) and len(i.get_text()) > 0 and index == 0:
+                    text+=f" {i.get_text()}\n"
+                    index+=1
+                    continue
+                if text and text[-1] != "\n":
+                    text+="\n"
+                for j in i.get_text(mode).splitlines():
+                    text+=f"|   {j}\n"
+                index+=1
+            return text
+        if self.id <= 0:
+            head=f"<ul class=\"org-ul\">\n"
+        else:
+            head=f"<ol class=\"org-ol\">\n"
+        text = f"{head}<li>"
+        text += f"<p>\n{Strings(self.line.s+(self.child[0].line.s if self.child and isinstance(self.child[0], Text) else ""), self).get_text(mode)}"
+        index = 0
+        for i in self.child:
+            if index == 0 and isinstance(i, Text) and len(i.get_text()) > 0:
+                index+=1
+                continue
+            index+=1
+            text += i.get_text(mode) + "\n"
+        if self.id <= 0:
+            text+="</ul>"
+        else:
+            text+="</ol>"
         return text
 
 class BlockCode(Root):
@@ -335,25 +443,35 @@ class BlockCode(Root):
         for i in lines:
             i = re.sub(r"^( *),(?:[*,]|#\+)", r"\1", i)
             self.line += f"{i}\n"
-        self.line = Strings(self.line)
+        self.line = Strings(self.line, self)
         return True
-    def text_process(self, text: str, position: str) -> str:
-        if position == "self" and isinstance(self.line, Strings):
+    def get_text(self, mode:str="text") -> str:
+        if not isinstance(self.line, Strings):
+            return ""
+        if mode == "text":
             ret = f",----{f" Lang:{self.lang}" if self.lang else ""}\n"
             for i in self.line.s.splitlines():
                 ret += f"| {i}\n"
             ret += "`----"
             return ret
-        return ""
+        ret = f"<pre class=\"src src-{self.lang.lower() if self.lang else "nil"}\">"
+        for i in self.line.s.splitlines():
+            ret += f"{i}\n"
+        ret += "</pre>"
+        return ret
 
 class BlockExport(BlockCode):
-    def text_process(self, text: str, position: str) -> str:
-        if position == "self" and isinstance(self.line, Strings):
-            ret = f",vvvv ExportMode:{self.lang}\n"
+    def get_text(self, mode:str="text") -> str:
+        if not isinstance(self.line, Strings):
+            return ""
+        if mode == "text":
+            ret = f",vvvv{f" Lang:{self.lang}" if self.lang else ""}\n"
             for i in self.line.s.splitlines():
                 ret += f"| {i}\n"
             ret += "`^^^^"
             return ret
+        if mode==self.lang:
+            return self.line.s
         return ""
 
 class BlockQuote(Root):
@@ -372,52 +490,64 @@ class BlockQuote(Root):
         if match is None:
             return False
         return True
-    def text_process(self, text: str, position: str) -> str:
-        if len(text) > 0 and text[-1] != "\n":
-            text+="\n"
-        if position == "self":
-            return ",========\n"
-        if position == "child":
-            return f"> {text}"
-        if position == "after":
-            return "`========"
-        return ""
+    def get_text(self, mode:str="text") -> str:
+        if mode == "text":
+            text = ",========\n"
+            for i in self.child:
+                if text and text[-1] != "\n":
+                    text+="\n"
+                for j in i.get_text(mode).splitlines():
+                    text+=f"|   {j}\n"
+            text += "`========"
+            return text
+        text = "<blockquote>\n"
+        for i in self.child:
+            text += i.get_text(mode)
+        text += "</blockquote>"
+        return text
 
 class Table(Text):
     def __init__(self, document) -> None:
         super().__init__(document)
+        self.col = 0
+        self.lines : list[list[Strings]|str] = []
+        self.width = []
+        self.control_line = []
+        self.align = []
+
         line = self.line.s
-        split = re.match(r"\|[-+]+|", line)
-        if split and split.group() != "":
-            line = re.sub(r"\+","|",line)
+        split = re.match(r"\|-", line)
+        if split:
+            self.lines = ["split"]
+            self.reset_width()
+            self.check_control_line()
+            return
         match = re.findall(r"\|([^|]*)", line)
         if len(match)>1 and match[-1] == "":
             match = match[:-1]
         self.col = len(match)
-        self.lines : list[list[Strings]]= [[Strings(re.sub(r"^ *(.*?) *$", r"\1", i)) for i in match]]
-        self.width = [get_str_width(i.get_text()) for i in self.lines[0]]
-        self.control_line = []
-        self.align = []
+        self.lines : list[list[Strings]|str]= [[Strings(re.sub(r"^ *(.*?) *$", r"\1", i), self) for i in match]]
+        self.reset_width()
         self.check_control_line()
     def check_control_line(self):
         self.control_line = []
         index = 0
         for i in self.lines:
-            is_break_split = False
+            if i == "split":
+                self.control_line.append((index, "split"))
+                index+=1
+                continue
             may_is_align = False
             is_break_align = False
             for j in i:
-                result = re.findall(r"[^-]", j.s)
-                if result:
-                    is_break_split = True
+                if not isinstance(j, Strings):
+                    continue
                 if j.s.lower() in ("<l>", "<c>", "<r>"):
                     may_is_align = True
                 if j.s.lower() not in ("<l>", "<c>", "<r>", ""):
                     is_break_align = True
             if may_is_align and not is_break_align:
                 self.control_line.append((index, "align"))
-            if not is_break_split:
-                self.control_line.append((index, "split"))
             index+=1
         self.align = ["<l>" for i in self.lines[0]]
         for i in self.control_line:
@@ -429,9 +559,11 @@ class Table(Text):
                     self.align[index] = col.s
                 index+=1
     def reset_width(self):
+        """重设每列的最大宽度"""
         for i in self.lines:
-            if len(i) != len(self.width):
+            if not isinstance(i, list):
                 continue
+            self.width = [self.width[i] if i < len(self.width) else 0 for i in range(len(i))]
             for j in range(len(i)):
                 if get_str_width(i[j].get_text()) > self.width[j]:
                     self.width[j] = get_str_width(i[j].get_text())
@@ -439,37 +571,95 @@ class Table(Text):
         if type(obj).__name__ != "Table":
             return
         line = obj.lines[0]
+        if isinstance(line, str):
+            self.lines.append(line)
+            return
         li = []
         if obj.col > self.col:
             for i in self.lines:
-                i += [Strings("") for i in range(obj.col - self.col)]
-                li.append(li)
+                if not isinstance(i, list):
+                    continue
+                i += [Strings("", self) for i in range(obj.col - self.col)]
+                li.append(i)
             self.col = obj.col
         else:
             li = self.lines
-            t = [Strings("") for i in range(self.col - obj.col)]
+            t = [Strings("", self) for i in range(self.col - obj.col)]
             line += t
-            li.append(line)
+        li.append(line)
         self.lines = li
         self.reset_width()
         self.check_control_line()
-    def text_process(self, text:str, position:str) -> str :
+    def get_text(self, mode:str="text") -> str:
+        skip_list = [-1 if i[1] != "align" else i[0] for i in self.control_line]
+        split_list = [-1 if i[1] == "align" else i[0] for i in self.control_line]
+        if mode == "text":
+            total_width = self.col+1
+            for i in self.width:
+                total_width+=i
+            text=f"{get_str_in_width("",total_width,".")}\n"
+            index = 0
+            for line in self.lines:
+                if index in skip_list:
+                    index+=1
+                    continue
+                if isinstance(line, str):
+                    line = [Strings("-"*max(self.width), self) for i in range(self.col)]
+                for col,width,align in zip(line, self.width, self.align):
+                    text+=f"|{get_str_in_width(col.get_text(mode), width, align=align)}"
+                text+="|\n"
+                index+=1
+            text+=f"{get_str_in_width("",total_width,"`")}\n"
+            return f"{text}"
+        text = """\n<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">"""
+        rule = {"<l>":"left", "<c>":"center", "<r>":"right"}
+        text += "<colgroup>"
+        text += "\n".join([f"""<col class="org-{rule[i]}" />""" for i in self.align])
+        text += "</colgroup>"
+        # 一线分头尾
+        if split_list:
+            text += "<thead>"
+        else:
+            text += "<tbody>"
+        index = 0
+        for line in self.lines:
+            if index in skip_list:
+                index+=1
+                continue
+            if isinstance(line, str):
+                if index == split_list[0]:
+                    text += "\n</thead><tbody>\n"
+                else:
+                    text += "\n</tbody><tbody>\n"
+                index+=1
+                continue
+            text += "<tr>"
+            for col,width,align in zip(line, self.width, self.align):
+                if split_list and index < split_list[0]:
+                    text+=f"<th scope=\"col\" class=\"org-{rule[align]}\">{col.get_text(mode)}</td>"
+                else:
+                    text+=f"<td class=\"org-{rule[align]}\">{col.get_text(mode)}</td>"
+            index+=1
+            text += "</tr>"
+        text += "</table>"
+        return text
+    def text_process(self, text:str, mode:tuple[str, str]) -> str :
         width = self.col+1
         for i in self.width:
             width+=i
-        if position == "self":
+        if mode[0] == "self":
             text=f"{get_str_in_width("",width,".")}\n"
             index = 0
             skip_list = [-1 if i[1] != "align" else i[0] for i in self.control_line]
             for line in self.lines:
-                if index in skip_list:
+                if index in skip_list or not isinstance(line, list):
                     index+=1
                     continue
                 for col,width,align in zip(line, self.width, self.align):
                     text+=f"|{get_str_in_width(col.get_text(), width, align=align)}"
                 text+="|\n"
                 index+=1
-        if position == "after":
+        if mode[0] == "after":
             text=f"{get_str_in_width("",width,"`")}\n"
         return f"{text}"
 
@@ -532,6 +722,8 @@ class Document:
             if self.current_line <= last:
                 t = Text(self)
                 self.root.add(t)
+            elif self.current_line - last > 1:
+                self.current_line -= 1
             else:
                 for _,current in RULES.items():
                     ret = current["match"].match(self.lines[self.current_line])
@@ -560,7 +752,7 @@ class Document:
                 continue
             if type(i) == type(last):
                 if type(i).__name__ == "Text" and i.line.s != "":
-                    last.line.s += i.line.s
+                    last.line.s += f" {i.line.s}"
                     remove_list.append(i)
                 elif isinstance(last, Table):
                     last.add_line(i)
@@ -586,6 +778,27 @@ class Document:
                     break
             ret+=f"{"."*((count-1)*3-1)}{" " if count>1 else ""}{lastest}. {j}\n"
         return ret
+    def to_html(self) -> str:
+        meta = f"""\n{"\n".join(\
+                [f"""<meta name="{i}" content="{" ".join(self.meta[i])}" />"""\
+                for i in ("author", "description")])}"""
+        html_head = f"\n{"\n".join(self.meta["html_head"])}" if self.meta["html_head"] else ""
+        title = f"\n<h1 class=\"title\">{" ".join(self.meta["title"])}</h1>" if self.meta["title"] else ""
+        html = f"""\
+<!DOCTYPE html>
+<html lang="zh">
+<head>{meta}
+<title>{" ".join(self.meta["title"])}</title>{html_head}
+</head>
+<body>
+<div id="content" class="content">{title}
+"""
+        line = self.root.line.s
+        self.root.line.s = ""
+        html += self.root.get_text("html")
+        self.root.line.s = line
+        html += "</div>\n</body>\n</html>"
+        return html
 
 def main():
     args = parse_arguments()
@@ -610,17 +823,21 @@ def main():
         print(ret)
     else:
         ret = Document(inp.splitlines(), file_name=inp_f)
-        print(ret.root.get_text())
-        print(ret.get_table_of_content())
-        pprint(ret.meta)
-        # pprint(ret.setupfiles)
-        # pprint(vars(ret))
+        if args.text_mode:
+            print(ret.root.get_text())
+            print(ret.get_table_of_content())
+            pprint(ret.meta)
+            # pprint(ret.setupfiles)
+            # pprint(vars(ret))
+        else:
+            print(ret.to_html())
     return ret
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='解析org文件')
     parser.add_argument('-d', '--diff', action="store_true", help='使用org-python导出')
     parser.add_argument('-i', '--input', default=None, help='指定输入文件')
+    parser.add_argument('-t', '--text-mode', action="store_true", help='以text形式输出')
     args = parser.parse_args()
     return args
 

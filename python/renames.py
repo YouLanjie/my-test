@@ -107,7 +107,6 @@ def process_files():
         if check_date(int(year), int(month), int(day)) and \
                 not ARGS.no_skip and ARGS.mode not in ("random", "md5"):
             print_verbose(f"INFO 跳过:已具备类似条件'{file}'")
-            print(f"Y:{year}, M:{month}, D:{day}")
             skipped += 1
             continue
         if not ARGS.ignore_timestamp:

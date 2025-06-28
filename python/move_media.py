@@ -39,10 +39,11 @@ def parse_arguments() -> None:
     parser.add_argument('-c', '--copy', action='store_true', help='使用复制操作')
     parser.add_argument('-n', '--no-apply', action='store_true', help='不进行任何更改')
     parser.add_argument('-p', '--path', default=None, help='指定沿用目录树的目录')
-    parser.add_argument('-l', '--log-file', default=None, help='指定日志输出文件')
+    parser.add_argument('-l', '--log-file', default=None, help='指定日志输出文件(可用作恢复脚本)')
     parser.add_argument('-f', '--format', default=r'%Y/%Y_%m/%Y_%m_%d',
                         help=r"指定输出路径格式 (默认: %%Y/%%Y_%%m/%%Y_%%m_%%d)")
-    parser.add_argument('-v', '--verbose', nargs="?", default=0, const=1, type=int, help='执行时显示更多输出(指定等级)')
+    parser.add_argument('-v', '--verbose', nargs="?", default=0, const=1, type=int,
+                        help='显示更多输出(1:提示操作 2:警告 3:所有操作)')
     args = parser.parse_args()
     ARGS.set_arg(args)
     return
@@ -65,7 +66,7 @@ def save_log():
 
 def diff_file(file1:Path, file2:Path) -> bool:
     if not file1.is_file() or not file2.is_file():
-        print_verbose(3, f"# WARN 比较非文件之间是否相同: {file1}")
+        print_verbose(2, f"# WARN 比较非文件之间是否相同: {file1}")
         return False
     if file1.stat().st_size == file2.stat().st_size:
         # 计算文件哈希
@@ -77,7 +78,7 @@ def diff_file(file1:Path, file2:Path) -> bool:
 def calculate_md5(file: Path):
     hash_md5 = hashlib.md5()
     if not file.is_file():
-        print_verbose(3, f"# WARN 要求计算非文件的md5: {file}")
+        print_verbose(2, f"# WARN 要求计算非文件的md5: {file}")
         return hash_md5.hexdigest()
     with open(file, "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
@@ -108,7 +109,7 @@ def process_files() -> tuple[int, int]:
         if not( int(year) > 1949 and int(year) < 2050  and \
                 int(month) > 0 and int(month) < 13 and \
                 int(day) > 0 and int(day) < 32):
-            print_verbose(2, f"# INFO 文件名不符合模式(SKIPPED): {file}")
+            print_verbose(3, f"# INFO 文件名不符合模式(SKIPPED): {file}")
             skipped += 1
             continue
 
@@ -135,16 +136,16 @@ def process_files() -> tuple[int, int]:
                     break
             if len(target_dirs) > 1 and target_relative_path not in processed_dirs:
                 processed_dirs[target_relative_path] = target_dir
-                print_verbose(3, f"# WARN 出现多个相同的匹配目录: {target_relative_path}*")
+                print_verbose(1, f"# WARN 出现多个相同的匹配目录: {target_relative_path}*")
         target = Path(f"{target_dir}/{file.name}")
 
         if target_dir.is_file():
-            print_verbose(2, f"# INFO 输出目录与现存文件重名(SKIPPED): {file}")
+            print_verbose(3, f"# INFO 输出目录与现存文件重名(SKIPPED): {file}")
             skipped += 1
             continue
 
         if not target_dir.exists():
-            print_verbose(4, f"# INFO 创建输出文件夹: {target_dir}")
+            print_verbose(3, f"# INFO 创建输出文件夹: {target_dir}")
             if not ARGS.no_apply:
                 target_dir.mkdir(parents=True)
 
@@ -152,12 +153,12 @@ def process_files() -> tuple[int, int]:
         if target.exists():
             # 文件内容相同
             if diff_file(file, target):
-                print_verbose(2,f"# INFO 文件已存在且内容相同(SKIPPED): {file}")
+                print_verbose(3,f"# INFO 文件已存在且内容相同(SKIPPED): {file}")
                 backup = Path(f"{file}.bak")
                 if not backup.exists():
                     if not ARGS.no_apply:
                         shutil.move(file, backup)
-                    print_verbose(2,f"# INFO 重命名: {file} -> {backup}")
+                    print_verbose(3,f"# INFO 重命名: {file} -> {backup}")
                 else:
                     print_verbose(3, f"# WARN 重复文件重名: {file}")
 
@@ -179,7 +180,7 @@ def process_files() -> tuple[int, int]:
                     shutil.move(file, target)
                 action = "移动"
 
-            print_verbose(2, f"# INFO {action}: {file} -> {target}")
+            print_verbose(3, f"# INFO {action}: {file} -> {target}")
             if ARGS.log_file:
                 ARGS.recover.append(f"shutil.move(\"{target.absolute()}\", \"{file.absolute()}\")")
 
@@ -197,7 +198,7 @@ def main():
         hit = ("输入目录", ARGS.input)
         if not output_dir.is_dir():
             hit = ("输出目录", ARGS.output)
-        print(f"错误: {hit[0]} '{hit[1]}' 不存在或不是目录")
+        print_verbose(-1, f"错误: {hit[0]} '{hit[1]}' 不存在或不是目录")
         sys.exit(1)
     if len(str(output_dir.resolve())) < len(str(output_dir)):
         ARGS.output = str(output_dir.resolve())
@@ -215,7 +216,7 @@ def main():
     action = "移动" if not ARGS.copy else "复制"
     print_verbose(1,f"# 操作完成: {action}了 {processed} 个文件, 跳过了 {skipped} 个文件")
     if ARGS.no_apply:
-        print_verbose(3, "# 提示: 由于参数指定，并未进行任何操作")
+        print_verbose(1, "# 提示: 由于参数指定，并未进行任何操作")
 
 if __name__ == '__main__':
     try:
