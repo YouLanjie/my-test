@@ -180,26 +180,50 @@
     - [ ]Check box2
     - [X] Check box3
     - [X] Check box4
-    -   [X] Check box5
+    - [X] Check box5
     - [ ] Check box6
   - 百分比测试 [60%]
     - [ ] Check box1
     - [ ]Check box2
     - [X] Check box3
-    -    [X] Check box4
+    - [X] Check box4
     - [X] Check box5
     - [ ] Check box6
 
 - [20%] 百分 [1/5] 比测试 [20%]
   - [ ] Check box1
-  - [-] Check box2 [1/2] [50%]
-    - [X] Check box3
+  - [-] Check box2 [1/2] [50%]\\
+    [ ] 在这里是否也奏效[1/2]？
+    是的，所以说[1/2]这个选项是在任意的
+    列表内部空间都可用的[50%]对吧
+    - [X] Check box3[0/0]
     - [ ] Check Box7
   - [X] Check box4 [100%] [2/2]
     - [X] Check Box8
     - [X] Check Box9
   - [ ] Check box5
   - [ ] Check box6
+
+- 是否会分成上下两个列表？[0/0]
+- 在没有子项时占比为[0%]
+
+** 有序无序混合测试
+
+- l1
+- l2
+1) l3.num
+2) l3.num
+
+1) l1.num处理时上下两层不中断？
+1) l2.num
+
+中断文本
+
+1) haah1
+1) haah1
+1) haah1
+- yeeee
+- 基本可以确认是由系列第一项决定
     
 * block测试
 ** src
@@ -412,6 +436,40 @@ quote内嵌图片测试
 [[./test.jpg]]
 #+end_quote
 
+** center测试
+
+#+begin_center
+这里应该是有居中的文本
+#+end_center
+
+分割1
+
+#+begin_center
+居中的文本嵌套quote:
+#+begin_quote
+这里应该是有被引用的文本
+#+end_quote
+#+end_center
+
+分割2
+
+#+begin_quote
+quote的文本嵌套居中:
+#+begin_center
+这里应该是有被引用还居中的文本
+#+end_center
+#+end_quote
+
+分割3
+
+#+begin_center
+居中的文本嵌套src:
+#+begin_src
+这里应该是有被居中的源代码
+不论单行多行
+#+end_src
+#+end_center
+
 * 表格测试(内容来自 /泰拉瑞亚战士全流程笔记/)
 |    键位    |        功能        |
 |    <c>     |        <c>         |
@@ -496,17 +554,21 @@ APPEND TEST|     M      |       大地图       |
 |-wtf??? |
 | 表体5 |
 
+
 | 这个应该是表头 | 表头2                   |
 |- + -|
 | 表体1          | 该表经过emacs自动化处理后的人工处理 |
+
 
 | 这个应该是表头 | 表头2                   |
 |-
 |TESTA!!!!|FFFY|这里是额外的内容|DDDD|
 
+
 |new test|
 |-+-+-+|
 |TST|
+
 
 |-|
 
@@ -517,6 +579,18 @@ APPEND TEST|     M      |       大地图       |
 [[http://baidu.com][有文本链接测试]]
 
 [[./test.jpg][有文本图片链接测试]]
+
+链接边界测试1 [[http://baidu.com][有文本链接测试]] 测试
+
+链接边界测试2 [[http://baidu.com][有文A\[ma\]zing!本链接测试]] 测试
+
+链接边界测试3 [[http://baidu.com][有文A\[ma\[z\]i\]ng!本链接测试]] 测试
+
+链接边界测试4 [[http://baidu.com][有文\[ma\[z\]i\]本链接测试]] 测试
+
+链接边界测试5[[http://baidu.com/\[\]]]测试[[http://baidu.com/\[fqwer\]]]胡言乱语
+
+链接边界测试6[[http://baidu.com/\[fqwer\]0owerqy]]胡言乱语
 
 图片测试1：
 [[./test.jpg]]
@@ -568,6 +642,12 @@ CAPTION测试
 =[[http://./][code内含链接]]=
 
 [[http://./][=link内含code=]]
+
+** 公式？
+
+\[F=ma\]
+
+\[F_合=ma_合\]
 
 ** 其他
 原内容：

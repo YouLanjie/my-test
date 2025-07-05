@@ -1,0 +1,7 @@
+# orgreader2.py:
+- [x] center块
+- [x] '\\'换行(text)
+- [ ] 单独的图片居中(figure)
+- [ ] 修正脚注行为
+- [ ] 优化输出html格式
+- [ ] 根据pyright和pylint

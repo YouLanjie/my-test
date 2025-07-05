@@ -1,7 +1,9 @@
 #!/usr/bin/python
+"""解析org文件"""
 
 from pprint import pprint
 from pathlib import Path
+import sys
 import time
 import argparse
 import re
@@ -36,14 +38,16 @@ def get_str_in_width(text:str, width:int, fill:str=' ', align:str="<c>"):
     return ret_text
 
 class Strings:
+    """行内字符串类，提供行内格式转换"""
     def __init__(self, s:str, node, parse_able : bool = True) -> None:
         self.s = s
         self.parse_able = parse_able
         if isinstance(node, Root):
             self.upward = node
     def parse_inline_text(self, s:str) -> list[str]:
+        """解释行内字符串"""
         pattern = [
-                ("link", re.compile(r"\[\[([^]]*)\](?:\[([^]]*)\])?\]")),
+                ("link", re.compile(r"\[\[(.*?)(?<!\\)\](?:\[(.*?)(?<!\\)\])?\]")),
                 ("code", re.compile(r"=([^ ].*?(?<! ))=(?=[ ()-]|$)")),
                 ("code", re.compile(r"~([^ ].*?(?<! ))~(?=[ ()-]|$)")),
                 ("italic", re.compile(r"/([^ ].*?(?<! ))/(?=[ ()-]|$)")),
@@ -67,7 +71,7 @@ class Strings:
                 i+=ret.span()[1]
                 if current_pattern[0] == "link":
                     mode = "link"
-                    link = ret.group(1)
+                    link = re.sub(r"\\([][])", r"\1", ret.group(1))
                     alt = ret.group(2)
                     ret = re.match(r".*/(.*\.(?:jpg|png|jpeg|gif))",link,re.I)
                     if not alt and ret:
@@ -97,6 +101,7 @@ class Strings:
             li.append(s[last:i])
         return li
     def list_to_text(self, li:list, mode:str="text") -> str:
+        """将给定的已经分好的列表转回文字"""
         if not li:
             return ""
         rules = {"code":("<code>","</code>"),
@@ -127,7 +132,8 @@ class Strings:
                 elif i[0] == "figure":
                     self.upward.document.counter["figure_count"]+=1
                     ret += f"""\n<div class="figure">\n<p><img src="{i[1]}" alt="{i[1]}"></img></p>\n"""
-                    ret += f"""<p><span class="figure-number">Figure {self.upward.document.counter["figure_count"]}: </span>{self.list_to_text(i[2])}</p></div>"""
+                    ret += f"""<p><span class="figure-number">Figure {self.upward.document.counter["figure_count"]}: </span>"""+\
+                            """{self.list_to_text(i[2])}</p></div>"""
                 elif i[0] == "fn":
                     self.upward.document.counter["footnote_count"]+=1
                     num = self.upward.document.counter["footnote_count"]
@@ -144,27 +150,59 @@ class Strings:
         if ret and ret[0] == "\n":
             ret = ret[1:]
         return ret
+    def split_cond(self, ch1:str, ch2:str) -> bool:
+        """不分割的条件"""
+        if not ch1:
+            return True
+        if not ch2:
+            return False
+        ch1 = ch1[-1]
+        ch2 = ch2[-1]
+        # 任一为中文
+        if ord(ch1) > 127 or ord(ch2) > 127:
+            return True
+        # 任一为符号
+        symbol = r"()[]{}@#$%&!^*+-=/"
+        if ch1 in symbol or ch2 in symbol:
+            return True
+        return False
+    def get_pre_text(self) -> str:
+        lines = self.s.splitlines()
+        text = ""
+        for i in lines:
+            match = re.match(r"(.*)\\\\$", i)
+            if match:
+                text+=f"{match.group(1)}\n"
+            else:
+                split = " "
+                if self.split_cond(text, i):
+                    split = ""
+                text+=f"{split}{i}"
+        return text
     def get_text(self, mode:str="text") -> str:
+        """获取文字"""
         if not self.parse_able:
-            return self.s
-        return self.list_to_text(self.parse_inline_text(self.s), mode)
+            return re.sub("\n", " ", self.s)
+        text = self.get_pre_text()
+        return self.list_to_text(self.parse_inline_text(text), mode)
 
 class Root:
+    """根节点/节点父类"""
     def __init__(self, document) -> None:
         if not isinstance(document, Document):
             return
+        self.opt = {"childable": True, "breakable": True}
         self.document = document
         self.start = document.current_line
-        self.childable = True
         self.line = Strings("", self)
         if document.lines:
             self.line = Strings(document.lines[document.current_line], self)
-        self.breakable = True
         self.end_offset = 0
         self.child = []
         self.current = self
     def checkend(self, lines:list[str], i:int) -> tuple[bool,int]:
-        if not self.childable:
+        """检查结构是否结束"""
+        if not self.opt["childable"]:
             return False, i
         match = RULES[type(self).__name__]["end"].match(lines[i])
         ret = i
@@ -183,26 +221,45 @@ class Root:
         return False,ret
     def end(self, i:int, is_normal_end:bool) -> int:
         """进行层级关闭通知，返回落点(<i则倒退)"""
-        if not is_normal_end and not self.breakable:
+        if not is_normal_end and not self.opt["breakable"]:
             return self.start
         # 由上级关闭引起的关闭
         return i if self.current == self else self.current.end(i, False)
     def add(self, obj):
-        if not self.current.childable:
+        """将obj添加到当前操作末端"""
+        if not self.current.opt["childable"]:
             return
         if self.current == self:
             self.child.append(obj)
-            if obj.childable:
+            if obj.opt["childable"]:
                 self.current = obj
         else:
             self.current.add(obj)
         return
     def remove(self, obj):
-        if not self.childable:
+        """删除仅当前节点子项中的obj"""
+        if not self.opt["childable"]:
+            return
+        if obj not in self.child:
             return
         self.child.remove(obj)
+    @property
+    def _debug_output(self):
+        return f"('{self.line.s}')"
+    def __str__(self, debug = False) -> str:
+        ret = super().__str__()
+        if not debug:
+            return ret
+        if self.line:
+            ret += self._debug_output
+        if self.child:
+            ret += "\n"
+        for i in self.child:
+            for j in i.__str__(True).splitlines():
+                ret += f"|   {j}\n"
+        return ret
     def get_text(self, mode:str="text") -> str:
-        r"""For Sub class"""
+        """For Sub class"""
         text = self.line.get_text(mode) + "\n"
         for i in self.child:
             for j in i.get_text(mode).splitlines():
@@ -222,28 +279,35 @@ class Root:
         return False
 
 class Text(Root):
+    """文本类"""
     def __init__(self, document) -> None:
         super().__init__(document)
-        self.childable = False
+        self.opt["childable"] = False
         self.line.s = re.sub(r"^ *", "", self.line.s)
     def get_text(self, mode:str="text") -> str:
         text = self.line.get_text(mode)
         if mode == "html":
             if text != "":
-                text = f"<p>{text}</p>"
+                need_ptag = self.line.parse_inline_text(self.line.get_pre_text())
+                if len(need_ptag) > 1:
+                    text = f"<p>{text}</p>"
+                else:
+                    text = f"{text}"
         return f"{text}"
 
 class Comment(Root):
+    """注释行"""
     def __init__(self, document) -> None:
         super().__init__(document)
-        self.childable = False
+        self.opt["childable"] = False
     def get_text(self, mode:str="text") -> str:
         return ""
 
 class Meta(Root):
+    """元数据"""
     def __init__(self, document) -> None:
         super().__init__(document)
-        self.childable = False
+        self.opt["childable"] = False
         match = RULES[type(self).__name__]["match"].match(self.line.s)
         if match is None:
             return
@@ -266,7 +330,7 @@ class Meta(Root):
                 if req.status_code == 200:
                     req.encoding = req.apparent_encoding
                     content = req.text
-            except:
+            except Exception:
                 setupfile=Path(f"{Path(self.document.file_name).parent}/{self.value}")
                 if setupfile.is_file():
                     content = setupfile.read_text(encoding="utf8")
@@ -301,6 +365,7 @@ class Meta(Root):
         return ""
 
 class Title(Root):
+    """标题"""
     def __init__(self, document) -> None:
         super().__init__(document)
         match = RULES[type(self).__name__]["match"].match(self.line.s)
@@ -323,7 +388,7 @@ class Title(Root):
             li.append(last[num])
         li[num] += 1
         text = self.line.get_text("text")
-        li.append({"title":text, "tag":self.tag.s, "todo":None})
+        li.append({"title":text, "tag":self.tag.s, "todo":None, "start":self.start})
         self.id = li
         if not self.comment:
             self.document.table_of_content.append(li)
@@ -337,7 +402,7 @@ class Title(Root):
         # 针对下级
         if self.current == self:
             return False
-        if type(self.current).__name__ in ("BlockCode", "BlockQuote"):
+        if isinstance(self.current, Block):
             return True
         return False
     def get_text(self, mode:str="text") -> str:
@@ -383,6 +448,7 @@ class Title(Root):
         return text
 
 class Footnotes(Title):
+    """脚注标题"""
     def __init__(self, document) -> None:
         Root.__init__(self, document)
         match = RULES[type(self).__name__]["match"].match(self.line.s)
@@ -396,12 +462,12 @@ class Footnotes(Title):
         return ""
 
 class Footnote(Text):
+    """脚注(整行)"""
     def __init__(self, document) -> None:
         super().__init__(document)
         match = RULES[type(self).__name__]["match"].match(self.line.s)
         if match is None:
             return
-        fn = {"name"}
         self.name = match.group(1)
         self.type = "str" if re.findall("[^0-9]", self.name) else "int"
         self.line = Strings(match.group(2), self)
@@ -410,7 +476,63 @@ class Footnote(Text):
     def get_text(self, mode:str="text") -> str:
         return ""
 
+class ListItem(Root):
+    """列表(单项)"""
+    def __init__(self, document) -> None:
+        super().__init__(document)
+        match = RULES[type(self).__name__]["match"].match(self.line.s)
+        if match is None:
+            return
+        self.indent = len(match.group(1))
+        self.line = Strings("", self)
+        text = Text(document)
+        text.line.s = match.group(3)
+        self.add(text)
+    @property
+    def _debug_output(self):
+        return ""
+    def end_condition(self, match: re.Match | None) -> bool:
+        if match is None:
+            return False
+        if match.group(2) == "":
+            return False
+        if len(match.group(1)) <= self.indent:
+            i = -1
+            # 查找List后第一个block起始点
+            for i in self.document.is_in_src:
+                if i > self.start:
+                    break
+            if self.current == i:
+                return True
+            # start和current_line在i异侧(current_line在block内)
+            if (i-self.start)/(i-self.document.current_line) < 0:
+                return False
+            # start和current_line在i同侧(非block)
+            return True
+        return False
+    def get_text(self, mode:str="text") -> str:
+        text = ""
+        if mode == "text":
+            ret = "\n|   ".join(self.child[0].get_text(mode).splitlines())
+            text += f"{ret}\n"
+            for i in self.child[1:]:
+                # 下一级的东西
+                for j in i.get_text(mode).splitlines():
+                    if j and j[-1] != "\n":
+                        j+="\n"
+                    text += f"|   {j}"
+            return text
+        text += f"{self.child[0].get_text(mode)}\n"
+        for i in self.child[1:]:
+            # 下一级的东西
+            for j in i.get_text(mode).splitlines():
+                if j and j[-1] != "\n":
+                    j+="\n"
+                text += f"{j}"
+        return text
+
 class List(Root):
+    """列表(多项集合)"""
     def __init__(self, document) -> None:
         super().__init__(document)
         match = RULES[type(self).__name__]["match"].match(self.line.s)
@@ -419,66 +541,72 @@ class List(Root):
         self.indent = len(match.group(1))
         self.level = 1
         ids = re.sub("[^0-9]*", "", match.group(2))
-        self.id = int(ids) if ids != "" else -1
-        self.line = Strings(match.group(3), self)
+        self.type = "ol" if ids else "ul"
+        self.line = Strings("", self)
+        self.add(ListItem(document))
     def add(self, obj):
-        if type(obj).__name__ == "List":
+        if isinstance(obj, List):
             obj.level = self.level+1
+            if self.current == self and obj.child:
+                obj = obj.child[0]
         return super().add(obj)
     def end_condition(self, match: re.Match | None) -> bool:
         if match is None:
             return False
-        if len(match.group(1)) <= self.indent and match.group(2) != "":
+        if match.group(2) == "":
+            return False
+        is_list = 0
+        if len(match.group(1)) == self.indent:
+            current_line = self.document.lines[self.document.current_line]
+            if RULES[type(self).__name__]["match"].match(current_line):
+                is_list = 1
+        if len(match.group(1)) <= self.indent-is_list:
             i = -1
+            # 查找List后第一个block起始点
             for i in self.document.is_in_src:
                 if i > self.start:
                     break
             if self.current == i:
                 return True
-            # 同侧退出，异侧不影响
+            # start和current_line在i异侧(current_line在block内)
             if (i-self.start)/(i-self.document.current_line) < 0:
                 return False
+            # start和current_line在i同侧(非block)
             return True
         return False
+    @property
+    def _debug_output(self):
+        return f"(lv:{self.level}, t:{self.type})"
     def get_text(self, mode:str="text") -> str:
         if mode == "text":
-            level = f"{self.level}" if self.id <= 0 else f"{self.level}[{self.id}]"
-            text = f"- L{level} {self.line.get_text(mode)}"
+            text = ""
             index = 0
             for i in self.child:
-                if isinstance(i, Text) and len(i.get_text()) > 0 and index == 0:
-                    text+=f" {i.get_text()}\n"
-                    index+=1
-                    continue
+                index+=1
                 if text and text[-1] != "\n":
-                    text+="\n"
-                for j in i.get_text(mode).splitlines():
-                    text+=f"|   {j}\n"
-                index+=1
+                    text += "\n"
+                # 每个列表组的每个项目
+                level = f"{self.level}" if self.type == "ul" else f"{self.level}[{index}]"
+                text += f"-L{level} {i.get_text(mode)}"
             return text
-        if self.id <= 0:
-            head=f"<ul class=\"org-ul\">\n"
-        else:
-            head=f"<ol class=\"org-ol\">\n"
-        text = f"{head}<li>"
-        text += f"<p>\n{Strings(self.line.s+(self.child[0].line.s if self.child and isinstance(self.child[0], Text) else ""), self).get_text(mode)}"
-        index = 0
+
+        text = f"<{self.type}>\n"
         for i in self.child:
-            if index == 0 and isinstance(i, Text) and len(i.get_text()) > 0:
-                index+=1
-                continue
-            index+=1
-            text += i.get_text(mode) + "\n"
-        if self.id <= 0:
-            text+="</ul>"
-        else:
-            text+="</ol>"
+            if text and text[-1] != "\n":
+                text += "\n"
+            # 每个列表组的每个项目
+            text += f"<li>{i.get_text(mode)}</li>"
+        text += f"</{self.type}>\n"
         return text
 
-class BlockCode(Root):
+class Block(Root):
+    """Block共同空类"""
+
+class BlockCode(Block):
+    """代码块"""
     def __init__(self, document) -> None:
         super().__init__(document)
-        self.breakable = False
+        self.opt["breakable"] = False
         self.line = self.document.lines
         self.number = 0
         self.end_offset = 1
@@ -489,7 +617,7 @@ class BlockCode(Root):
             return
         self.lang = match.group(1)
     def add(self, obj):
-        if type(obj).__name__ in ("BlockCode", "BlockQuote"):
+        if isinstance(obj, Block):
             self.document.is_in_src.pop(-1)
         if isinstance(self.line, Strings):
             return
@@ -539,6 +667,7 @@ class BlockCode(Root):
         return ret
 
 class BlockExport(BlockCode):
+    """对应语言导出块"""
     def get_text(self, mode:str="text") -> str:
         if not isinstance(self.line, Strings):
             return ""
@@ -552,10 +681,11 @@ class BlockExport(BlockCode):
             return self.line.s
         return ""
 
-class BlockQuote(Root):
+class BlockQuote(Block):
+    """引用块"""
     def __init__(self, document) -> None:
         super().__init__(document)
-        self.breakable = False
+        self.opt["breakable"] = False
         self.end_offset = 1
         self.document.is_in_src.append(self.start)
     def end(self, i: int, is_normal_end: bool) -> int:
@@ -584,7 +714,31 @@ class BlockQuote(Root):
         text += "</blockquote>"
         return text
 
+class BlockCenter(BlockQuote):
+    """居中块"""
+    def get_text(self, mode:str="text") -> str:
+        if mode == "text":
+            text = ",>>>>>>>>\n"
+            for i in self.child:
+                if text and text[-1] != "\n":
+                    text+="\n"
+                ret = i.get_text(mode)
+                rets = ret.splitlines()
+                max_width = max([get_str_width(j) for j in rets])
+                max_width += max_width%2
+                ret = "\n".join([get_str_in_width(j, max_width, align="<l>") for j in rets])
+                for j in ret.splitlines():
+                    text+=f"|   {get_str_in_width(j, 60)}\n"
+            text += "`>>>>>>>>"
+            return text
+        text = "<div class=\"org-center\">\n"
+        for i in self.child:
+            text += i.get_text(mode)
+        text += "</div>"
+        return text
+
 class Table(Text):
+    """表格"""
     def __init__(self, document) -> None:
         super().__init__(document)
         self.col = 0
@@ -743,35 +897,42 @@ class Table(Text):
 
 #^ *#\+begin_([^ \n]+)(?:[ ]+(.*?))?\n(.*?)^ *#\+end_\1\n?
 RULES = {
-        "Meta":       {"match":re.compile(r"^[ ]*#\+([^:]*):[ ]*(.*)", re.I), "class":Meta},
-        "Footnotes":  {"match":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(Footnotes *.*)"),
-                       "class":Footnotes,
-                       "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)", re.I)},
-        "Title":      {"match":re.compile(r"^([*]+)[ ]+((?:COMMENT )?) *(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
-                       "class":Title,
-                       "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?) *(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
-        "BlockCode":  {"match":re.compile(r"^ *#\+begin_src(?:[ ]+(.*))?", re.I),
-                       "class":BlockCode,
-                       "end":re.compile(r"^ *#\+end_src", re.I)},
-        "BlockExport":{"match":re.compile(r"^ *#\+begin_export(?:[ ]+(.*))?", re.I),
-                        "class":BlockExport,
-                        "end":re.compile(r"^ *#\+end_export", re.I)},
-        "BlockQuote": {"match":re.compile(r"^ *#\+begin_quote", re.I),
-                       "class":BlockQuote,
-                       "end":re.compile(r"^ *#\+end_quote", re.I)},
-        "Comment":    {"match":re.compile(r"^[ ]*#[ ]+(.*)", re.I),"class":Comment},
-        "List":       {"match":re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.)) +(.*)", re.I),
-                       "class":List,
-                       "end":re.compile(r"^( *)(.*)", re.I)},
-        "Table":      {"match":re.compile(r"^ *\|", re.I), "class":Table},
-        "Footnote":   {"match":re.compile(r"^\[fn:([^]]*)\](.*)"), "class":Footnote},
-        "Text":       {"match":re.compile(""), "class":Text},
-        "Root":       {"match":re.compile(""),
-                       "class":Comment,
-                       "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)", re.I)},
+        "Meta":        {"match":re.compile(r"^[ ]*#\+([^:]*):[ ]*(.*)", re.I), "class":Meta},
+        "Footnotes":   {"match":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(Footnotes *.*)"),
+                        "class":Footnotes,
+                        "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)", re.I)},
+        "Title":       {"match":re.compile(r"^([*]+)[ ]+((?:COMMENT )?) *(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
+                        "class":Title,
+                        "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?) *(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
+        "BlockCode":   {"match":re.compile(r"^ *#\+begin_src(?:[ ]+(.*))?", re.I),
+                        "class":BlockCode,
+                        "end":re.compile(r"^ *#\+end_src", re.I)},
+        "BlockExport": {"match":re.compile(r"^ *#\+begin_export(?:[ ]+(.*))?", re.I),
+                         "class":BlockExport,
+                         "end":re.compile(r"^ *#\+end_export", re.I)},
+        "BlockQuote":  {"match":re.compile(r"^ *#\+begin_quote", re.I),
+                        "class":BlockQuote,
+                        "end":re.compile(r"^ *#\+end_quote", re.I)},
+        "BlockCenter": {"match":re.compile(r"^ *#\+begin_center", re.I),
+                        "class":BlockCenter,
+                        "end":re.compile(r"^ *#\+end_center", re.I)},
+        "Comment":     {"match":re.compile(r"^[ ]*#[ ]+(.*)", re.I),"class":Comment},
+        "List":        {"match":re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.)) +(.*)", re.I),
+                        "class":List,
+                        "end":re.compile(r"^( *)(.*)", re.I)},
+        "Table":       {"match":re.compile(r"^ *\|", re.I), "class":Table},
+        "Footnote":    {"match":re.compile(r"^\[fn:([^]]*)\](.*)"), "class":Footnote},
+        "Text":        {"match":re.compile(""), "class":Text},
+        "Root":        {"match":re.compile(""),
+                        "class":Comment,
+                        "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)", re.I)},
+        "ListItem":    {"match":re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.)) +(.*)", re.I),
+                        "class":List,
+                        "end":re.compile(r"^( *)(.*)", re.I)},
         }
 
 class Document:
+    """文档类，操作基本单位"""
     def __init__(self, lines:list[str], file_name:str="", setupfiles:list[str]=[]) -> None:
         self.lines = lines
         self.file_name = file_name
@@ -799,6 +960,7 @@ class Document:
         self.build_tree()
         self.merge_text(self.root)
     def build_tree(self):
+        """构建节点树"""
         last = -1
         self.current_line = 0
         while self.current_line < len(self.lines):
@@ -822,8 +984,10 @@ class Document:
             _,self.current_line = self.root.checkend(self.lines, self.current_line)
         return
     def merge_text(self, node:Root):
+        """合并多行文本、表格，以及进行其他后处理"""
         last = None
         remove_list = []
+        insert_list = []
         count_title = 0
         for i in node.child:
             if isinstance(i, Title):
@@ -836,11 +1000,13 @@ class Document:
                 if todo:
                     i.line.s = i.line.s[len(key):]
                     i.todo = todo
-                    self.table_of_content[count_title][-1]["todo"] = todo
-                    self.table_of_content[count_title][-1]["title"] = i.line.get_text()
+                    current_title = [j[-1] for j in self.table_of_content if j[-1]["start"] == i.start]
+                    if current_title:
+                        current_title[0]["todo"] = todo
+                        current_title[0]["title"] = i.line.get_text()
                 if not i.comment:
                     count_title += 1
-            if i.childable:
+            if i.opt["childable"]:
                 self.merge_text(i)
                 last = None
                 continue
@@ -848,24 +1014,29 @@ class Document:
                 if isinstance(i, Text):
                     last = i
                 continue
-            if type(i) == type(last) or (type(last) == Footnote and type(i) == Text):
+            if type(i) == type(last):
                 if type(i) == Text and i.line.s != "":
-                    last.line.s += f" {i.line.s}"
+                    last.line.s += f"\n{i.line.s}"
                     remove_list.append(i)
                 elif isinstance(last, Table):
                     last.add_line(i)
                     remove_list.append(i)
-                elif type(last) == Footnote:
-                    last.line.s += f" {i.line.s}"
-                    remove_list.append(i)
                 else:
                     last = None
+            elif type(last) == Footnote and type(i) == Text:
+                last.line.s += f" {i.line.s}"
+                remove_list.append(i)
             else:
                 last = None
         for i in remove_list:
             node.remove(i)
+        for i in insert_list:
+            i[0].insert(i[0].index(i[1])+i[2], i[3])
         return
     def get_table_of_content(self, mode = "text") -> str:
+        """获取目录"""
+        if not self.table_of_content:
+            return ""
         if mode == "text":
             ret = ""
             for i in self.table_of_content:
@@ -887,15 +1058,13 @@ class Document:
                         ret1+=f":{j["tag"]}:"
                     ret+=ret1 + "\n"
             return ret
-        if not self.table_of_content:
-            return ""
         ret = """\n<div id="table-of-contents" role="doc-toc">\n<h2>Table of Contents</h2>\n"""
         ret += """<div id="text-table-of-contents" role="doc-toc">\n"""
         last = self.counter["lowest_title"]-1
         for i in self.table_of_content:
             level = ""
             for j in i[self.counter["lowest_title"]-1:-1]:
-                level+=f"{j}."
+                level += f"{j}."
             text = f"{level} "
             if i[-1]["todo"]:
                 text+=f"<span class=\"todo {i[-1]["todo"][0]}\">{i[-1]["todo"][1]}</span>"
@@ -904,8 +1073,8 @@ class Document:
                 text+=f"""{"&nbsp;"*3}<span class="tag">"""
                 tags = i[-1]["tag"].split(":")
                 li = []
-                for i in tags:
-                    li.append(f"""<span class="{i}">{i}</span>""")
+                for j in tags:
+                    li.append(f"""<span class="{j}">{j}</span>""")
                 text += "&nbsp;".join(li)
                 text += """</span>"""
 
@@ -915,17 +1084,19 @@ class Document:
                 ret+="</li><li>"
             else:
                 ret+="</li></ul>"*(last-len(i[:-1]))
-                ret+="</li><li>"
+                ret+="</li>\n<li>"
             ret+=f"""<a href="#org-title-{re.sub(r"\.","-",level[:-1])}">{text}</a>"""
             last = len(i[:-1])
 
         ret += "</div></div>"
         return ret
     def to_text(self) -> str:
+        """转成纯文本"""
         self.counter["figure_count"] = 0
         self.counter["footnote_count"] = 0
         return self.root.get_text()
     def to_html(self) -> str:
+        """转成html"""
         self.counter["figure_count"] = 0
         self.counter["footnote_count"] = 0
         meta = f"""\n{"\n".join(\
@@ -972,10 +1143,10 @@ class Document:
         html += "</div>\n"
 
         html += f"""\
-<div id="postamble" class="status">
-{f"<p class=\"date\">标记时间: {" ".join(self.meta["date"])}</p>" if self.meta["date"] else ""}
-{f"<p class=\"author\">作者: {" ".join(self.meta["author"])}</p>" if self.meta["author"] else ""}
-{f"<p class=\"description\">描述: {" ".join(self.meta["description"])}</p>" if self.meta["description"] else ""}
+<div id="postamble" class="status">\
+{f"<p class=\"date\">标记时间: {" ".join(self.meta["date"])}</p>\n" if self.meta["date"] else ""}\
+{f"<p class=\"author\">作者: {" ".join(self.meta["author"])}</p>\n" if self.meta["author"] else ""}\
+{f"<p class=\"description\">描述: {" ".join(self.meta["description"])}</p>\n" if self.meta["description"] else ""}\
 <p class="date">文件生成时间: {time.strftime("%Y-%m-%d")}{"一二三四五六日"[int(time.strftime("%w"))]}\
 {time.strftime("%H:%M:%S")}</p>
 </div>
@@ -984,6 +1155,7 @@ class Document:
         return html
 
 def main():
+    """运行主函数"""
     args = parse_arguments()
     inp_f = ""
     inp = ""
@@ -1006,7 +1178,9 @@ def main():
         print(ret)
     else:
         ret = Document(inp.splitlines(), file_name=inp_f)
-        if args.text_mode:
+        if args.debug:
+            print(ret.root.__str__(True))
+        elif args.text_mode:
             print(" Table of Contents")
             print("===================")
             print(ret.get_table_of_content())
@@ -1020,10 +1194,15 @@ def main():
     return ret
 
 def parse_arguments() -> argparse.Namespace:
+    """解释参数"""
     parser = argparse.ArgumentParser(description='解析org文件')
     parser.add_argument('-d', '--diff', action="store_true", help='使用org-python导出')
     parser.add_argument('-i', '--input', default=None, help='指定输入文件')
     parser.add_argument('-t', '--text-mode', action="store_true", help='以text形式输出')
+    parser.add_argument('-x', '--debug', action="store_true", help='调试输出')
+    # parser.add_argument('-i', '--input', default="/home/Chglish/WorkSpace/simp.org", help='指定输入文件')
+    # parser.add_argument('-t', '--text-mode', action="store_false", help='以text形式输出')
+    # parser.add_argument('-x', '--debug', action="store_false", help='调试输出')
     args = parser.parse_args()
     return args
 
