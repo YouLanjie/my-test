@@ -440,6 +440,9 @@ quote内嵌图片测试
 
 #+begin_center
 这里应该是有居中的文本
+(下面空行)：
+
+这里应该是有居中的文本
 #+end_center
 
 分割1
@@ -469,6 +472,43 @@ quote的文本嵌套居中:
 不论单行多行
 #+end_src
 #+end_center
+
+** 其他block
+*** begin_comment:
+1:
+#+begin_comment
+content in begin_comment
+#+end_comment
+
+2:
+#+begin_comment
+content in begin_comment2
+*** 阻断测试
+#+end_comment
+
+*** begin_example:
+1:
+#+begin_example
+content in begin_example
+#+end_example
+
+2:
+#+begin_example
+1
+#+begin_src
+content in begin_example(嵌套)
+#+end_src
+2
+#+end_example
+
+*** begin_verse:
+#+begin_verse
+1
+#+begin_src
+content in begin_verse(嵌套)
+#+end_src
+2
+#+end_verse
 
 * 表格测试(内容来自 /泰拉瑞亚战士全流程笔记/)
 |    键位    |        功能        |
@@ -554,21 +594,22 @@ APPEND TEST|     M      |       大地图       |
 |-wtf??? |
 | 表体5 |
 
-
 | 这个应该是表头 | 表头2                   |
 |- + -|
 | 表体1          | 该表经过emacs自动化处理后的人工处理 |
 
+| 这个应该是表头 | 表头3                   |
+| 这个应该是表头 | 表头4   (双表头测试)    |
+|- + -|
+| 表体1          | 该表经过emacs自动化处理后的人工处理 |
 
 | 这个应该是表头 | 表头2                   |
 |-
 |TESTA!!!!|FFFY|这里是额外的内容|DDDD|
 
-
 |new test|
 |-+-+-+|
 |TST|
-
 
 |-|
 
@@ -648,6 +689,8 @@ CAPTION测试
 \[F=ma\]
 
 \[F_合=ma_合\]
+
+** 单独行对文本的作用
 
 ** 其他
 原内容：

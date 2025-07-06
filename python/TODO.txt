@@ -4,4 +4,4 @@
 - [ ] 单独的图片居中(figure)
 - [ ] 修正脚注行为
 - [ ] 优化输出html格式
-- [ ] 根据pyright和pylint
+- [ ] 根据pyright和pylint优化代码

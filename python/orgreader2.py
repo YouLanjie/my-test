@@ -3,7 +3,6 @@
 
 from pprint import pprint
 from pathlib import Path
-import sys
 import time
 import argparse
 import re
@@ -41,6 +40,7 @@ class Strings:
     """行内字符串类，提供行内格式转换"""
     def __init__(self, s:str, node, parse_able : bool = True) -> None:
         self.s = s
+        self.parsed = {"string":None, "parsed":[], "result":{"text":"", "html":""}}
         self.parse_able = parse_able
         if isinstance(node, Root):
             self.upward = node
@@ -55,6 +55,7 @@ class Strings:
                 ("del", re.compile(r"\+([^ ].*?(?<! ))\+(?=[ ()-]|$)")),
                 ("fn", re.compile(r"\[fn:([^]]*)\]")),
                 ]
+        img_exts=["png", "jpg", "jpeg", "gif", "webp"]
         li = []
         i = 0
         last = i
@@ -72,8 +73,12 @@ class Strings:
                 if current_pattern[0] == "link":
                     mode = "link"
                     link = re.sub(r"\\([][])", r"\1", ret.group(1))
+                    for j in "[]":
+                        if j not in link:
+                            continue
+                        link = link.replace(j, f"%{hex(ord(j))[2:].upper()}")
                     alt = ret.group(2)
-                    ret = re.match(r".*/(.*\.(?:jpg|png|jpeg|gif))",link,re.I)
+                    ret = re.match(r".*/(.*\.(?:"+"|".join(img_exts)+r"))",link,re.I)
                     if not alt and ret:
                         mode = "img"
                         alt = ret.group(1)
@@ -128,10 +133,10 @@ class Strings:
                 if i[0] == "link":
                     ret += f"""\n<a href="{i[1]}">{self.list_to_text(i[2], mode)}</a>"""
                 elif i[0] == "img":
-                    ret += f"""\n<img src="{i[1]}" alt="{self.list_to_text(i[2], mode)}"></img>"""
+                    ret += f"""\n<img src="{i[1]}" alt="{self.list_to_text(i[2], mode)}" />"""
                 elif i[0] == "figure":
                     self.upward.document.counter["figure_count"]+=1
-                    ret += f"""\n<div class="figure">\n<p><img src="{i[1]}" alt="{i[1]}"></img></p>\n"""
+                    ret += f"""\n<div class="figure">\n<p><img src="{i[1]}" alt="{i[1]}" /></p>\n"""
                     ret += f"""<p><span class="figure-number">Figure {self.upward.document.counter["figure_count"]}: </span>"""+\
                             """{self.list_to_text(i[2])}</p></div>"""
                 elif i[0] == "fn":
@@ -162,11 +167,12 @@ class Strings:
         if ord(ch1) > 127 or ord(ch2) > 127:
             return True
         # 任一为符号
-        symbol = r"()[]{}@#$%&!^*+-=/"
+        symbol = r"()[]{}<>@#$%&!^*+-=/,.`~\"'"
         if ch1 in symbol or ch2 in symbol:
             return True
         return False
-    def get_pre_text(self) -> str:
+    def get_pre_text(self, mode:str="text") -> str:
+        """获取预处理文字"""
         lines = self.s.splitlines()
         text = ""
         for i in lines:
@@ -178,13 +184,21 @@ class Strings:
                 if self.split_cond(text, i):
                     split = ""
                 text+=f"{split}{i}"
+        if mode == "html":
+            text = re.sub("<", r"&lt;", text)
+            text = re.sub(">", r"&gt;", text)
         return text
     def get_text(self, mode:str="text") -> str:
         """获取文字"""
         if not self.parse_able:
             return re.sub("\n", " ", self.s)
-        text = self.get_pre_text()
-        return self.list_to_text(self.parse_inline_text(text), mode)
+        if self.parsed["parsed"] and self.parsed["string"] == self.s:
+            ret = self.parsed["result"].get(mode)
+            return ret if ret else ""
+        text = self.get_pre_text(mode)
+        self.parsed["parsed"] = self.parse_inline_text(text)
+        self.parsed["result"][mode] = self.list_to_text(self.parsed["parsed"], mode)
+        return self.parsed["result"].get(mode)
 
 class Root:
     """根节点/节点父类"""
@@ -288,8 +302,9 @@ class Text(Root):
         text = self.line.get_text(mode)
         if mode == "html":
             if text != "":
-                need_ptag = self.line.parse_inline_text(self.line.get_pre_text())
-                if len(need_ptag) > 1:
+                self.line.get_text()
+                need_ptag = self.line.parsed["parsed"]
+                if len(need_ptag) > 1 or (need_ptag and isinstance(need_ptag[0], str)):
                     text = f"<p>{text}</p>"
                 else:
                     text = f"{text}"
@@ -435,6 +450,11 @@ class Title(Root):
                 text += """</span>"""
             text += f"</h{self.level+2-self.document.counter["lowest_title"]}>"
 
+        has_text_outline = False
+        if mode == "html" and self.child and not isinstance(self.child[0], Title):
+            text += f"""<div class="outline-text-{self.level+1}" id="text-{re.sub(r"\.","-",lv)}">"""
+            has_text_outline = True
+
         for i in self.child:
             if mode == "text":
                 if text and text[-1] != "\n":
@@ -442,8 +462,13 @@ class Title(Root):
                 for j in i.get_text(mode).splitlines():
                     text+=f"|   {j}\n"
             else:
+                if has_text_outline and isinstance(i, Title):
+                    text += "</div>"
+                    has_text_outline = False
                 text += i.get_text(mode)
         if mode != "text":
+            if has_text_outline:
+                text += "</div>"
             text += "</div>"
         return text
 
@@ -647,7 +672,7 @@ class BlockCode(Block):
         lines = [re.sub(f"^{" "*self.baise}", "", i) for i in lines]
         self.line = ""
         for i in lines:
-            i = re.sub(r"^( *),(?:[*,]|#\+)", r"\1", i)
+            i = re.sub(r"^(?: *),([*,]|#\+)", r"\1", i)
             self.line += f"{i}\n"
         self.line = Strings(self.line, self)
         return True
@@ -680,6 +705,52 @@ class BlockExport(BlockCode):
         if mode==self.lang:
             return self.line.s
         return ""
+
+class BlockComment(BlockCode):
+    """注释块"""
+    def get_text(self, mode: str = "text") -> str:
+        return ""
+
+class BlockExample(BlockCode):
+    """代码块"""
+    def get_text(self, mode:str="text") -> str:
+        if not isinstance(self.line, Strings):
+            return ""
+        if mode == "text":
+            ret = f",----{f" Lang:{self.lang}" if self.lang else ""} (EXAMPLE)\n"
+            for i in self.line.s.splitlines():
+                ret += f"| {i}\n"
+            ret += "`----"
+            return ret
+        ret = "<pre class=\"example\">"
+        for i in self.line.s.splitlines():
+            ret += f"{i}\n"
+        ret += "</pre>"
+        return ret
+
+class BlockVerse(BlockCode):
+    """参照原样输出(不合并行)"""
+    def add(self, obj, flag=True):
+        super().add(obj)
+        if flag:
+            text = Text(self.document)
+            text.line.s = ""
+            self.add(text, False)
+            self.number-=1
+    def get_text(self, mode:str="text") -> str:
+        if not isinstance(self.line, Strings):
+            return ""
+        if mode == "text":
+            ret = ",==== (VERSE)\n"
+            for i in self.line.s.splitlines():
+                ret += f"| {i}\n"
+            ret += "`===="
+            return ret
+        ret = "<p class=\"verse\">"
+        for i in self.line.s.splitlines():
+            ret += f"{i}\n"
+        ret += "</p>"
+        return ret
 
 class BlockQuote(Block):
     """引用块"""
@@ -724,7 +795,9 @@ class BlockCenter(BlockQuote):
                     text+="\n"
                 ret = i.get_text(mode)
                 rets = ret.splitlines()
-                max_width = max([get_str_width(j) for j in rets])
+                max_width = 0
+                if rets:
+                    max_width = max([get_str_width(j) for j in rets])
                 max_width += max_width%2
                 ret = "\n".join([get_str_in_width(j, max_width, align="<l>") for j in rets])
                 for j in ret.splitlines():
@@ -823,8 +896,8 @@ class Table(Text):
         self.reset_width()
         self.check_control_line()
     def get_text(self, mode:str="text") -> str:
-        skip_list = [-1 if i[1] != "align" else i[0] for i in self.control_line]
-        split_list = [-1 if i[1] == "align" else i[0] for i in self.control_line]
+        skip_list = [i[0] for i in self.control_line if i[1] == "align"]
+        split_list = [i[0] for i in self.control_line if i[1] == "split"]
         if mode == "text":
             total_width = self.col+1
             for i in self.width:
@@ -844,10 +917,14 @@ class Table(Text):
             text+=f"{get_str_in_width("",total_width,"`")}\n"
             return f"{text}"
         text = """\n<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">"""
+        if len(self.lines) - len(self.control_line) <= 0:
+            text += "</table>"
+            return text
         rule = {"<l>":"left", "<c>":"center", "<r>":"right"}
         text += "<colgroup>"
         text += "\n".join([f"""<col class="org-{rule[i]}" />""" for i in self.align])
         text += "</colgroup>"
+
         # 一线分头尾
         if split_list:
             text += "<thead>"
@@ -868,9 +945,9 @@ class Table(Text):
             text += "<tr>"
             for col,width,align in zip(line, self.width, self.align):
                 if split_list and index < split_list[0]:
-                    text+=f"<th scope=\"col\" class=\"org-{rule[align]}\">{col.get_text(mode)}</td>"
+                    text+=f"<th scope=\"col\" class=\"org-{rule[align]}\">{col.get_text(mode)}</th>"
                 else:
-                    text+=f"<td class=\"org-{rule[align]}\">{col.get_text(mode)}</td>"
+                    text+=f"<td class=\"org-{rule[align]}\">{col.get_text(mode) if col.get_text(mode) else "&nbsp;"}</td>"
             index+=1
             text += "</tr>"
         text += "</table>"
@@ -897,38 +974,47 @@ class Table(Text):
 
 #^ *#\+begin_([^ \n]+)(?:[ ]+(.*?))?\n(.*?)^ *#\+end_\1\n?
 RULES = {
-        "Meta":        {"match":re.compile(r"^[ ]*#\+([^:]*):[ ]*(.*)", re.I), "class":Meta},
-        "Footnotes":   {"match":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(Footnotes *.*)"),
-                        "class":Footnotes,
-                        "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)", re.I)},
-        "Title":       {"match":re.compile(r"^([*]+)[ ]+((?:COMMENT )?) *(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
-                        "class":Title,
-                        "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?) *(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
-        "BlockCode":   {"match":re.compile(r"^ *#\+begin_src(?:[ ]+(.*))?", re.I),
-                        "class":BlockCode,
-                        "end":re.compile(r"^ *#\+end_src", re.I)},
-        "BlockExport": {"match":re.compile(r"^ *#\+begin_export(?:[ ]+(.*))?", re.I),
-                         "class":BlockExport,
-                         "end":re.compile(r"^ *#\+end_export", re.I)},
-        "BlockQuote":  {"match":re.compile(r"^ *#\+begin_quote", re.I),
-                        "class":BlockQuote,
-                        "end":re.compile(r"^ *#\+end_quote", re.I)},
-        "BlockCenter": {"match":re.compile(r"^ *#\+begin_center", re.I),
-                        "class":BlockCenter,
-                        "end":re.compile(r"^ *#\+end_center", re.I)},
-        "Comment":     {"match":re.compile(r"^[ ]*#[ ]+(.*)", re.I),"class":Comment},
-        "List":        {"match":re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.)) +(.*)", re.I),
-                        "class":List,
-                        "end":re.compile(r"^( *)(.*)", re.I)},
-        "Table":       {"match":re.compile(r"^ *\|", re.I), "class":Table},
-        "Footnote":    {"match":re.compile(r"^\[fn:([^]]*)\](.*)"), "class":Footnote},
-        "Text":        {"match":re.compile(""), "class":Text},
-        "Root":        {"match":re.compile(""),
-                        "class":Comment,
-                        "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)", re.I)},
-        "ListItem":    {"match":re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.)) +(.*)", re.I),
-                        "class":List,
-                        "end":re.compile(r"^( *)(.*)", re.I)},
+        "Meta":         {"match":re.compile(r"^[ ]*#\+([^:]*):[ ]*(.*)", re.I), "class":Meta},
+        "Footnotes":    {"match":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(Footnotes *.*)"),
+                         "class":Footnotes,
+                         "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)", re.I)},
+        "Title":        {"match":re.compile(r"^([*]+)[ ]+((?:COMMENT )?) *(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
+                         "class":Title,
+                         "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?) *(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
+        "BlockCode":    {"match":re.compile(r"^ *#\+begin_src(?:[ ]+(.*))?", re.I),
+                         "class":BlockCode,
+                         "end":re.compile(r"^ *#\+end_src", re.I)},
+        "BlockExport":  {"match":re.compile(r"^ *#\+begin_export(?:[ ]+(.*))?", re.I),
+                          "class":BlockExport,
+                          "end":re.compile(r"^ *#\+end_export", re.I)},
+        "BlockQuote":   {"match":re.compile(r"^ *#\+begin_quote", re.I),
+                         "class":BlockQuote,
+                         "end":re.compile(r"^ *#\+end_quote", re.I)},
+        "BlockCenter":  {"match":re.compile(r"^ *#\+begin_center", re.I),
+                         "class":BlockCenter,
+                         "end":re.compile(r"^ *#\+end_center", re.I)},
+        "BlockComment": {"match":re.compile(r"^ *#\+begin_comment(?:[ ]+(.*))?", re.I),
+                         "class":BlockComment,
+                         "end":re.compile(r"^ *#\+end_comment", re.I)},
+        "BlockExample": {"match":re.compile(r"^ *#\+begin_example(?:[ ]+(.*))?", re.I),
+                         "class":BlockExample,
+                         "end":re.compile(r"^ *#\+end_example", re.I)},
+        "BlockVerse":   {"match":re.compile(r"^ *#\+begin_verse(?:[ ]+(.*))?", re.I),
+                         "class":BlockVerse,
+                         "end":re.compile(r"^ *#\+end_verse", re.I)},
+        "Comment":      {"match":re.compile(r"^[ ]*#[ ]+(.*)", re.I),"class":Comment},
+        "List":         {"match":re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.)) +(.*)", re.I),
+                         "class":List,
+                         "end":re.compile(r"^( *)(.*)", re.I)},
+        "Table":        {"match":re.compile(r"^ *\|", re.I), "class":Table},
+        "Footnote":     {"match":re.compile(r"^\[fn:([^]]*)\](.*)"), "class":Footnote},
+        "Text":         {"match":re.compile(""), "class":Text},
+        "Root":         {"match":re.compile(""),
+                         "class":Comment,
+                         "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)", re.I)},
+        "ListItem":     {"match":re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.)) +(.*)", re.I),
+                         "class":List,
+                         "end":re.compile(r"^( *)(.*)", re.I)},
         }
 
 class Document:
@@ -1088,6 +1174,7 @@ class Document:
             ret+=f"""<a href="#org-title-{re.sub(r"\.","-",level[:-1])}">{text}</a>"""
             last = len(i[:-1])
 
+        ret+="</li></ul>"*(last)
         ret += "</div></div>"
         return ret
     def to_text(self) -> str:
@@ -1115,9 +1202,9 @@ class Document:
         if self.meta["html_link_home"] or self.meta["html_link_up"]:
             html += f"""\
 <div id="org-div-home-and-up">
- <a accesskey="h" href="{self.meta["html_link_up"]}"> UP </a>
+ <a accesskey="h" href="{self.meta["html_link_up"] if self.meta["html_link_up"] else "#"}"> UP </a>
  |
- <a accesskey="H" href="{self.meta["html_link_home"]}"> HOME </a>
+ <a accesskey="H" href="{self.meta["html_link_home"] if self.meta["html_link_home"] else "#"}"> HOME </a>
 </div>
 """
         html += f"""<div id="content" class="content">{title}{self.get_table_of_content("html")}"""

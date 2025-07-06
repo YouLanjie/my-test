@@ -7,9 +7,8 @@ import orgreader2
 
 try:
     import natsort
-    import bs4
 except ModuleNotFoundError as e:
-    i = input("tyr: pip install natsort beautifulsoup4 ? (y/N)")
+    i = input("tyr: pip install natsort ? (y/N)")
     if i in ("y", "yes"):
         import pip
         if not pip.main(["install","natsort", "beautifulsoup4"]):
@@ -89,12 +88,12 @@ def main():
 
     if len(dir_list) > 1:
         print("INFO 创建首页")
-        output = get_output([Path(f"{i}.html") for i in dir_list], f"INDEX:{title}", title, None, args)
+        output = get_output([calculate_relative(Path(f"{i}.html"), output_d) for i in dir_list], f"INDEX:{title}", title, None, args)
         if args.save_org or args.no_export:
             save_file(Path(f"{output_d}/index.org"), output)
         if not args.no_export:
             save_file(Path(f"{output_d}/index.html"),
-                      str(bs4.BeautifulSoup(orgreader2.Document(output.splitlines()).to_html(), "html.parser").prettify()))
+                      str(orgreader2.Document(output.splitlines()).to_html()))
         # print(output)
     elif dir_list:
         print("INFO 单文件(无章节)")
@@ -107,12 +106,17 @@ def main():
                 for i in dirs.iterdir() \
                 if i.is_file() and pattern.match(i.name)]
         file_list = natsort.natsorted(file_list)
-        output = get_output(file_list, title, f"{dir_list.index(dirs)+1} / {dirs}" if len(dir_list) > 1 else f"{dirs}", (lastdir, nextdir), args)
+        output = get_output(file_list, title,
+                f"{dir_list.index(dirs)+1} / {dirs}" if len(dir_list) > 1 else f"{dirs}",
+                (lastdir, nextdir), args)
+        objname = dirs.name
+        if len(dir_list) <= 1:
+            objname = "index"
         if args.save_org or args.no_export:
-            save_file(Path(f"{output_d}/{dirs.name}.org"), output)
+            save_file(Path(f"{output_d}/{objname}.org"), output)
         if not args.no_export:
-            save_file(Path(f"{output_d}/{dirs.name}.html"),
-                      str(bs4.BeautifulSoup(orgreader2.Document(output.splitlines()).to_html(), "html.parser").prettify()))
+            save_file(Path(f"{output_d}/{objname}.html"),
+                      str(orgreader2.Document(output.splitlines()).to_html()))
         # print(output)
 
 def parse_arguments() -> argparse.Namespace:
