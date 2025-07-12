@@ -508,6 +508,7 @@ content in begin_example(嵌套)
 content in begin_verse(嵌套)
 #+end_src
 2
+[[http://github.com/][链接测试]]
 #+end_verse
 
 * 表格测试(内容来自 /泰拉瑞亚战士全流程笔记/)

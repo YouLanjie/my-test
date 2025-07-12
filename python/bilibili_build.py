@@ -4,16 +4,19 @@
 # Dependences: curses(tui),
 #              ffmpeg(translate),
 #              mpv(play media)
+#              python-biliass
 
 import os
 import sys
-import pathlib
-import getopt
+import subprocess
+import curses
+import argparse
+from pathlib import Path
 import json
 
 class Video():
     """存储单个视频信息"""
-    def __init__(self, file):
+    def __init__(self, file:Path):
         if file.is_file() is False:
             print(f"`{str(file)}`不是文件")
             sys.exit(1)
@@ -41,6 +44,7 @@ class Video():
         self.index = page_data.get("index")
         if self.index is None:
             self.index = 0
+        self.danmaku = Path(file.parent/"danmaku.xml")
         # set final title
         self.reset_title()
     def getlist(self):
@@ -61,7 +65,7 @@ class Video():
 
 class Ui():
     """TUI,需要curses"""
-    width=os.get_terminal_size().columns
+    width=80
     position=0
     select=0
     collection = []
@@ -70,7 +74,12 @@ class Ui():
             print("模块curses未导入，curses界面不可用")
             sys.exit(1)
         info_height = 9
-        self.height=os.get_terminal_size().lines - info_height - 1
+        try:
+            self.width=os.get_terminal_size().columns
+            self.height=os.get_terminal_size().lines - info_height - 1
+        except OSError:
+            self.width = 80
+            self.height = 24
         self.stdscr = stdscr
         curses.curs_set(0)
         curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLUE)
@@ -203,6 +212,8 @@ class Ui():
                 self.cmd(cmd_genal(obj, "mp3"))
             elif inp == "E":
                 self.cmd(cmd_genal(obj, "mp4"))
+            elif inp == "d":
+                self.cmd(cmd_genal(obj, "mp4"))
             elif inp == " ":
                 if self.select in self.collection:
                     self.collection.remove(self.select)
@@ -221,14 +232,25 @@ class Ui():
                     for j in i:
                         j.reset_title(title_mode[inp])
             elif inp == "4":
-                cfg["vfat_name"] = not cfg["vfat_name"]
+                CONFIG["vfat_name"] = not CONFIG["vfat_name"]
             self.check([self.content, self.content[select]][deep])
         # curses.endwin()
 
+def get_video_dimensions(file_path:Path) -> tuple[int, int]:
+    cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
+           "-show_entries", "stream=width,height", "-of", "json", str(file_path)]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    data = json.loads(result.stdout)
+    width = data["streams"][0]["width"]
+    height = data["streams"][0]["height"]
+    return width, height
+
 def cmd_genal(li, mode) -> str:
     """生成shell命令用于保存或执行"""
+    has_subprocess = subprocess.run("which biliass",check=False,
+            shell=True ,capture_output=True).returncode == 0
     t = ""
-    if type(li[0]) != list:
+    if not isinstance(li[0], list):
         li = [li]
     t+=f"echo \"Running mode:{mode}\"\n"
     for i in li:
@@ -236,92 +258,87 @@ def cmd_genal(li, mode) -> str:
             t+="# =========================\n"
             t+=f"# SETS: {i[0].maintitle} <AV{i[0].avid}>\n"
         for j in i:
-            vid = list(pathlib.Path(j.dir_self).glob("**/video.m4s"))
-            aud = list(pathlib.Path(j.dir_self).glob("**/audio.m4s"))
+            vid = list(Path(j.dir_self).glob("**/video.m4s"))
+            aud = list(Path(j.dir_self).glob("**/audio.m4s"))
             if len(vid) == 0 or len(aud) == 0:
                 t+=f"# {j.dir_self}:no media file({j.title})"
                 continue
+            danmaku : Path = j.danmaku
+            vid = vid[0]
+            aud = aud[0]
             # 替换vfat系统不允许出现的字符（包括部分正常文件系统特殊字符）
             output = j.title
             replacement = ["/", "／"]
-            if cfg["vfat_name"]:
+            if CONFIG["vfat_name"]:
                 replacement = ["\\/:*?\"<>", "＼／∶＊？＂〈〉｜"]
             for k,l in zip(list(replacement[0]), list(replacement[1])):
                 output=output.replace(k, l)
-            output = cfg["outputd"]+output
+            output = CONFIG["outputd"]+output
             if output[0] == "-":
                 output = "./"+output
+            base_output = output
             t+=f"# {j.title if len(i) == 1 else j.part} <Dir: {j.dir_self}>\n"
             if mode == "3gp":
-                t+=f"ffmpeg -i \"{str(vid[0])}\" -i \"{str(aud[0])}\""\
+                t+=f"ffmpeg -i \"{str(vid)}\" -i \"{str(aud)}\""\
                     +" -r 12 -b:v 400k -s 352x288 -ab 12.2k -ac 1 -ar 8000 -c copy "
                 output+=".3gp"
             elif mode == "mp4":
-                t+=f"ffmpeg -i \"{str(vid[0])}\" -i \"{str(aud[0])}\" -c copy "
+                t+=f"ffmpeg -i \"{str(vid)}\" -i \"{str(aud)}\" -c copy "
                 output+=".mp4"
             elif mode in ("m4a" "copy"):
-                t+=f"cp \"{str(aud[0])}\" "
+                t+=f"cp \"{str(aud)}\" "
                 output+=".m4a"
             elif mode == "play":
-                t+=f"echo \"Now Playing:{j.title}\"\n{cfg["player"]} \"{str(aud[0])}\"\n"
+                t+=f"echo \"Now Playing:{j.title}\"\n{CONFIG["player"]} \"{str(aud)}\"\n"
                 continue
             elif mode == "play_mp4":
-                t+=f"echo \"Now Playing:{j.title}\"\n{cfg["player"]} \"{str(vid[0])}\" &\n{cfg["player"]} \"{str(aud[0])}\"\n"
+                t+=f"echo \"Now Playing:{j.title}\"\n{CONFIG["player"]} \"{str(vid)}\" &\n"+\
+                        f"{CONFIG["player"]} \"{str(aud)}\"\n"
                 continue
             else:
-                t+=f"ffmpeg -i \"{str(aud[0])}\" "
+                t+=f"ffmpeg -i \"{str(aud)}\" "
                 output+=".mp3"
             t+=f"\"{output}\"\n"
+            if not CONFIG["noass"] and has_subprocess and mode not in ("play", "play_mp4"):
+                width, height = get_video_dimensions(vid)
+                t+=f"""biliass "{danmaku}" -s {width}x{height} -o "{base_output}.ass"\n"""
         if len(i) != 1:
             t+=f"# END OF SETS: {i[0].maintitle} <AV{i[0].avid}>\n"
             t+="# =========================\n\n"
     t+="echo \"Done!\\n\"\n"
     return t
 
-def run_main(argv):
-    """运行主程序(需要argv)"""
+def run_main():
+    """运行主程序(需要)"""
     list_mode = False
-    inputd = [None,
-              "/sdcard/Android/data/tv.danmaku.bili/download/",
+    inputd = ["/sdcard/Android/data/tv.danmaku.bili/download/",
               "/sdcard/Android/data/com.a10miaomiao.bilimiao/download/",
               "./"]
-    outputf = None
-    mode = "mp3"
-    try:
-        opts = getopt.getopt(argv,
-            "hli:o:O:m:p:",
-            ["help", "list", "no-vfat-name", "input-dir=",
-             "output-dir=", "output-file=","mode=",
-             "player="]
-        )
-    except getopt.GetoptError:
-        mhelp(1, msg="[!] Err: getopt error")
-        sys.exit(-1)
-    for option, argument in opts[0]:
-        if option in ("-h", "--help"):
-            mhelp()
-        elif option in ("-l", "--list"):
-            list_mode = True
-        elif option in ("-n", "--no-vfat-name"):
-            cfg["vfat_name"]=False
-        elif option in ("-m", "--mode"):
-            mode = argument
-        elif option in ("-i", "--input-dir"):
-            if inputd[0] is None:
-                inputd = []
-            inputd.append(argument)
-        elif option in ("-o", "--output-dir"):
-            cfg["outputd"] = argument
-        elif option in ("-O", "--output-file"):
-            outputf = argument
-        elif option in ("-p", "--player"):
-            cfg["player"] = argument
+    parser = argparse.ArgumentParser(description="导出B站手机端缓存")
+    parser.add_argument('-l', '--list', action="store_true", help='列出视频')
+    parser.add_argument('-n', '--no-vfat-name', action="store_false", help='不替换特殊字符')
+    parser.add_argument('-N', '--no-ass', action="store_true", help='不生成弹幕(加快脚本生成速度)')
+    parser.add_argument('-i', '--input-dir', action="append", help='设置输入文件夹')
+    parser.add_argument('-o', '--output-dir', default="", help='设置输出文件夹')
+    parser.add_argument('-O', '--output-file', default=None, help='设置输出文件')
+    parser.add_argument('-p', '--player', default="mpv", help='设置默认播放器')
+    parser.add_argument('-m', '--mode', default="mp3", help='设置脚本输出类型(mp3(默认)|mp4|m4a(仅复制)|3gp|play)')
+    parser.add_argument('-H', '--help-key', action="store_true", help='内部按键帮助')
+    args = parser.parse_args()
+    if args.help_key:
+        mhelp()
+    list_mode = args.list
+    mode = args.mode
+    CONFIG["outputd"] = args.output_dir
+    outputf = args.output_file
+    CONFIG["vfat_name"] = args.no_vfat_name
+    CONFIG["player"] = args.player
+    CONFIG["noass"] = args.no_ass
+    if args.input_dir:
+        inputd=args.input_dir
 
-    if inputd[0] is None:
-        inputd.pop(0)
-    input_fs = [list(pathlib.Path(i).glob("**/entry.json")) for i in inputd]
     input_f = []
-    for i in input_fs:
+    for i in (list(Path(i).glob("**/entry.json")) for i in inputd):
         input_f += i
     if len(input_f) == 0:
         mhelp(msg="[!] no input file was found")
@@ -343,9 +360,7 @@ def run_main(argv):
             print()
         sys.exit(0)
     if outputf is not None:
-        file = open(outputf, "w")
-        file.write(cmd_genal(li, mode))
-        file.close()
+        Path(outputf).write_text(cmd_genal(li, mode), encoding="utf8")
         sys.exit(0)
     return li
 
@@ -353,17 +368,6 @@ def mhelp(ret=0, msg=""):
     """显示帮助信息"""
     if msg != "":
         print(str(msg))
-    print("Usage bilibili_build.py [OPTION]")
-    print("OPTION:")
-    print("    -h         --help           显示帮助")
-    print("    -l         --list           列出视频")
-    print("    -n         --no-vfat-name   不替换特殊字符")
-    print("    -i <dir>   --input-dir=dir  设置输入文件夹")
-    print("    -o <dir>   --output-dir=dir 设置输出文件夹")
-    print("    -O <file>  --output=file    设置输出文件")
-    print("    -p <cmd>   --player=cmd     设置默认播放器")
-    print("    -m <mode>  --mode=mode      设置脚本输出类型")
-    print("[*] 输出类型:mp3(默认)|mp4|m4a(仅复制)|3gp|play")
     print("[*] 请确保`entry.json`文件存在")
     print("[*] 在TUI中`jk`上下移动 `l`查看多p视频 `h`返回")
     print("    `gG`快速跳转到列表头部或尾部 `r`反转列表排序")
@@ -373,10 +377,10 @@ def mhelp(ret=0, msg=""):
     print("    `4`切换是否替换输出文件名特殊字符")
     sys.exit(ret)
 
-cfg = {"player":"mpv", "outputd":"", "vfat_name":True}
+CONFIG = {"player":"mpv", "outputd":"", "vfat_name":True,
+          "noass":False}
 if __name__ == "__main__":
-    video_list = run_main(sys.argv[1:])
+    video_list = run_main()
     video_list.reverse()
-    import curses
     curses.wrapper(lambda stdscr: Ui(stdscr, video_list).main())
 
