@@ -634,6 +634,7 @@ APPEND TEST|     M      |       大地图       |
 
 链接边界测试6[[http://baidu.com/\[fqwer\]0owerqy]]胡言乱语
 
+*** 图片测试
 图片测试1：
 [[./test.jpg]]
 
@@ -656,6 +657,10 @@ CAPTION测试
 即使是隔了个空行也不行
 
 #+CAPTION: =样式于caption=
+[[./test.jpg]]
+
+单独单列而居中的图片：
+
 [[./test.jpg]]
 
 *** [[http://bilibili.com][标题链接]]
@@ -754,15 +759,32 @@ fn5:[fn:5]
 
 [fn:2] TEST(fn2)
 
+草草你的
+
 文字脚注测试(fn:name)[fn:name]
 
-** 阻断使用
+文字脚注测试(fn:name2)[fn:name2]
+
+*** 阻断使用1
+
+这里面全是footnote的定义：
 
 [fn:6]fn6 no founded
+
+*** 阻断使用2
+
+# 包盖脚注7且没有对应内容的文本(fn7)[fn:7]ok?
+实践证明脚注有引用而没有对应的定义时emacs会报错不输出
+
+而没有被引用的脚注会被忽略
+
+[fn:8] 脚注8且没有对应call引用的地方
+
 
 ** Empty title
 some text here
 *** Footnotes
+[fn:name2] (fn:name2)脚注在这里
 
 [fn:name] (fn:name)????脚注自动识别到这里来了？
 真的是66666666
@@ -789,7 +811,6 @@ test9phjjky0yuo
 
 * Footnotes
 [fn:fuckname] Fuck!(fn:fuckname)
-
 [fn:4] Created(fn4)
 
 [fn:1] testhaha(fn1)

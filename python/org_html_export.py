@@ -32,9 +32,11 @@ def get_output(files:list[Path], title:str, subtitle:str, link:tuple[Path|None, 
     navigation = ""
     if link:
         navigation = "|上一页|本页文件总数|下一页|\n|-|\n"
-        navigation += f"| {f"[[./{safety_name(str(link[0]))}][{safety_name(link[0].stem)}]]" if link[0] else ""} "
+        navigation += f"| [[./{safety_name(str(link[0]))}][{safety_name(link[0].stem)}]] |" \
+                if link[0] else "| |"
         navigation += f"| {len(files)} "
-        navigation += f"| {f"[[./{safety_name(str(link[1]))}][{safety_name(link[1].stem)}]]" if link[1] else ""} |"
+        navigation += f"| [[./{safety_name(str(link[1]))}][{safety_name(link[1].stem)}]] |" \
+                if link[1] else "| |"
     ret = f"""\
 #+title: {title}
 #+HTML_HEAD: <link rel='stylesheet' type='text/css' href='{args.css_file}'/>
@@ -43,9 +45,18 @@ def get_output(files:list[Path], title:str, subtitle:str, link:tuple[Path|None, 
 #+HTML_HEAD: <style>li{"{margin: 0px}"}</style>
 {f"* Header\n{navigation}" if link else ""}
 * {subtitle}
-{"\n".join([f"- [[{"./" if safety_name(str(i))[0] != "/" else "file://"}{safety_name(str(i))}]]" for i in files])}
-{f"* Tail\n{navigation}" if link else ""}
 """
+    li = [f"- [[{"./" if safety_name(str(i))[0] != "/" else "file://"}{safety_name(str(i))}]]" \
+            for i in files]
+    if args.split:
+        nl = []
+        for index,item in enumerate(li):
+            if index % args.split == 0:
+                nl.append(f"** {index+1}-{index+10}")
+            nl.append(item)
+        li = nl
+    ret += "\n".join(li)
+    ret += f"\n* Tail\n{navigation}" if link else ""
     return ret
 
 def get_input_dir(inp:Path, pattern:re.Pattern)->list[Path]:
@@ -126,6 +137,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-c', '--css-file', default="../main.css", help='设置css文件(默认../main.css)')
     parser.add_argument('-e', '--extern', default="", help='设置额外查找文件后缀(`|`分割)')
     parser.add_argument('-t', '--title', default=None, help='设置标题')
+    parser.add_argument('-s', '--split', type=int, nargs="?", default=0, const=10,
+            help='在图片间插入标题用于快速跳转(指定分组)')
     parser.add_argument('-N', '--no-export', action="store_true", help='保存org文件但不导出')
     parser.add_argument('-S', '--save-org', action="store_true", help='保存org文件并导出')
     args = parser.parse_args()

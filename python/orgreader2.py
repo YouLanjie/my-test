@@ -1,11 +1,14 @@
 #!/usr/bin/python
 """解析org文件"""
 
+# 标准库
 from pathlib import Path
 import sys
 import time
 import argparse
 import re
+import gzip
+# 第三方库
 import requests
 
 def print_err(s:str):
@@ -71,18 +74,21 @@ class Strings:
         alt = ret.group(2)
         ret = re.match(r".*/(.*\.(?:"+"|".join(self.img_exts)+r"))",link,re.I)
         if not alt and ret:
-            mode = "img"
-            alt = ret.group(1)
-            caption = self.upward.document.meta["caption"]
-            if not isinstance(self.upward, Title) and\
-                    caption[0] == self.upward.start-1 and last == 0:
-                mode = "figure"
-                alt = caption[1]
+            mode,alt = self._parse_img(ret, last)
         elif not alt:
             alt = link
         if alt and mode != "img":
             alt = self.orgtext_to_list(alt)
         li.append([mode, link, alt])
+    def _parse_img(self, ret, last):
+        mode = "img"
+        alt = ret.group(1)
+        caption = self.upward.document.meta["caption"]
+        if not isinstance(self.upward, Title) and\
+                caption[0] == self.upward.start-1 and last == 0:
+            mode = "figure"
+            alt = caption[1]
+        return mode, alt
     def orgtext_to_list(self, s:str) -> list[str]:
         """解释行内字符串变成数组"""
         li = []
@@ -121,12 +127,19 @@ class Strings:
         ret = ""
         for i in li:
             if isinstance(i, str):
+                i = i.replace("\n", "<br/>")
                 ret+=i
                 continue
             if i[0] == "link":
                 ret += f"""\n<a href="{i[1]}">{self.list_to_html(i[2])}</a>"""
             elif i[0] == "img":
-                ret += f"""\n<img src="{i[1]}" alt="{self.list_to_html(i[2])}" />"""
+                ret += "<div class=\"figure\"><p>" \
+                        if isinstance(self.upward, Text) and \
+                        not self.upward.opt.get("in_list") and len(li) == 1 else ""
+                ret += f"""\n<img src="{i[1]}" alt="{self.list_to_html(i[2])}" />\n"""
+                ret += "</p></div>\n" \
+                        if isinstance(self.upward, Text) and \
+                        not self.upward.opt.get("in_list") and len(li) == 1 else ""
             elif i[0] == "figure":
                 self.upward.document.status["figure_count"]+=1
                 ret += f"""\n<div class="figure">\n<p><img src="{i[1]}" alt="{i[1]}" /></p>\n"""
@@ -134,16 +147,26 @@ class Strings:
                         f"""{self.upward.document.status["figure_count"]}: </span>"""+\
                         f"""{self.list_to_text(i[2])}</p></div>"""
             elif i[0] == "fn":
-                fns = self.upward.document.status["footnotes"]
-                fn = fns[i[1]]
+                fns : dict = self.upward.document.status["footnotes"]
+                if not fns.get(i[1]):
+                    print_err(f"ERROR 引用没有定义的脚注'{i[1]}'")
+                    continue
+                fn : Footnote = fns[i[1]]
                 num = self.upward.document.status["footnote_count"]
                 if fn.id <= 0:
                     self.upward.document.status["footnote_count"]+=1
                     num+=1
                     fn.id = num
+                    name = fn.name if fn.type == "str" else num
+                    self.upward.document.status["call_footnotes"].append(i[1])
+                else:
+                    num = fn.id
                 name = fn.name if fn.type == "str" else num
+                fn.line.to_html()
                 ret += f"""<sup><a id="fnr.{name}" class="footref" """
-                ret += f"""href="#fn.{name}" role="doc-backlink">{num}</a></sup>"""
+                ret += f"""href="#fn.{name}" role="doc-backlink">"""
+                outline = self.upward.document.setting["footnote_style"]
+                ret += f"""{outline[0]}{num}{outline[1]}</a></sup>"""
             elif i[0] in self.rules:
                 ret += f"""\n{self.rules[i[0]][0]}{self.list_to_html(i[1])}{self.rules[i[0]][1]}"""
             else:
@@ -178,7 +201,7 @@ class Strings:
         if not ch1:
             return True
         if not ch2:
-            return False
+            return True
         ch1 = ch1[-1]
         ch2 = ch2[-1]
         # 任一为中文
@@ -337,7 +360,9 @@ class Text(TextBase):
         if not text:
             return text
         need_ptag = self.line.orgtext_to_list(self.line.get_pre_text())
-        if len(need_ptag) > 1 or (need_ptag and isinstance(need_ptag[0], str)):
+        if len(need_ptag) > 1 or \
+                (need_ptag and isinstance(need_ptag[0], str)) or \
+                (need_ptag and need_ptag[0][0] not in ("img","figure")):
             text = f"<p>{text}</p>"
         return text
 
@@ -399,6 +424,8 @@ class Meta(Root):
                 if req.status_code == 200:
                     req.encoding = req.apparent_encoding
                     content = req.text
+                else:
+                    print_err(f"WARN 加载文件异常，状态码: {req.status_code}")
             except (requests.exceptions.RequestException, IOError) as e:
                 print_err(f"WARN 加载文件错误: {e}")
                 return
@@ -574,6 +601,7 @@ class ListItem(Root):
         self.line = Strings("", self)
         text = Text(document)
         text.line.s = match.group(3)
+        text.opt["in_list"] = True
         self.add(text)
     @property
     def _summary(self):
@@ -611,7 +639,10 @@ class ListItem(Root):
         return text
     def to_html(self) -> str:
         text = ""
-        text += f"{self.child[0].to_html()}\n"
+        if isinstance(self.child[0], Text):
+            text += f"{self.child[0].line.to_html()}\n"
+        else:
+            text += f"{self.child[0].to_html()}\n"
         for i in self.child[1:]:
             # 下一级的东西
             for j in i.to_html().splitlines():
@@ -678,7 +709,7 @@ class List(Root):
             text += f"-L{level} {i.to_text()}"
         return text
     def to_html(self) -> str:
-        text = f"<{self.type}>\n"
+        text = f"<{self.type} class=\"org-{self.type}\">\n"
         for i in self.child:
             if text and text[-1] != "\n":
                 text += "\n"
@@ -750,9 +781,10 @@ class BlockCode(Block):
     def to_html(self) -> str:
         if not isinstance(self.line, Strings) or not self.opt["printable"]:
             return ""
-        ret = f"<pre class=\"src src-{self.lang.lower() if self.lang else "nil"}\">"
+        ret = "<div class=\"org-src-container\">"
+        ret += f"<pre class=\"src src-{self.lang.lower() if self.lang else "nil"}\">"
         ret += self.line.s
-        ret += "</pre>"
+        ret += "</pre></div>"
         return ret
 
 class BlockExport(BlockCode):
@@ -817,7 +849,7 @@ class BlockVerse(BlockCode):
             return ""
         ret = "<p class=\"verse\">"
         for i in self.line.s.splitlines():
-            ret += f"{Strings(i, self).to_html()}\n"
+            ret += f"{Strings(i, self).to_html()}<br/>"
         ret += "</p>"
         return ret
 
@@ -1084,9 +1116,11 @@ class Document:
     def __init__(self, lines:list[str], file_name:str="", setupfiles:list[str]|None=None) -> None:
         self.lines = lines
         self.current_line = 0
-        self.setting = {"file_name":file_name,"indent_str":"|   "}
+        self.setting = {"file_name":file_name, "indent_str":"|   ", "footnote_style":("", ""),
+                        "css_in_html":""}
         self.status = {"figure_count":0, "footnote_count":0, "lowest_title":50, "clean_up":False,
                        "is_in_src":[], "table_of_content":[], "footnotes":{},
+                       "call_footnotes":[],
                        "setupfiles":setupfiles if setupfiles else []}
         self.meta={
             "title":[],
@@ -1130,12 +1164,15 @@ class Document:
                 break
             self.current_line = self.root.checkend(self.lines, self.current_line)[1]
     def merge_text(self, node:Root):
-        """合并多行文本、表格，以及进行其他后处理"""
+        """合并多行文本、表格，以及进行其他后处理(todo)"""
         last = None
         remove_list = []
         insert_list = []
         count_title = 0
-        for i in node.child:
+        index = -1
+        while index+1 < len(node.child):
+            index+=1
+            i = node.child[index]
             if isinstance(i, Title):
                 key = i.line.s.split(" ")[0]
                 todo = None
@@ -1169,17 +1206,18 @@ class Document:
                     last.add_line(i)
                     remove_list.append(i)
                 else:
+                    index-=1
                     last = None
             elif isinstance(last, Footnote) and isinstance(i, Text):
                 last.line.s += f" {i.line.s}"
                 remove_list.append(i)
             else:
+                index-=1
                 last = None
         for i in remove_list:
             node.remove(i)
         for i in insert_list:
             i[0].insert(i[0].index(i[1])+i[2], i[3])
-        return
     def table_of_content_to_text(self) -> str:
         """获取目录并转成文本"""
         if not self.status["table_of_content"]:
@@ -1248,6 +1286,7 @@ class Document:
         """转成html"""
         self.status["figure_count"] = 0
         self.status["footnote_count"] = 0
+        self.status["call_footnotes"] = []
         meta = f"""\n{"\n".join(\
                 [f"""<meta name="{i}" content="{" ".join(self.meta[i])}" />"""\
                 for i in ("author", "description")])}"""
@@ -1258,7 +1297,7 @@ class Document:
 <!DOCTYPE html>
 <html lang="zh">
 <head>{meta}
-<title>{" ".join(self.meta["title"])}</title>{html_head}
+<title>{" ".join(self.meta["title"])}</title>{self.setting["css_in_html"]}{html_head}
 </head>
 <body>
 """
@@ -1283,16 +1322,15 @@ class Document:
 <h2 class="footnotes">Footnotes: </h2>
 <div id="text-footnotes">
 """
-            for i in sorted([self.status["footnotes"][i] for i in self.status["footnotes"]],
-                            key=lambda x:x.id):
-                i.line.to_html()
-            for i in sorted([self.status["footnotes"][i] for i in self.status["footnotes"]],
+            for i in sorted([self.status["footnotes"][i] for i in self.status["call_footnotes"]],
                             key=lambda x:x.id):
                 href_id = i.name if i.type == "str" else i.id
                 html += f"""\
 <div class="footdef">
 <sup>\
-<a id="fn.{href_id}" class="footnum" href="#fnr.{href_id}" role="doc-backlink">{i.id}</a>\
+<a id="fn.{href_id}" class="footnum" href="#fnr.{href_id}" role="doc-backlink">\
+{self.setting["footnote_style"][0]}{i.id}{self.setting["footnote_style"][1]}\
+</a>\
 </sup>
 <div class="footpara" role="doc-footnote"><p class="footpara"> {i.line.to_html()} </p></div>
 </div>"""
@@ -1312,7 +1350,7 @@ if self.meta["description"] else ""}\
         html += "</body>\n</html>"
         return html
 
-def main():
+def main() -> Document|str|None:
     """运行主函数"""
     args = parse_arguments()
     inp_f = ""
@@ -1324,9 +1362,9 @@ def main():
     else:
         inpf = list(Path(".").glob("**/*.org"))
         if len(inpf) == 0:
-            return
+            return None
         if not inpf[-1].is_file():
-            return
+            return None
         inp_f = str(inpf[-1])
         inp = inpf[-1].read_text(encoding="utf8")
     if args.diff:
@@ -1336,6 +1374,15 @@ def main():
         print(ret)
     else:
         ret = Document(inp.splitlines(), file_name=inp_f)
+        if args.emacs_css and list(Path("/usr/share/emacs/").glob("**/ox-html.el.gz")):
+            css_file = list(Path("/usr/share/emacs/").glob("**/ox-html.el.gz"))[0]
+            if css_file.is_file():
+                css_content = gzip.decompress(css_file.read_bytes()).decode()
+                match = re.search(
+                        r"<style type=\\\"text/css\\\">.*?</style>",
+                        css_content, re.DOTALL)
+                if match:
+                    ret.setting["css_in_html"] = match.group().replace("\\", "")
         if args.debug:
             print(ret.root.to_node_tree())
         elif args.text_mode:
@@ -1343,9 +1390,9 @@ def main():
             print("===================")
             print(ret.table_of_content_to_text())
             print(ret.to_text())
-            # pprint(ret.meta)
+            print(ret.meta)
             # pprint(ret.table_of_content)
-            # pprint(ret.setupfiles)
+            # print(ret.status["setupfiles"])
             # pprint(vars(ret))
         else:
             print(ret.to_html())
@@ -1357,6 +1404,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-d', '--diff', action="store_true", help='使用org-python导出')
     parser.add_argument('-i', '--input', default=None, help='指定输入文件')
     parser.add_argument('-t', '--text-mode', action="store_true", help='以text形式输出')
+    parser.add_argument('-E', '--emacs-css', action="store_true", help='从安装好的emacs获取内置css文件')
     parser.add_argument('-x', '--debug', action="store_true", help='调试输出')
     args = parser.parse_args()
     return args

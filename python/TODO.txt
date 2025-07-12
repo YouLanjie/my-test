@@ -1,7 +1,14 @@
 # orgreader2.py:
 - [x] center块
 - [x] '\\'换行(text)
-- [ ] 单独的图片居中(figure)
-- [ ] 修正脚注行为
+- [x] 单独的图片居中(figure)
+- [x] 修正脚注行为
+- [x] 修正表头错误行为
+- [ ] org-list-agenda语法支持
+- [x] code 支持语言标签
+- [ ] code语法高亮
+- [x] 内置css
+- [ ] 增加其他输出模式
+- [ ] 考虑增加对公式的支持
 - [ ] 优化输出html格式
 - [ ] 根据pyright和pylint优化代码
