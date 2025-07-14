@@ -3,45 +3,13 @@
 
 # 标准库
 from pathlib import Path
-import sys
 import time
 import argparse
 import re
 import gzip
 # 第三方库
 import requests
-
-def print_err(s:str):
-    """从stderr打印输出"""
-    print(s, file=sys.stderr)
-
-def get_str_width(s:str):
-    """计算字符串打印宽度"""
-    width = 0
-    count = 0
-    for c in s:
-        if ord(c) <= 127:
-            width += 1
-            count += 1
-        else:
-            width += 2
-            count += 1
-    return width
-
-def get_str_in_width(text:str, width:int, fill:str=' ', align:str="<c>"):
-    """根据打印宽度截断字符串"""
-    ret_text = text
-    if width > get_str_width(ret_text):
-        dwidth = width - get_str_width(ret_text)
-        if align.lower() == "<l>":
-            ret_text = f"{text}{fill[0]*(dwidth)}"
-        elif align.lower() == "<c>":
-            ret_text = f"{fill[0]*(dwidth//2)}{text}{fill[0]*(dwidth-dwidth//2)}"
-        elif align.lower() == "<r>":
-            ret_text = f"{fill[0]*(dwidth)}{text}"
-    while len(ret_text) > 0 and width < get_str_width(ret_text):
-        ret_text = ret_text[:-1]
-    return ret_text
+from pytools import *
 
 class Strings:
     """行内字符串类，提供行内格式转换"""
@@ -62,6 +30,7 @@ class Strings:
     def __init__(self, s:str, node, parse_able : bool = True) -> None:
         self.s = s
         self.parse_able = parse_able
+        self.cache:dict[str,list[str]]= {}
         if isinstance(node, Root):
             self.upward = node
     def _parse_link(self, ret, li, last):
@@ -78,7 +47,7 @@ class Strings:
         elif not alt:
             alt = link
         if alt and mode != "img":
-            alt = self.orgtext_to_list(alt)
+            alt = self.orgtext_to_list(alt , True)
         li.append([mode, link, alt])
     def _parse_img(self, ret, last):
         mode = "img"
@@ -89,8 +58,10 @@ class Strings:
             mode = "figure"
             alt = caption[1]
         return mode, alt
-    def orgtext_to_list(self, s:str) -> list[str]:
+    def orgtext_to_list(self, s:str, is_sub = False) -> list[str]:
         """解释行内字符串变成数组"""
+        if not is_sub and self.cache.get(s):
+            return self.cache.get(s) or []
         li = []
         i = 0
         last = i
@@ -112,13 +83,15 @@ class Strings:
                 elif current_pattern[0] == "fn":
                     li.append([current_pattern[0], ret.group(1)])
                 else:
-                    li.append([current_pattern[0], self.orgtext_to_list(ret.group(1))])
+                    li.append([current_pattern[0], self.orgtext_to_list(ret.group(1), True)])
                 last = i
                 i -= 1
                 break
             i+=1
         if last != i and re.findall(r"[^ ]", s[last:i]):
             li.append(s[last:i])
+        if not is_sub:
+            self.cache[s] = li
         return li
     def list_to_html(self, li:list) -> str:
         """将给定的已经分好的列表转回html"""
@@ -929,7 +902,6 @@ class Table(TextBase):
         split = re.match(r"\|-", line)
         if split:
             self.lines = ["split"]
-            self.reset_width()
             self.check_control_line()
             return
         match = re.findall(r"\|([^|]*)", line)
@@ -1000,9 +972,9 @@ class Table(TextBase):
             line += t
         li.append(line)
         self.lines = li
-        self.reset_width()
-        self.check_control_line()
     def to_text(self) -> str:
+        self.check_control_line()
+        self.reset_width()
         skip_list = [i[0] for i in self.control_line if i[1] == "align"]
         total_width = self.col+1
         for i in self.width:
@@ -1022,6 +994,7 @@ class Table(TextBase):
         text+=f"{get_str_in_width("",total_width,"`")}\n"
         return f"{text}"
     def to_html(self) -> str:
+        self.check_control_line()
         skip_list = [i[0] for i in self.control_line if i[1] == "align"]
         split_list = [i[0] for i in self.control_line if i[1] == "split"]
         text = """\n<table border="2" cellspacing="0" cellpadding="6" """+\
@@ -1121,7 +1094,7 @@ class Document:
         self.status = {"figure_count":0, "footnote_count":0, "lowest_title":50, "clean_up":False,
                        "is_in_src":[], "table_of_content":[], "footnotes":{},
                        "call_footnotes":[],
-                       "setupfiles":setupfiles if setupfiles else []}
+                       "setupfiles":setupfiles or []}
         self.meta={
             "title":[],
             "date":[],
@@ -1302,8 +1275,8 @@ class Document:
 <body>
 """
         if self.meta["html_link_home"] or self.meta["html_link_up"]:
-            href_up = self.meta["html_link_up"] if self.meta["html_link_up"] else "#"
-            href_home = self.meta["html_link_home"] if self.meta["html_link_home"] else "#"
+            href_up = self.meta["html_link_up"] or "#"
+            href_home = self.meta["html_link_home"] or "#"
             html += f"""\
 <div id="org-div-home-and-up">
  <a accesskey="h" href="{href_up}"> UP </a>
