@@ -9,6 +9,7 @@ import shutil
 import argparse
 import hashlib
 from pathlib import Path
+import argcomplete
 
 class Args:
     def __init__(self) -> None:
@@ -59,6 +60,7 @@ def parse_arguments() -> None:
     parser.add_argument('-P', '--print-recover', action="store_true", help='打印恢复脚本')
     parser.add_argument('-n', '--no-apply', action='store_true', help='不进行任何更改')
     parser.add_argument('-v', '--verbose', action='store_true', help='执行时显示更多输出(指定等级)')
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
     ARGS.set_arg(args)
     return

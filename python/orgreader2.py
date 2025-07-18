@@ -8,7 +8,11 @@ import argparse
 import re
 import gzip
 # 第三方库
+import argcomplete
 import requests
+import pygments
+from pygments.lexers import get_lexer_by_name
+from pygments.formatters import HtmlFormatter
 from pytools import *
 
 class Strings:
@@ -756,7 +760,14 @@ class BlockCode(Block):
             return ""
         ret = "<div class=\"org-src-container\">"
         ret += f"<pre class=\"src src-{self.lang.lower() if self.lang else "nil"}\">"
-        ret += self.line.s
+        fmt=HtmlFormatter(style="monokai", nowrap=True)
+        compiled = self.line.s
+        if self.lang:
+            compiled = pygments.highlight(
+                    self.line.s,
+                    get_lexer_by_name(self.lang),
+                    fmt)
+        ret += compiled
         ret += "</pre></div>"
         return ret
 
@@ -1090,7 +1101,8 @@ class Document:
         self.lines = lines
         self.current_line = 0
         self.setting = {"file_name":file_name, "indent_str":"|   ", "footnote_style":("", ""),
-                        "css_in_html":""}
+                        "css_in_html":'<style type="text/css">'+
+                        HtmlFormatter(style="monokai").get_style_defs()+'</style>'}
         self.status = {"figure_count":0, "footnote_count":0, "lowest_title":50, "clean_up":False,
                        "is_in_src":[], "table_of_content":[], "footnotes":{},
                        "call_footnotes":[],
@@ -1323,6 +1335,25 @@ if self.meta["description"] else ""}\
         html += "</body>\n</html>"
         return html
 
+def _set_css(args, doc:Document):
+    if not args.pygments_css:
+        doc.setting["css_in_html"] = ""
+    if not args.emacs_css:
+        return
+    if not list(Path("/usr/share/emacs/").glob("**/ox-html.el.gz")):
+        print_err("WARN 内嵌emacs内置css失败 - 找不到文件")
+        return
+    css_file = list(Path("/usr/share/emacs/").glob("**/ox-html.el.gz"))[0]
+    if not css_file.is_file():
+        print_err(f"WARN 内嵌emacs内置css失败 - 不是文件:{css_file}")
+        return
+    css_content = gzip.decompress(css_file.read_bytes()).decode()
+    match = re.search(
+            r"<style type=\\\"text/css\\\">.*?</style>",
+            css_content, re.DOTALL)
+    if match:
+        doc.setting["css_in_html"] += match.group().replace("\\", "")
+
 def main() -> Document|str|None:
     """运行主函数"""
     args = parse_arguments()
@@ -1347,15 +1378,7 @@ def main() -> Document|str|None:
         print(ret)
     else:
         ret = Document(inp.splitlines(), file_name=inp_f)
-        if args.emacs_css and list(Path("/usr/share/emacs/").glob("**/ox-html.el.gz")):
-            css_file = list(Path("/usr/share/emacs/").glob("**/ox-html.el.gz"))[0]
-            if css_file.is_file():
-                css_content = gzip.decompress(css_file.read_bytes()).decode()
-                match = re.search(
-                        r"<style type=\\\"text/css\\\">.*?</style>",
-                        css_content, re.DOTALL)
-                if match:
-                    ret.setting["css_in_html"] = match.group().replace("\\", "")
+        _set_css(args, ret)
         if args.debug:
             print(ret.root.to_node_tree())
         elif args.text_mode:
@@ -1377,8 +1400,10 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-d', '--diff', action="store_true", help='使用org-python导出')
     parser.add_argument('-i', '--input', default=None, help='指定输入文件')
     parser.add_argument('-t', '--text-mode', action="store_true", help='以text形式输出')
-    parser.add_argument('-E', '--emacs-css', action="store_true", help='从安装好的emacs获取内置css文件')
     parser.add_argument('-x', '--debug', action="store_true", help='调试输出')
+    parser.add_argument('-E', '--emacs-css', action="store_true", help='从安装好的emacs获取内置css文件')
+    parser.add_argument('--pygments-css', action="store_true", help='内置pygments生产的css文件')
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
     return args
 

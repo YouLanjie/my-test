@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 import re
 import orgreader2
+import argcomplete
 
 try:
     import natsort
@@ -141,6 +142,7 @@ def parse_arguments() -> argparse.Namespace:
             help='在图片间插入标题用于快速跳转(指定分组)')
     parser.add_argument('-N', '--no-export', action="store_true", help='保存org文件但不导出')
     parser.add_argument('-S', '--save-org', action="store_true", help='保存org文件并导出')
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
     return args
 

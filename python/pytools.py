@@ -7,20 +7,38 @@ def print_err(s:str):
     """从stderr打印输出"""
     print(s, file=sys.stderr)
 
-def get_str_width(s:str):
+def _get_char_width(c:str) -> int:
+    if ord(c) <= 127:
+        return 1
+    if c in "“”‘’❲❳…":
+        # 非ASCII字符但是仍旧1字符宽度
+        return 1
+    return 2
+
+def get_str_width(s:str) -> int:
     """计算字符串打印宽度"""
     width = 0
-    count = 0
     for c in s:
-        if ord(c) <= 127:
-            width += 1
-        elif c in "“”‘’❲❳…":
-            # 非ASCII字符但是仍旧1字符宽度
-            width += 1
-        else:
-            width += 2
-        count += 1
+        width += _get_char_width(c)
     return width
+
+def split_str_by_width(s:str, obj_width:int) -> list[str]:
+    """依据宽度为字符串分组"""
+    if obj_width < 2:
+        return []
+    width = 0
+    li = []
+    current = ""
+    for c in s:
+        width += _get_char_width(c)
+        if width > obj_width:
+            width = _get_char_width(c)
+            li.append(current)
+            current = ""
+        current += c
+    if current:
+        li.append(current)
+    return li
 
 def get_str_in_width(text:str, width:int, fill:str=' ', align:str="<c>"):
     """根据打印宽度截断字符串"""
