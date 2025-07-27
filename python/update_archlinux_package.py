@@ -7,7 +7,8 @@ import shutil
 from natsort import natsorted
 
 ARGS = []
-pattern = re.compile(r"(.*)-([0-9.:_]+-[0-9]+)-.*\.pkg\.tar\.zst")
+pattern = re.compile(r"(.*)-([0-9a-zA-Z.:_]+-[0-9]+)-.*\.pkg\.tar\.zst")
+# pattern = re.compile(r"^(.+?)-((?:\d[^-]*?)-(?:\d[^-]+?))-(?:[^-]+?)\.pkg\.tar\.(?:zst|xz|gz|bz2)$")
 
 def get_package_list(inp_file_list:list[Path]) -> dict:
     inp_list = {}

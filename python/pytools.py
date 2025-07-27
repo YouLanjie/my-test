@@ -2,6 +2,7 @@
 """python常用函数合集"""
 
 import sys
+from pathlib import Path
 
 def print_err(s:str):
     """从stderr打印输出"""
@@ -54,3 +55,14 @@ def get_str_in_width(text:str, width:int, fill:str=' ', align:str="<c>"):
     while len(ret_text) > 0 and width < get_str_width(ret_text):
         ret_text = ret_text[:-1]
     return ret_text
+
+def calculate_relative(p1:Path, p2:Path) -> Path:
+    """计算p2相对于p1的相对路径"""
+    p1p = [p1.resolve()] + list(p1.resolve().parents)
+    p2p = [p2.resolve()] + list(p2.resolve().parents)
+    parents = list(set(p1p)&set(p2p))
+    parents.sort()
+    both_parent = parents[-1]
+    relative = p1.resolve().relative_to(both_parent)
+    back_relative = "../"*len(p2.resolve().relative_to(both_parent).parts)
+    return Path(f"./{back_relative}/{relative}")

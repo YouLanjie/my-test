@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import orgreader2
 import argcomplete
+import pytools
 
 try:
     import natsort
@@ -15,16 +16,6 @@ except ModuleNotFoundError as e:
         if not pip.main(["install","natsort", "beautifulsoup4"]):
             print("安装成功，请重新启动程序")
     raise e
-
-def calculate_relative(p1:Path, p2:Path) -> Path:
-    p1p = [p1.resolve()] + list(p1.resolve().parents)
-    p2p = [p2.resolve()] + list(p2.resolve().parents)
-    parents = list(set(p1p)&set(p2p))
-    parents.sort()
-    both_parent = parents[-1]
-    relative = p1.resolve().relative_to(both_parent)
-    back_relative = "../"*len(p2.resolve().relative_to(both_parent).parts)
-    return Path(f"./{back_relative}/{relative}")
 
 def safety_name(s:str)->str:
     return re.sub(r"([][])", r"\\\1", s)
@@ -71,9 +62,9 @@ def get_input_dir(inp:Path, pattern:re.Pattern)->list[Path]:
 def save_file(f:Path, s:str):
     if f.exists():
         if not f.is_file():
-            print(f"ERROR 目标输出是已存在文件夹 - {f}")
+            pytools.print_err(f"ERROR 目标输出是已存在文件夹 - {f}")
             return
-        print(f"WARN 覆盖文件 - {f}")
+        pytools.print_err(f"WARN 覆盖文件 - {f}")
     f.write_text(s, encoding="utf8")
 
 def main():
@@ -86,7 +77,7 @@ def main():
     input_d = Path(args.input)
     output_d = Path(args.output)
     if not input_d.is_dir() or not output_d.is_dir():
-        print("ERROR 指定的输入或输出文件夹不是文件夹")
+        pytools.print_err("ERROR 指定的输入或输出文件夹不是文件夹")
         return
 
     title = input_d.absolute().name
@@ -100,7 +91,7 @@ def main():
 
     if len(dir_list) > 1:
         print("INFO 创建首页")
-        output = get_output([calculate_relative(Path(f"{i}.html"), output_d) for i in dir_list], f"INDEX:{title}", title, None, args)
+        output = get_output([pytools.calculate_relative(Path(f"{i}.html"), output_d) for i in dir_list], f"INDEX:{title}", title, None, args)
         if args.save_org or args.no_export:
             save_file(Path(f"{output_d}/index.org"), output)
         if not args.no_export:
@@ -110,11 +101,11 @@ def main():
     elif dir_list:
         print("INFO 单文件(无章节)")
     else:
-        print("WARN 好像没有找到识别范围内文件呢喵")
+        pytools.print_err("WARN 好像没有找到识别范围内文件呢喵")
     dir_lists = [(Path(f"{i}.html") if i else None, j, Path(f"{k}.html") if k else None) \
             for i,j,k in zip([None]+dir_list, dir_list, dir_list[1:]+[None])]
     for lastdir,dirs,nextdir in dir_lists:
-        file_list = [calculate_relative(i, output_d) \
+        file_list = [pytools.calculate_relative(i, output_d) \
                 for i in dirs.iterdir() \
                 if i.is_file() and pattern.match(i.name)]
         file_list = natsort.natsorted(file_list)

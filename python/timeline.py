@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 """制作时间轴"""
 
 # 基本要求：
@@ -21,6 +21,7 @@ import subprocess
 import gzip
 import dateutil.parser
 import orgreader2
+import argcomplete
 from pytools import print_err
 
 class Events:
@@ -51,13 +52,17 @@ class Events:
     def get_line(self, head:list[int], link:str="|") -> str:
         """获取单行文本输出"""
         return link.join(self.get_filtered(head))
-    def get_str_time(self, simple_time:bool=False) -> str:
+    def get_str_time(self, time_format:str) -> str:
         """获取格式化的时间"""
-        time_str = time.strftime("%Y-%m-%d", time.localtime(self.timestamp))
-        if not simple_time:
+        if not time_format:
+            time_str = time.strftime("%Y-%m-%d", time.localtime(self.timestamp))
             time_str += " " + "一二三四五六日"[int(
                 time.strftime("%w", time.localtime(self.timestamp)) )]
             time_str += " " + time.strftime("%H:%M:%S", time.localtime(self.timestamp))
+        elif time_format == "timestamp":
+            time_str = str(self.timestamp)
+        else:
+            time_str = time.strftime(time_format, time.localtime(self.timestamp))
         return time_str
 
 class Timeline:
@@ -72,6 +77,7 @@ class Timeline:
             content = {}
         self.content : list[Events] = [Events(i, len(head)) for i in content.items()]
     def get_head_list(self, flit_list:list[int]|None = None) -> list[str]:
+        """获取表头列表（已文本化）"""
         if not flit_list:
             return ["/".join(i) for i in self.head]
         return ["/".join(self.head[i]) for i in flit_list]
@@ -123,14 +129,26 @@ class Timeline:
         head = [ind for ind,item in enumerate(self.head) if match.match("/".join(item))]
         return {"head":[self.head[j] for j in head],
                 "content":{i.timestamp:i.get_filtered(head) for i in self.content}}
-    def to_text(self, match:re.Pattern, simple_time=False) -> str:
-        """转成文本"""
-        head = [ind for ind,item in enumerate(self.head) if match.match("/".join(item))]
-        ret = "|Time|" + "|".join(self.get_head_list(head)) + "|\n|-|\n"
-        for i in self.content:
-            ret += f"|{i.get_str_time(simple_time)}|"
-            ret += i.get_line(head)
-            ret += "|\n"
+    def to_text(self, match:re.Pattern|None, time_format="", mode:str="text"):
+        """转成文本(根据不同模式)"""
+        if match:
+            head = [ind for ind,item in enumerate(self.head) if match.match("/".join(item))]
+        else:
+            head = [i[0] for i in enumerate(self.head)]
+
+        ret = ""
+        if mode == "org":
+            ret = "|Time|" + "|".join(self.get_head_list(head)) + "|\n|-|\n"
+            for i in self.content:
+                ret += f"|{i.get_str_time(time_format)}|"
+                ret += i.get_line(head)
+                ret += "|\n"
+        elif mode == "csv":
+            ret = "Time," + ",".join(self.get_head_list(head)) + "\n"
+            for i in self.content:
+                ret += f"{i.get_str_time(time_format)},"
+                ret += i.get_line(head, ",")
+                ret += ",\n"
         return ret
 
 def csv_to_json(name:str, inp:list[str]) -> str:
@@ -178,20 +196,85 @@ def csv_to_json(name:str, inp:list[str]) -> str:
     ret = {"head":tablehead, "content":ret}
     return json.dumps(ret, ensure_ascii=False)
 
+class Interactive:
+    def __init__(self, tl:Timeline) -> None:
+        self.tl = tl
+        self.command_list = {
+                "help":{"help":"显示帮助","func":self._print_help},
+                "exit":{"help":"退出"},
+                "quit":{"help":"退出"},
+                "print":{"help":"打印值(x y)","func":self._print_value},
+                "p":{"func":self._print_value},
+                "list":{"help":"列出可用表头","func":self._list_head},
+                "l":{"func":self._list_head},
+                "q":{},
+                }
+        "命令列表"
+    def _print_help(self):
+        """打印帮助"""
+        for key,value in self.command_list.items():
+            if not value.get("help"):
+                continue
+            print(f"  {key:<20} {value.get("help")}")
+    def _list_head(self):
+        print("X:")
+        for i in enumerate(self.tl.get_head_list()):
+            print(f"{i[0]:<3} :{i[1]}")
+    def _print_value(self):
+        if len(self.cmd) == 1:
+            print("! 全表:")
+            print(orgreader2.Document(self.tl.to_text(None, mode="org").splitlines()).to_text())
+            return
+        if len(self.cmd) != 3:
+            print("! 参数数量错误")
+            return
+        if not self.tl.content or not self.tl.content[0].events:
+            print("! 表为空")
+            return
+        try:
+            x = int(self.cmd[1])
+            y = int(self.cmd[2])
+        except ValueError:
+            print("! 参数不为数字")
+            return
+        max_x = len(self.tl.content[0].events)
+        max_y = len(self.tl.content)
+        if x >= max_x or y >= max_y:
+            print("! 超出索引范围")
+            return
+        print(self.tl.content[y].events[x])
+    def run(self):
+        """交互界面"""
+        print("> 交互界面(`help` for help)")
+        print("> 目前为测试阶段，不可用")
+        print("> 输入`exit`回车退出")
+        inp = ""
+        while inp not in ("quit", "q", "exit"):
+            inp = input(">>> ")
+            if inp in self.command_list:
+                func = self.command_list[inp].get("func")
+                if func and type(func).__name__ in ("method", "function"):
+                    func()
+            else:
+                print(f"Command not found '{inp}'")
+
 def main():
     """main function"""
     parser = argparse.ArgumentParser(description="时间轴")
     parser.add_argument("-i","--input", action="append",default=[],
                         help="输入文件(json,可用gzip压缩文件)")
     parser.add_argument("-o","--output", default="", help="输出到文件")
-    parser.add_argument("-m","--mode", default="text", help="输出格式(text,python,json)")
+    parser.add_argument("-m","--mode", default="text",choices=["text","python","json","org","csv"],
+                        help="输出格式")
     parser.add_argument("-z","--gzip", action="store_true", help="使用gzip压缩结果")
-    parser.add_argument("-s","--simple-time", action="store_true", help="输出更简单的日期")
     parser.add_argument("-f","--filter", default="", help="匹配规则(正则表达式)")
     parser.add_argument("-l","--list", action="store_true", help="列出可用表头")
+    parser.add_argument("--time-format", default="", help="时间格式(通用格式化字符串|timestamp)")
     parser.add_argument("--csv-input", default="", help="输入csv文件")
     parser.add_argument("--csv-name", default="", help="csv文件共用父类名")
     parser.add_argument("--no-sort", default="", nargs="?", const="xy", help="不进行排序(x/y)")
+    parser.add_argument("--interactive", action="store_true", help="交互式(仅测试)")
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     timelines = []
@@ -214,6 +297,9 @@ def main():
                "content":inp}
         timelines.append(Timeline(inp))
     for input_f in args.input:
+        if not Path(input_f).is_file():
+            print_err(f"WARN 文件不存在: {input_f}")
+            continue
         inp = Path(input_f).read_bytes()
         if subprocess.run(["file", "-b", input_f], capture_output=True, check=False,
                           text=True).stdout.startswith("gzip compressed data"):
@@ -238,6 +324,10 @@ def main():
         i.sort(args.no_sort)
         timeline.merge(i)
 
+    if args.interactive:
+        Interactive(timeline).run()
+        return
+
     if args.list:
         output = "\n".join(["/".join(i) for i in sorted(list(timeline.head))])
         print(output)
@@ -247,10 +337,14 @@ def main():
         output = str(timeline.dump(re.compile(args.filter)))
     elif args.mode == "json":
         output = json.dumps(timeline.dump(re.compile(args.filter)), ensure_ascii=False)
+    elif args.mode == "org":
+        output = timeline.to_text(re.compile(args.filter), args.time_format, "org")
+    elif args.mode == "csv":
+        output = timeline.to_text(re.compile(args.filter), args.time_format, "csv")
     else:
         doc = orgreader2.Document(
                 timeline.to_text(
-                    re.compile(args.filter), args.simple_time
+                    re.compile(args.filter), args.time_format, "org"
                     ).splitlines())
         output = doc.to_text()
 
