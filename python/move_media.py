@@ -6,6 +6,8 @@ import sys
 import shutil
 import argparse
 import hashlib
+import time
+import datetime
 from pathlib import Path
 
 class Args:
@@ -19,6 +21,7 @@ class Args:
         self.no_apply = False
         self.log_file = None
         self.log = []
+        self.extended = []
         self.recover = ["import shutil",]
     def set_arg(self, arg:argparse.Namespace):
         self.input = arg.input
@@ -29,6 +32,7 @@ class Args:
         self.verbose = arg.verbose
         self.no_apply = arg.no_apply
         self.log_file = arg.log_file
+        self.extended = [i for i in arg.extended.split(",") if i]
 
 ARGS = Args()
 
@@ -40,6 +44,7 @@ def parse_arguments() -> None:
     parser.add_argument('-n', '--no-apply', action='store_true', help='不进行任何更改')
     parser.add_argument('-p', '--path', default=None, help='指定沿用目录树的目录')
     parser.add_argument('-l', '--log-file', default=None, help='指定日志输出文件(可用作恢复脚本)')
+    parser.add_argument('-e', '--extended', default='', help='指定拓展的后缀名(`,`分隔)')
     parser.add_argument('-f', '--format', default=r'%Y/%Y_%m/%Y_%m_%d',
                         help=r"指定输出路径格式 (默认: %%Y/%%Y_%%m/%%Y_%%m_%%d)")
     parser.add_argument('-v', '--verbose', nargs="?", default=0, const=1, type=int,
@@ -85,16 +90,20 @@ def calculate_md5(file: Path):
             hash_md5.update(chunk)
     return hash_md5.hexdigest()
 
-def process_files() -> tuple[int, int]:
+def process_files(result:dict[str,int]) -> None:
+    extended = ["mp3","m4a","3ga","3gp","wav",
+                "mp4","mkv","webm","mpeg","mov",
+                "png","jpg","jpeg","dng","gif","webp"] + ARGS.extended
+    print_verbose(3, f"# INFO 识别后缀名范围: {",".join(extended)}")
     pattern = re.compile(
-        r'.*?(\d{4})[-_年]*(\d{2})[-_月]*(\d{2}).*' + \
-        r'\.(mp4|mkv|png|jpg|jpeg|dng|gif|3gp|m4a|webp|mov|mpeg)$',
+        r'.*?([1-2]\d{3})[-_年]*([0-1]\d)[-_月]*([0-3]\d).*' + \
+        r'\.('+"|".join(extended)+r')$',
         re.I
     )
 
     processed_dirs = {}
-    processed = 0
-    skipped = 0
+    result["processed"] = 0
+    result["skipped"] = 0
 
     for file in Path(ARGS.input).iterdir():
         # 跳过目录和非文件项
@@ -103,14 +112,19 @@ def process_files() -> tuple[int, int]:
         # 检查文件扩展名是否匹配
         year, month, day = ["0", "0", "0"]
         match = pattern.match(str(file))
-        if match:
-            # 提取年月日
-            year, month, day = match.groups()[:3]
-        if not( int(year) > 1949 and int(year) < 2050  and \
-                int(month) > 0 and int(month) < 13 and \
-                int(day) > 0 and int(day) < 32):
+        if not match:
             print_verbose(3, f"# INFO 文件名不符合模式(SKIPPED): {file}")
-            skipped += 1
+            result["skipped"] += 1
+            continue
+        # 提取年月日
+        year, month, day = match.groups()[:3]
+        try:
+            datetime.date(int(year), int(month), int(day))
+            if not 1949 < int(year) < time.gmtime().tm_year+1:
+                raise ValueError
+        except ValueError:
+            print_verbose(3, f"# INFO 不可能的日期(SKIPPED): {file}")
+            result["skipped"] += 1
             continue
 
         # 构建目标路径
@@ -122,26 +136,28 @@ def process_files() -> tuple[int, int]:
         except Exception as e:
             print_verbose(-1, f"# ERROR 无效的格式字符串: {str(e)}")
             save_log()
-            sys.exit(1)
+            raise e
         if target_relative_path in processed_dirs:
             # 使用缓存
             target_dir = processed_dirs[target_relative_path]
         else:
             target_dirs = list(Path(ARGS.output).glob(f"{target_relative_path}*"))
             if ARGS.path:
-                target_dirs = [Path(f"./{str(i)[len(ARGS.path):]}") for i in Path(ARGS.path).glob(f"{target_relative_path}*")] + target_dirs
-            target_dir = Path(f"{ARGS.output}/{target_relative_path}")
-            for target_dir in target_dirs:
-                if target_dir.is_dir() or not target_dir.exists():
-                    break
+                target_dirs = [Path(f"./{str(i)[len(ARGS.path):]}") \
+                        for i in Path(ARGS.path).glob(f"{target_relative_path}*")] + target_dirs
+            target_dirs = [i for i in target_dirs if i.is_dir() or not i.exists()]
+            if target_dirs:
+                target_dir = target_dirs[-1]
+            else:
+                target_dir = Path(f"{ARGS.output}/{target_relative_path}")
             if len(target_dirs) > 1 and target_relative_path not in processed_dirs:
-                processed_dirs[target_relative_path] = target_dir
                 print_verbose(1, f"# WARN 出现多个相同的匹配目录: {target_relative_path}*")
+            processed_dirs[target_relative_path] = target_dir
         target = Path(f"{target_dir}/{file.name}")
 
         if target_dir.is_file():
-            print_verbose(3, f"# INFO 输出目录与现存文件重名(SKIPPED): {file}")
-            skipped += 1
+            print_verbose(3, f"# INFO 输出目录与现存文件重名(SKIPPED): {file} - {target_dir}")
+            result["skipped"] += 1
             continue
 
         if not target_dir.exists():
@@ -161,12 +177,11 @@ def process_files() -> tuple[int, int]:
                     print_verbose(3,f"# INFO 重命名: {file} -> {backup}")
                 else:
                     print_verbose(3, f"# WARN 重复文件重名: {file}")
-
-                skipped += 1
+                result["skipped"] += 1
                 continue
             else:
                 print_verbose(-1,f"# WARN 目标文件已存在但内容不同: {file}")
-                skipped += 1
+                result["skipped"] += 1
                 continue
 
         # 执行文件操作
@@ -184,10 +199,10 @@ def process_files() -> tuple[int, int]:
             if ARGS.log_file:
                 ARGS.recover.append(f"shutil.move(\"{target.absolute()}\", \"{file.absolute()}\")")
 
-            processed += 1
+            result["processed"] += 1
         except Exception as e:
             print_verbose(-1, f"# ERROR 处理文件失败:{file} - {str(e)}")
-    return processed, skipped
+    return
 
 def main():
     parse_arguments()
@@ -207,21 +222,19 @@ def main():
         if path_dir == output_dir.resolve() or not path_dir.is_dir():
             ARGS.path = None
 
-    # 处理文件
-    processed, skipped = process_files()
-
+    result = {}
+    try:
+        # 处理文件
+        process_files(result)
+    except KeyboardInterrupt:
+        print("INFO Ctrl-c终止")
     save_log()
 
     # 显示摘要
     action = "移动" if not ARGS.copy else "复制"
-    print_verbose(1,f"# 操作完成: {action}了 {processed} 个文件, 跳过了 {skipped} 个文件")
+    print_verbose(1,f"# 操作完成: {action}了 {result["processed"]} 个文件, 跳过了 {result["skipped"]} 个文件")
     if ARGS.no_apply:
         print_verbose(1, "# 提示: 由于参数指定，并未进行任何操作")
 
 if __name__ == '__main__':
-    try:
-        main()
-    except KeyboardInterrupt as e:
-        print("INFO Ctrl-c终止")
-        save_log()
-        # raise e
+    main()

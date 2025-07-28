@@ -68,9 +68,9 @@ def save_file(f:Path, s:str):
     f.write_text(s, encoding="utf8")
 
 def main():
-    img_exts=["png", "jpg", "jpeg", "gif", "webp"]
-    vid_exts=["mp4", "mkv", "3gp", "webm", "mov",
-              "mpeg", "m4a", "mp3", "wav"]
+    img_exts=["png","jpg","jpeg","dng","gif","webp"]
+    vid_exts=["mp3","m4a","3ga","3gp","wav",
+              "mp4","mkv","webm","mpeg","mov"]
     args = parse_arguments()
     extra_exts=[i for i in args.extern.split("|") if i!=""]
     pattern = re.compile(r".*\.(?:"+"|".join(img_exts+vid_exts+extra_exts)+")", re.I)
