@@ -66,3 +66,14 @@ def calculate_relative(p1:Path, p2:Path) -> Path:
     relative = p1.resolve().relative_to(both_parent)
     back_relative = "../"*len(p2.resolve().relative_to(both_parent).parts)
     return Path(f"./{back_relative}/{relative}")
+
+def calculate_relative2(p1:Path, p2:Path) -> Path:
+    """计算p2相对于p1的相对路径(使用absolute)"""
+    p1p = [p1.absolute()] + list(p1.absolute().parents)
+    p2p = [p2.absolute()] + list(p2.absolute().parents)
+    parents = list(set(p1p)&set(p2p))
+    parents.sort()
+    both_parent = parents[-1]
+    relative = p1.absolute().relative_to(both_parent)
+    back_relative = "../"*len(p2.absolute().relative_to(both_parent).parts)
+    return Path(f"./{back_relative}/{relative}")

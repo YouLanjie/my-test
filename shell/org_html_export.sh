@@ -37,12 +37,12 @@ get_output() {
 	header=""
 	tail=""
 	if [[ $5 != "| | |" ]] {
-		navigation="|上一页|本页文件总数|下一页|\n|-|-|\n${5}"
+		navigation="|上一页|本页文件总数|下一页|\n|-|\n|<l>|<c>|<r>|\n${5}"
 		header="* Header\n$navigation"
 		tail="* Tail\n$navigation"
 	}
 	final_output="$(echo $1|safety_name|sed "s|\(.*\)|$2|"|sed "s|//|/|g")"
-	final_output="$(echo $final_output|sed "s/^- \[\[\(.*\.\($format2\)\)\]\]/#+begin_export html\n<video controls><source src=\"\1\"><\/video>\n#+end_export/")"
+	final_output="$(echo $final_output|sed "s/^- \[\[\(.*\.\($format2\)\)\]\]/-\n  #+begin_export html\n<video controls><source src=\"\1\"><\/video>\n#+end_export/")"
 	final_output="\
 #+title: $3
 #+HTML_HEAD: <link rel='stylesheet' type='text/css' href='$css_file'/>
