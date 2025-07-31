@@ -33,8 +33,29 @@
 **** 跳跃型子标题测试2
 *** 子标题测试3
 ** TODO todo子标题测试4
-**** COMMENT 注释型子标题5
+**** COMMENT 注释型子标题5(hid)
 *** DONE done子标题测试6
+*** DONE TODO mix子标题测试7
+
+** COMMENT 注释型子标题8(hid)
+** TODO COMMENT todo+注释型子标题9(hid)
+** that is it! COMMENT 注释型子标题10(show)
+** ! COMMENT 注释型子标题11(show)
+** todo COMMENT 注释型子标题12(show)
+** DONE COMMENT 注释型子标题13(hid)
+** COMMENT DONE 注释型子标题14(hid)
+** TODO COMMENT DONE 注释型子标题15(hid)
+** TODO COMMENT DoNE 注释型子标题16(hid)
+** ToDO COMMENT DONE 注释型子标题17(show)
+** comment 注释型子标题18(show)
+** CoMMENT 注释型子标题19(show)
+** TODO DONE COMMENT 注释型子标题20(show)
+
+#+begin_quote
+经测试，会检测TODO状态和COMMENT两个单词，前后顺序不影响，但是检测的单词前面不能
+够有任何的其他文字，否则会跳出判断，并且只检测一个TODO TAG,如果一个tag后面还有一
+个tag,那也会连带着跳出判断，所以说不能够在COMMENT和TODO TAG之间加上其他的文字符号
+#+end_quote
 
 * 标题与打断测试
  ** 开头有空格的标题测试

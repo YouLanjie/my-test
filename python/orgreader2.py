@@ -7,7 +7,6 @@ import time
 import argparse
 import re
 import gzip
-import urllib.parse
 # 第三方库
 import argcomplete
 import requests
@@ -53,7 +52,7 @@ class Strings:
             return
         # 非`http`开头(网络链接)和`#`开头: 转义(一般为文件名)
         if not match.group(1) and not match.group(2).startswith("#"):
-            if not Path(link).is_file():
+            if not link.startswith("./") and not Path(link).is_file():
                 pytools.print_err(f"ERROR Unable to resolve link: {link}")
             for j in "%[]\"\\ #?":
                 if j not in link:
@@ -452,8 +451,8 @@ class TitleBase(Root):
             return
         self.id = []
         self.level = len(match.group(1))
-        self.comment = match.group(2) != ""
-        self.line = Strings(match.group(3), self)
+        self.comment = False
+        self.line = Strings(match.group(2), self)
         self.todo = []
         self.tag = Strings("", self)
     def end_condition(self, match: re.Match | None) -> bool:
@@ -469,7 +468,7 @@ class TitleBase(Root):
         return False
     @property
     def _summary(self):
-        return f"(lv:{self.level}, '{self.line.s}')"
+        return f"(lv:{self.level}, hid:{self.comment}, todo:{self.todo}, '{self.line.s}')"
 
 class Title(TitleBase):
     """标题"""
@@ -479,10 +478,12 @@ class Title(TitleBase):
                 .match(self.document.lines[self.document.current_line])
         if match is None:
             return
-        self.tag = Strings(match.group(4), self)
-
-        last = self.document.status["table_of_content"][-1] if \
-                self.document.status["table_of_content"] else []
+        self.tag = Strings(match.group(3), self)
+        self.document.status["lowest_title"] = \
+                min(self.document.status["lowest_title"], self.level)
+    def set_status(self, comment:bool = False):
+        """设置状态(TODO, COMMENT),更新目录"""
+        last = (self.document.status["table_of_content"] or [[]])[-1]
         li = []
         num = 0
         for num in range(self.level):
@@ -491,14 +492,31 @@ class Title(TitleBase):
                 continue
             li.append(last[num])
         li[num] += 1
-        text = self.line.to_text()
-        li.append({"title":text, "tag":self.tag.s, "todo":None, "start":self.start})
+
+        todo = None
+        key = ""
+        ind = 0
+        self.comment = comment
+        for ind,key in enumerate(self.line.s.split()):
+            if key == "COMMENT":
+                self.comment = True
+                continue
+            if todo:
+                break
+            if key in self.document.meta["seq_todo"]["todo"]:
+                todo = ["todo", key]
+            elif key in self.document.meta["seq_todo"]["done"]:
+                todo = ["done", key]
+            else:
+                break
+        if todo:
+            self.line.s = " ".join(self.line.s.split()[ind:])
+            self.todo = todo
+        li.append({"title":self.line.to_text(), "tag":self.tag.s,
+                   "todo":todo, "start":self.start, "comment":self.comment})
         self.id = li
         if not self.comment:
             self.document.status["table_of_content"].append(li)
-
-        self.document.status["lowest_title"] = \
-                min(self.document.status["lowest_title"], self.level)
     def to_text(self) -> str:
         if self.comment or not self.opt["printable"]:
             return ""
@@ -559,14 +577,6 @@ class Footnotes(TitleBase):
     def __init__(self, document) -> None:
         super().__init__(document)
         self.opt["printable"] = False
-        match = RULES[type(self).__name__]["match"]\
-                .match(self.document.lines[self.document.current_line])
-        if match is None:
-            return
-        self.id = []
-        self.level = len(match.group(1))
-        self.comment = match.group(2) != ""
-        self.line = Strings(match.group(3), self)
 
 class Footnote(TextBase):
     """脚注(整行)"""
@@ -1073,14 +1083,14 @@ class Table(TextBase):
 RULES = {
     "Meta":         {"match":re.compile(r"^[ ]*#\+([^:]*):[ ]*(.*)", re.I), "class":Meta},
     "Footnotes":    {"match":re.compile(
-                        r"^([*]+)[ ]+((?:COMMENT )?) *(Footnotes *.*)(?: +:(.*):)?"),
+                        r"^([*]+) +(Footnotes *.*)(?: +:(.*):)?"),
                      "class":Footnotes,
-                     "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?) *(.*)", re.I)},
+                     "end":re.compile(r"^([*]+) +(.*)", re.I)},
     "Title":        {"match":re.compile(
-                            r"^([*]+)[ ]+((?:COMMENT )?) *(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
+                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
                      "class":Title,
                      "end":re.compile(
-                            r"^([*]+)[ ]+((?:COMMENT )?) *(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
+                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
     "BlockCode":    {"match":re.compile(r"^ *#\+begin_src(?:[ ]+(.*))?", re.I),
                      "class":BlockCode,
                      "end":re.compile(r"^ *#\+end_src", re.I)},
@@ -1111,7 +1121,8 @@ RULES = {
     "Text":         {"match":re.compile(""), "class":Text},
     "Root":         {"match":re.compile(""),
                      "class":Comment,
-                     "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)", re.I)},
+                     "end":re.compile(r"^([*]+) +(.*)", re.I)},
+                     # "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)", re.I)},
     "ListItem":     {"match":re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.))( +(?:.*)|$)", re.I),
                      "class":List,
                      "end":re.compile(r"^( *)(.*)", re.I)},
@@ -1140,7 +1151,7 @@ class Document:
             "html_link_up":"",
             "caption":(-2, ""),
             "html_head":[],
-            "seq_todo":{"todo":[], "done":[]},
+            "seq_todo":{"todo":["TODO"], "done":["DONE"]},
         }
 
         self.root = Root(self)
@@ -1176,28 +1187,12 @@ class Document:
         last = None
         remove_list = []
         insert_list = []
-        count_title = 0
         index = -1
         while index+1 < len(node.child):
             index+=1
             i = node.child[index]
             if isinstance(i, Title):
-                key = i.line.s.split(" ")[0]
-                todo = None
-                if key in self.meta["seq_todo"]["todo"]:
-                    todo = ["todo", key]
-                elif key in self.meta["seq_todo"]["done"]:
-                    todo = ["done", key]
-                if todo:
-                    i.line.s = i.line.s[len(key):]
-                    i.todo = todo
-                    current_title = [j[-1] for j in self.status["table_of_content"] \
-                            if j[-1]["start"] == i.start]
-                    if current_title:
-                        current_title[0]["todo"] = todo
-                        current_title[0]["title"] = i.line.to_text()
-                if not i.comment:
-                    count_title += 1
+                i.set_status(isinstance(node, Title) and node.comment)
             if i.opt["childable"]:
                 self.merge_text(i)
                 last = None
@@ -1261,7 +1256,7 @@ class Document:
             level = ".".join(str(j) for j in i[self.status["lowest_title"]-1:-1])+"."
             text = f"{level} "
             if i[-1]["todo"]:
-                text+=f"<span class=\"todo {i[-1]["todo"][0]}\">{i[-1]["todo"][1]}</span>"
+                text+=f"<span class=\"todo {i[-1]["todo"][0]}\">{i[-1]["todo"][1]}</span> "
             text+=f"{i[-1]["title"]}"
             if i[-1]["tag"]:
                 text+=f"""{"&nbsp;"*3}<span class="tag">"""
@@ -1437,7 +1432,8 @@ def main() -> Document|str|None:
             print(ret.table_of_content_to_text())
             print(ret.to_text())
             print(ret.meta)
-            # pprint(ret.table_of_content)
+            from pprint import pprint
+            pprint(ret.status["table_of_content"])
             # print(ret.status["setupfiles"])
             # pprint(vars(ret))
         else:

@@ -16,3 +16,6 @@
 - [ ] Emacs的看见个自由链接（没标注是链接）自动将其改为链接
 - [ ] Document支持创建时传入设置
 - [ ] 能自动替换指向org文件的链接为html
+- [ ] 增加部分OPTIONS的支持(meta)
+- [ ] 增加部分include的支持(meta)
+- [ ] 修正Title的COMMENT行为（正确显示序号）
