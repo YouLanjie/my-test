@@ -16,20 +16,21 @@ from pygments.lexers import get_lexer_by_name
 from pygments.util import ClassNotFound
 import pytools
 
-def _get_strings_pattern_str(s:str):
-    return s+r"([^ ].*?(?<! ))"+s+r"(?=[ ()-]|$)"
+def _get_strings_pattern(s:str,blank_char=" )-") -> re.Pattern:
+    return re.compile(f"{s}([^ ].*?(?<! )){s}(?=[{blank_char}]|\n|$)",
+                      re.DOTALL)
 
 class Strings:
     """行内字符串类，提供行内格式转换"""
     pattern = [
             ("link", re.compile(r"\[\[(.*?)(?<!\\)\](?:\[(.*?)(?<!\\)\])?\]")),
-            ("code", re.compile(_get_strings_pattern_str("="))),
-            ("code", re.compile(_get_strings_pattern_str("~"))),
-            ("italic", re.compile(_get_strings_pattern_str("/"))),
-            ("bold", re.compile(_get_strings_pattern_str(r"\*"))),
-            ("del", re.compile(_get_strings_pattern_str(r"\+"))),
-            ("underline", re.compile(_get_strings_pattern_str("_"))),
             ("fn", re.compile(r"\[fn:([^]]*)\]")),
+            ("code", _get_strings_pattern("=")),
+            ("code", _get_strings_pattern("~")),
+            ("italic", _get_strings_pattern("/")),
+            ("bold", _get_strings_pattern(r"\*")),
+            ("del", _get_strings_pattern(r"\+")),
+            ("underline", _get_strings_pattern("_")),
             ]
     img_exts=["png", "jpg", "jpeg", "gif", "webp"]
     rules = {"code":("<code>","</code>"),
@@ -88,7 +89,9 @@ class Strings:
                 ret = current_pattern[1].match(s[i:])
                 if not ret:
                     continue
-                if current_pattern[0] not in ("link", "fn") and i-1 > 0 and s[i-1] not in " ()-":
+                # 识别前一字符是否满足条件（前后条件还不一样）
+                if current_pattern[0] not in ("link", "fn") and i-1 > 0 \
+                        and s[i-1] not in " (-\n":
                     continue
                 if last != i and re.findall(r"[^ ]", s[last:i]):
                     li.append(s[last:i])
@@ -210,7 +213,7 @@ class Strings:
         lines = self.s.splitlines()
         text = ""
         for i in lines:
-            match = re.match(r"(.*)\\\\$", i)
+            match = re.match(r"(.*)\\\\\s*$", i)
             if match:
                 text+=f"{match.group(1)}\n"
                 continue
@@ -578,11 +581,12 @@ class Footnotes(TitleBase):
         super().__init__(document)
         self.opt["printable"] = False
 
-class Footnote(TextBase):
+class Footnote(Root):
     """脚注(整行)"""
     def __init__(self, document) -> None:
         super().__init__(document)
-        self.opt["printable"] = False
+        self.line.s = re.sub(r"^ *", "", self.line.s)
+        # self.opt["printable"] = False
         match = RULES[type(self).__name__]["match"].match(self.line.s)
         if match is None:
             return
@@ -591,6 +595,21 @@ class Footnote(TextBase):
         self.line = Strings(match.group(2), self)
         self.id = -1
         self.document.status["footnotes"][self.name] = self
+    def end_condition(self, match: re.Match | None) -> bool:
+        if match:
+            return True
+        if self.document.lines[self.document.current_line] == "*** 阻断使用2":
+            pytools.print_err(f"!: {self.document.lines[self.document.current_line]}")
+            # import pdb; pdb.set_trace()
+        return False
+    def to_html(self, printable=False) -> str:
+        if not printable:
+            return ""
+        return super().to_html()
+    def to_text(self, printable=False) -> str:
+        if not printable:
+            return ""
+        return super().to_html()
 
 class ListItem(Root):
     """列表(单项)"""
@@ -792,7 +811,7 @@ class BlockCode(Block):
                 lang = "cfg"
             compiled = pygments.highlight(
                     self.line.s,
-                    get_lexer_by_name(self.lang),
+                    get_lexer_by_name(lang),
                     fmt)
         except ClassNotFound:
             compiled = pygments.highlight(
@@ -1117,7 +1136,9 @@ RULES = {
                      "class":List,
                      "end":re.compile(r"^( *)(.*)", re.I)},
     "Table":        {"match":re.compile(r"^ *\|", re.I), "class":Table},
-    "Footnote":     {"match":re.compile(r"^\[fn:([^]]*)\](.*)"), "class":Footnote},
+    "Footnote":     {"match":re.compile(r"^\[fn:([^]]*)\](.*)"),
+                     "class":Footnote,
+                     "end":re.compile(r"(?:^\[fn:([^]]*)\](.*))|(?:^([*]+) +[^ ]+.*)")},
     "Text":         {"match":re.compile(""), "class":Text},
     "Root":         {"match":re.compile(""),
                      "class":Comment,
@@ -1211,9 +1232,6 @@ class Document:
                 else:
                     index-=1
                     last = None
-            elif isinstance(last, Footnote) and isinstance(i, Text):
-                last.line.s += f" {i.line.s}"
-                remove_list.append(i)
             else:
                 index-=1
                 last = None
@@ -1336,18 +1354,19 @@ class Document:
 {self.setting["footnote_style"][0]}{i.id}{self.setting["footnote_style"][1]}\
 </a>\
 </sup>
-<div class="footpara" role="doc-footnote"><p class="footpara"> {i.line.to_html()} </p></div>
+<div class="footpara" role="doc-footnote">\
+{i.to_html(True).replace("<p>","<p class=\"footpara\">")}</div>
 </div>"""
             html += "</div></div>"
         html += "</div>\n"
 
         html += f"""\
 <div id="postamble" class="status">\
-{f"<p class=\"date\">标记时间: {" ".join(self.meta["date"])}</p>\n" if self.meta["date"] else ""}\
+{f"<p class=\"date\">时间: {" ".join(self.meta["date"])}</p>\n" if self.meta["date"] else ""}\
 {f"<p class=\"author\">作者: {" ".join(self.meta["author"])}</p>\n" if self.meta["author"] else ""}\
 {f"<p class=\"description\">描述: {" ".join(self.meta["description"])}</p>\n" \
 if self.meta["description"] else ""}\
-<p class="date">文件生成时间: \
+<p class="date">生成于: \
 {time.strftime("%Y-%m-%d")} {"一二三四五六日"[int(time.strftime("%w"))]} \
 {time.strftime("%H:%M:%S")}</p>
 </div>
@@ -1384,9 +1403,11 @@ def print_feature():
 - 暂不支持: 依照Emacs主题进行代码高亮(受限于pygments)
 - 暂不支持: 自动标注链接（非显式指定的链接）
 - 暂不支持: 自动将指向org文件的链接改为指向其html导出文件
+- 暂不支持: 上下角标
 - 去除了: 严格的链接限制(允许非`./`开头的文件引用)
 - 增加了: 链接中允许定位`#`的使用
 - 增加了: 对含有特殊字符文件的自动转义(非网络链接)
+- 增加了: 在合并多行字符串时如果两侧边界均为非ASCII字符则不会添加空格
 - 修改了: 各级标题的id格式，使其与节点顺序绑定（减少重新生成文件产生的变动）
 - 修改了: 代码高亮的方式，需要额外指定css（或者通过`--pygments-css`选项内嵌）
 - 修改了: 文件末尾的信息`postamble`的文字为中文
@@ -1431,9 +1452,10 @@ def main() -> Document|str|None:
             print("===================")
             print(ret.table_of_content_to_text())
             print(ret.to_text())
-            print(ret.meta)
-            from pprint import pprint
-            pprint(ret.status["table_of_content"])
+            # print(ret.meta)
+            # from pprint import pprint
+            # pprint(ret.status)
+            # pprint(ret.status["table_of_content"])
             # print(ret.status["setupfiles"])
             # pprint(vars(ret))
         else:

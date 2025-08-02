@@ -49,7 +49,8 @@ def parse_arguments() -> None:
     parser.add_argument('-i', '--input', default='.', help='指定输入文件夹')
     parser.add_argument('-p', '--prefix', default='', help='指定前缀')
     parser.add_argument('-e', '--postfix', default='', help='指定后缀')
-    parser.add_argument('-m', '--mode', default='auto', help='模式选择(time|md5|random|auto)')
+    parser.add_argument('-m', '--mode', default='auto', help='选择重命名模式',
+                        choices=["time","md5","random","auto"])
     parser.add_argument('-f', '--format', default=r'%Y%m%d_%H%M%S',
                         help=r"指定时间格式 (默认: %%Y%%m%%d_%%H%%M%%S')")
     parser.add_argument('-L', '--no-follow-link', action='store_true', help='获取链接本身的修改时间')
@@ -59,7 +60,7 @@ def parse_arguments() -> None:
     parser.add_argument('-o', '--recover-file', default=None, help='指定恢复脚本输出文件')
     parser.add_argument('-P', '--print-recover', action="store_true", help='打印恢复脚本')
     parser.add_argument('-n', '--no-apply', action='store_true', help='不进行任何更改')
-    parser.add_argument('-v', '--verbose', action='store_true', help='执行时显示更多输出(指定等级)')
+    parser.add_argument('-v', '--verbose', action='store_true', help='执行时显示更多输出')
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
     ARGS.set_arg(args)
@@ -139,7 +140,7 @@ def process_files():
             continue
 
         if target.exists():
-            print_verbose(f"WARN 跳过:重命名'{file}'时目标文件'{target}'已存在")
+            print(f"WARN 跳过:重命名'{file}'时目标文件'{target}'已存在")
             skipped += 1
             continue
 
