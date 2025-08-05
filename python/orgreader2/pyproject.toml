@@ -12,7 +12,6 @@ description = "An org export tool with an effect close to emacs' native html out
 # readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-	"argcomplete",
 	"requests",
 	"pygments",
 ]

@@ -1527,8 +1527,8 @@ def run_main() -> Document|str|None:
             print(" Table of Contents")
             print("===================")
             print(ret.table_of_content_to_text())
-            # print(ret.to_text())
-            __import__('rich').print(ret.meta)
+            print(ret.to_text())
+            # __import__('rich').print(ret.meta)
             # print(ret.meta)
             # from pprint import pprint
             # pprint(ret.status)
