@@ -120,8 +120,8 @@ def main():
         if args.save_org or args.no_export:
             save_file(Path(f"{output_d}/index.org"), output)
         if not args.no_export:
-            doc = orgreader2.Document(output.splitlines())
-            doc.setting["css_in_html"] = ""
+            doc = orgreader2.Document(output.splitlines(),
+                                      setting={"pygments_css":False,"mathjax_script":False})
             save_file(Path(f"{output_d}/index.html"),
                       str(doc.to_html()))
         # print(output)
@@ -148,7 +148,8 @@ def main():
         if args.save_org or args.no_export:
             save_file(Path(f"{output_d}/{objname}.org"), output)
         if not args.no_export:
-            doc = orgreader2.Document(output.splitlines())
+            doc = orgreader2.Document(output.splitlines(),
+                                      setting={"pygments_css":False,"mathjax_script":False})
             doc.setting["css_in_html"] = ""
             save_file(Path(f"{output_d}/{objname}.html"),
                       str(doc.to_html()),

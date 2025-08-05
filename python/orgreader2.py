@@ -4,17 +4,19 @@
 # 标准库
 from pathlib import Path
 import time
-import argparse
 import re
 import gzip
 # 第三方库
-import argcomplete
 import requests
 import pygments
 import pygments.formatters
 from pygments.lexers import get_lexer_by_name
 from pygments.util import ClassNotFound
-import pytools
+
+try:
+    from . import pytools
+except ImportError:
+    import pytools
 
 def _get_strings_pattern(s:str,blank_char=" )-") -> re.Pattern:
     return re.compile(f"{s}([^ ].*?(?<! )){s}(?=[{blank_char}]|\n|$)",
@@ -23,7 +25,7 @@ def _get_strings_pattern(s:str,blank_char=" )-") -> re.Pattern:
 class Strings:
     """行内字符串类，提供行内格式转换"""
     pattern = [
-            ("link", re.compile(r"\[\[(.*?)(?<!\\)\](?:\[(.*?)(?<!\\)\])?\]")),
+            ("link", re.compile(r"^\[\[((?:[^\[\]\\]|\\.)*)(?:\]\[((?:[^\[\]\\]|\\.)*))?\]\]")),
             ("fn", re.compile(r"\[fn:([^]]*)\]")),
             ("code", _get_strings_pattern("=")),
             ("code", _get_strings_pattern("~")),
@@ -49,12 +51,12 @@ class Strings:
         link = re.sub(r"\\([][])", r"\1", ret.group(1))
         match = re.match(r"((?:http[s]?:)?)(.*)",link)
         if not match:
-            pytools.print_err(f"WARN re模块出问题了?(匹配为空) - {link}")
+            pytools.print_err(f"WARN [{self.upward.document.setting["file_name"]}] re模块出问题了?(匹配为空) - {link}")
             return
         # 非`http`开头(网络链接)和`#`开头: 转义(一般为文件名)
         if not match.group(1) and not match.group(2).startswith("#"):
             if not link.startswith("./") and not Path(link).is_file():
-                pytools.print_err(f"ERROR Unable to resolve link: {link}")
+                pytools.print_err(f"ERROR [{self.upward.document.setting["file_name"]}] Unable to resolve link: {link}")
             for j in "%[]\"\\ #?":
                 if j not in link:
                     continue
@@ -94,7 +96,8 @@ class Strings:
                         and s[i-1] not in " (-\n":
                     continue
                 if last != i and re.findall(r"[^ ]", s[last:i]):
-                    li.append(s[last:i])
+                    # 补充增加前面的纯文本内容
+                    li.append(re.sub(r"\\\\", r"\\",s[last:i]))
                 last = i
                 i+=ret.span()[1]
                 if current_pattern[0] == "link":
@@ -104,13 +107,15 @@ class Strings:
                 elif current_pattern[0] == "fn":
                     li.append([current_pattern[0], ret.group(1)])
                 else:
+                    # 其他杂项并嵌套调用
                     li.append([current_pattern[0], self.orgtext_to_list(ret.group(1), True)])
                 last = i
                 i -= 1
                 break
             i+=1
         if last != i and re.findall(r"[^ ]", s[last:i]):
-            li.append(s[last:i])
+            # 补充增加前面的纯文本内容(若非空)
+            li.append(re.sub(r"\\\\", r"\\",s[last:i]))
         if not is_sub:
             self.cache[s] = li
         return li
@@ -144,7 +149,7 @@ class Strings:
             elif i[0] == "fn":
                 fns : dict = self.upward.document.status["footnotes"]
                 if not fns.get(i[1]):
-                    pytools.print_err(f"ERROR 引用没有定义的脚注'{i[1]}'")
+                    pytools.print_err(f"ERROR [{self.upward.document.setting["file_name"]}] 引用没有定义的脚注'{i[1]}'")
                     continue
                 fn : Footnote = fns[i[1]]
                 num = self.upward.document.status["footnote_count"]
@@ -213,7 +218,7 @@ class Strings:
         lines = self.s.splitlines()
         text = ""
         for i in lines:
-            match = re.match(r"(.*)\\\\\s*$", i)
+            match = re.match(r"(.*)(?<!\\)\\\\\s*$", i)
             if match:
                 text+=f"{match.group(1)}\n"
                 continue
@@ -390,21 +395,10 @@ class Meta(Root):
                 return
             self._load_sub_setupfile()
         elif self.key == "seq_todo":
-            value = self.value.split("|")
-            todo, done = [], []
-            if len(value) == 1:
-                done = value[0].split(" ")
-            elif len(value) == 2:
-                todo, done = value[0].split(" "), value[1].split(" ")
-            else:
-                todo = value[0].split(" ")
-                done = " ".join(value[1:]).split(" ")
-            while "" in todo:
-                todo.remove("")
-            while "" in done:
-                done.remove("")
-            self.document.meta["seq_todo"]["todo"]+=[re.sub(r"\(.*\)", "", i) for i in todo]
-            self.document.meta["seq_todo"]["done"]+=[re.sub(r"\(.*\)", "", i) for i in done]
+            self._process_seq_todo()
+            return
+        elif self.key == "options":
+            self._process_options()
             return
     def _load_sub_setupfile(self):
         content = ""
@@ -414,17 +408,17 @@ class Meta(Root):
         elif re.match(r"http[s]?://.+", self.value):
             try:
                 req = requests.get(self.value, timeout=3)
-                pytools.print_err(f"WARN 在文件中插入外部链接可能拖慢转译速度({req.elapsed})[{self.value}]")
+                pytools.print_err(f"WARN [{self.document.setting["file_name"]}] 在文件中插入外部链接可能拖慢转译速度({req.elapsed})[{self.value}]")
                 if req.status_code == 200:
                     req.encoding = req.apparent_encoding
                     content = req.text
                 else:
-                    pytools.print_err(f"WARN 加载文件异常，状态码: {req.status_code}")
+                    pytools.print_err(f"WARN [{self.document.setting["file_name"]}] 加载文件异常，状态码: {req.status_code}")
             except (requests.exceptions.RequestException, IOError) as e:
-                pytools.print_err(f"WARN 加载文件错误: {e}")
+                pytools.print_err(f"WARN [{self.document.setting["file_name"]}] 加载文件错误: {e}")
                 return
         else:
-            pytools.print_err(f"WARN 异常文件名提示: '{self.value}'")
+            pytools.print_err(f"WARN [{self.document.setting["file_name"]}] 异常文件名提示: '{self.value}'")
         self.document.status["setupfiles"].append(self.value)
         doc = Document(content.splitlines(), setupfiles=self.document.status["setupfiles"])
         self.document.status["setupfiles"]=list(\
@@ -436,6 +430,44 @@ class Meta(Root):
                 self.document.meta[key] += value
             elif value != "":
                 self.document.meta[key] = value
+    def _process_seq_todo(self):
+        value = self.value.split("|")
+        todo, done = [], []
+        if len(value) == 1:
+            done = value[0].split(" ")
+        elif len(value) == 2:
+            todo, done = value[0].split(" "), value[1].split(" ")
+        else:
+            todo = value[0].split(" ")
+            done = " ".join(value[1:]).split(" ")
+        while "" in todo:
+            todo.remove("")
+        while "" in done:
+            done.remove("")
+        self.document.meta["seq_todo"]["todo"]+=[re.sub(r"\(.*\)", "", i) for i in todo]
+        self.document.meta["seq_todo"]["done"]+=[re.sub(r"\(.*\)", "", i) for i in done]
+    def _process_options(self):
+        is_error = False
+        keys = None
+        options:list[str] = self.value.split()
+        table = {"t":True, "nil":False}
+        for option in options:
+            if is_error:
+                pytools.print_err(f"ERROR [{self.document.setting["file_name"]}]:"
+                                  f"{self.document.current_line} 错误的OPTIONS: {keys}")
+                is_error = False
+            keys = option.lower().split(":")
+            if len(keys) != 2:
+                return
+            key, value = keys
+            try:
+                value = int(value)
+            except ValueError:
+                if value not in table:
+                    is_error = True
+                    continue
+                value = table[value]
+            self.document.meta["options"][key] = value
     def to_text(self) -> str:
         if self.key == "caption":
             self.document.meta["caption"] = (self.start, self.value)
@@ -539,13 +571,19 @@ class Title(TitleBase):
         if self.comment or not self.opt["printable"]:
             return ""
         title = self.line.to_html()
-        lv = ".".join([str(i) for i in self.id[self.document.status["lowest_title"]-1:-1]])
+        ids = self.id[self.document.status["lowest_title"]-1:-1]
+        lv = ".".join([str(i) for i in ids])
 
         text = f"""<div class="outline-{self.level+1}">\n"""
-        text += f"""<h{self.level+2-self.document.status["lowest_title"]} """+\
+        if self.level <= self.document.meta["options"]["h"]:
+            text += f"""<h{self.level+2-self.document.status["lowest_title"]} """+\
                 f"""id="org-title-{re.sub(r"\.","-",lv)}">"""
-        text += """<span class="section-number-"""+\
-                f"""{self.level+2-self.document.status["lowest_title"]}">{lv}.</span>"""
+        else:
+            text += f"""<p id="org-title-{re.sub(r"\.","-",lv)}"><b>"""
+        headline_num = self.document.meta["options"]["num"]
+        if (isinstance(headline_num,bool) and headline_num) or len(ids) <= headline_num:
+            text += """<span class="section-number-"""+\
+                    f"""{self.level+2-self.document.status["lowest_title"]}">{lv}.</span>"""
         if self.todo:
             text+=f" <span class=\"{self.todo[0]} {self.todo[1]}\">{self.todo[1]}</span>"
         text += f" {title}"
@@ -557,7 +595,10 @@ class Title(TitleBase):
                 li.append(f"""<span class="{i}">{i}</span>""")
             text += "&nbsp;".join(li)
             text += """</span>"""
-        text += f"</h{self.level+2-self.document.status["lowest_title"]}>"
+        if self.level <= self.document.meta["options"]["h"]:
+            text += f"</h{self.level+2-self.document.status["lowest_title"]}>\n"
+        else:
+            text += f"</b></p>\n"
 
         has_text_outline = False
         if self.child and not isinstance(self.child[0], Title):
@@ -1151,13 +1192,12 @@ RULES = {
 
 class Document:
     """文档类，操作基本单位"""
-    def __init__(self, lines:list[str], file_name:str="", setupfiles:list[str]|None=None) -> None:
+    def __init__(self, lines:list[str], file_name:str="", setupfiles:list[str]|None=None,
+                 setting:dict|None=None) -> None:
         self.lines = lines
         self.current_line = 0
-        css_style = pygments.formatters.\
-                get_formatter_by_name("html", style="monokai", nowrap=True).get_style_defs()
         self.setting = {"file_name":file_name, "indent_str":"|   ", "footnote_style":("", ""),
-                        "css_in_html":'<style type="text/css">'+ css_style + '</style>'}
+                        "css_in_html":"", "js_in_html":""}
         self.status = {"figure_count":0, "footnote_count":0, "lowest_title":50, "clean_up":False,
                        "is_in_src":[], "table_of_content":[], "footnotes":{},
                        "call_footnotes":[],
@@ -1173,6 +1213,10 @@ class Document:
             "caption":(-2, ""),
             "html_head":[],
             "seq_todo":{"todo":["TODO"], "done":["DONE"]},
+            # H:最大视为标题等级
+            # toc:目录显示的标题等级(num/t/nil)
+            # num:最大显示数字标号的标题等级
+            "options":{"h":3, "toc":True, "num":True},
         }
 
         self.root = Root(self)
@@ -1180,6 +1224,21 @@ class Document:
                 else "<DOCUMENT IN STRINGS>"
         self.build_tree()
         self.merge_text(self.root)
+
+        settings = {"pygments_css":True,"mathjax_script":True}
+        if isinstance(setting,dict):
+            settings.update(setting)
+        if settings.get("pygments_css"):
+            css_style = pygments.formatters.get_formatter_by_name("html", style="monokai", nowrap=True).get_style_defs()
+            self.setting["css_in_html"] += css_style
+        if settings.get("mathjax_script"):
+            self.setting["js_in_html"] += """
+<script> window.MathJax = { tex: { ams: { multlineWidth: '85%' }, tags: 'ams', tagSide: 'right', tagIndent: '.8em' },
+    chtml: { scale: 1.0, displayAlign: 'center', displayIndent: '0em' },
+    svg: { scale: 1.0, displayAlign: 'center', displayIndent: '0em' },
+    output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>"""
     def build_tree(self):
         """构建节点树"""
         last = -1
@@ -1241,7 +1300,8 @@ class Document:
             i[0].insert(i[0].index(i[1])+i[2], i[3])
     def table_of_content_to_text(self) -> str:
         """获取目录并转成文本"""
-        if not self.status["table_of_content"]:
+        options :dict = self.meta["options"]
+        if not self.status["table_of_content"] or not options["toc"]:
             return ""
         ret = ""
         for i in self.status["table_of_content"]:
@@ -1255,6 +1315,10 @@ class Document:
                     count+=1
                 else:
                     break
+            if not isinstance(options["toc"],bool) and count > options["toc"]:
+                continue
+            if not isinstance(options["h"],bool) and count > options["h"]:
+                continue
             if isinstance(j, dict):
                 ret1 = f"{"."*((count-1)*3-1)}{" " if count>1 else ""}{lastest}. "
                 ret1+=f"{f"{j["todo"][1]} " if j["todo"] else ""}{j["title"]}"
@@ -1265,14 +1329,22 @@ class Document:
         return ret
     def table_of_content_to_html(self) -> str:
         """获取目录并转成html"""
-        if not self.status["table_of_content"]:
+        options :dict = self.meta["options"]
+        if not self.status["table_of_content"] or not options["toc"]:
             return ""
         ret = """\n<div id="table-of-contents" role="doc-toc">\n<h2>Table of Contents</h2>\n"""
         ret += """<div id="text-table-of-contents" role="doc-toc">\n"""
         last = self.status["lowest_title"]-1
         for i in self.status["table_of_content"]:
+            if not isinstance(options["toc"],bool) and len(i[:-1]) > options["toc"]:
+                continue
+            if not isinstance(options["h"],bool) and len(i[:-1]) > options["h"]:
+                continue
             level = ".".join(str(j) for j in i[self.status["lowest_title"]-1:-1])+"."
-            text = f"{level} "
+            if not isinstance(options["num"],bool) and len(i[:-1]) > options["num"]:
+                text = ""
+            else:
+                text = f"{level} "
             if i[-1]["todo"]:
                 text+=f"<span class=\"todo {i[-1]["todo"][0]}\">{i[-1]["todo"][1]}</span> "
             text+=f"{i[-1]["title"]}"
@@ -1319,7 +1391,10 @@ class Document:
 <html lang="zh">
 <head>{meta}
 <meta charset="utf-8" />
-<title>{" ".join(self.meta["title"])}</title>{self.setting["css_in_html"]}{html_head}
+<title>{" ".join(self.meta["title"])}</title>
+{self.setting["css_in_html"]}
+{html_head}
+{self.setting["js_in_html"]}
 </head>
 <body>
 """
@@ -1380,11 +1455,11 @@ def _set_css(args, doc:Document):
     if not args.emacs_css:
         return
     if not list(Path("/usr/share/emacs/").glob("**/ox-html.el.gz")):
-        pytools.print_err("WARN 内嵌emacs内置css失败 - 找不到文件")
+        pytools.print_err(f"WARN [{doc.setting["file_name"]}] 内嵌emacs内置css失败 - 找不到文件")
         return
     css_file = list(Path("/usr/share/emacs/").glob("**/ox-html.el.gz"))[0]
     if not css_file.is_file():
-        pytools.print_err(f"WARN 内嵌emacs内置css失败 - 不是文件:{css_file}")
+        pytools.print_err(f"WARN [{doc.setting["file_name"]}] 内嵌emacs内置css失败 - 不是文件:{css_file}")
         return
     css_content = gzip.decompress(css_file.read_bytes()).decode()
     match = re.search(
@@ -1417,7 +1492,7 @@ def print_feature():
           css和js文件基本上能够无缝切换（除了代码高亮）
 """,end="")
 
-def main() -> Document|str|None:
+def run_main() -> Document|str|None:
     """运行主函数"""
     args = parse_arguments()
     if args.feature_info:
@@ -1443,7 +1518,8 @@ def main() -> Document|str|None:
         ret = orgpython.to_html(inp)
         print(ret)
     else:
-        ret = Document(inp.splitlines(), file_name=inp_fname)
+        ret = Document(inp.splitlines(), file_name=inp_fname,
+                       setting={"pygments_css":args.pygments_css})
         _set_css(args, ret)
         if args.debug:
             print(ret.root.to_node_tree())
@@ -1451,7 +1527,8 @@ def main() -> Document|str|None:
             print(" Table of Contents")
             print("===================")
             print(ret.table_of_content_to_text())
-            print(ret.to_text())
+            # print(ret.to_text())
+            __import__('rich').print(ret.meta)
             # print(ret.meta)
             # from pprint import pprint
             # pprint(ret.status)
@@ -1466,8 +1543,9 @@ def main() -> Document|str|None:
                 print(ret.to_html())
     return ret
 
-def parse_arguments() -> argparse.Namespace:
+def parse_arguments():
     """解释参数"""
+    import argparse
     parser = argparse.ArgumentParser(description='解析org文件')
     parser.add_argument('-d', '--diff', action="store_true", help='使用org-python导出')
     parser.add_argument('-i', '--input', default=None, help='指定输入文件')
@@ -1477,9 +1555,17 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-O', '--auto-output', action="store_true", help='自动输出到同名的.org文件')
     parser.add_argument('--pygments-css', action="store_true", help='内置pygments生产的css文件')
     parser.add_argument('--feature-info', action="store_true", help='查看特性信息')
-    argcomplete.autocomplete(parser)
+    try:
+        import argcomplete
+        argcomplete.autocomplete(parser)
+    except ModuleNotFoundError:
+        pass
     args = parser.parse_args()
     return args
+
+def main():
+    """对外提供主函数"""
+    run_main()
 
 if __name__ == "__main__":
     main()

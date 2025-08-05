@@ -1,5 +1,0 @@
-#+TITLE: my-test
-
-1) 这是我的一个测试文件仓库
-2) 而这是这个仓库的ManimCE python分支
-

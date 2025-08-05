@@ -17,6 +17,25 @@
 #+setupfile: ./setup.setup
 #+setupfile: 错误的setup文件测试
 
+# #+options: H:4
+# #+options: toc:nil
+# #+options: num:nil
+#+options: h:3 num:4
+# #+options: H:1
+#+begin_src markdown
+  - 由于options没法多样共存，所以说都注释了
+  - 经过测试发现，连在一起时若前面语法出错后方会连带错误，但前面的设置会保留
+  - 选项不分大小写
+  - 设置选项的键值用`:`分割，一个键值对不能有空格
+  - 目前观测到的值均为int/bool形
+  - 后面的设置可以覆盖前面的设置
+  - 默认如果设置的值出错会直接炸掉
+  - 下面的东西是什么鬼
+  ```org-mode
+  ,#+OPTIONS:     H:2 num:t toc:t \n:nil @:t ::t |:t ^:t f:t TeX:t ...
+  ```
+#+end_src
+
 * meta与注释测试
 #+nonexistmeta
 #+非法meta键
@@ -78,7 +97,7 @@
 ** 打断列表的标题
   - level2_1
     - level3
-** TEST!
+** 标题的TODO和TAG测试
 *** TODO NO1                                                   :SAO:TAGS01:
 *** DONE NO2
 #+seq_todo: TODO(t!) MAYBE(m!) WAIT(w!) PLAN(p!) INBOX(i) | DONE(d@/!) CANCELED(c@/!)
@@ -97,6 +116,31 @@
 切换快捷键： =C-c C-t= 
 *** FASDAF :TEST:
 这样的标签也是可行的
+
+** 超过一定等级的标题转换成list测试
+***** level5.1
+**** level4.1
+内容测试
+**** level4.2
+哈哈哈哈和
+***** level5.2
+听懂掌声
+****** level6.1
+谢谢大家
+******* level7.1
+谢谢
+**** level4.3
+万事如意
+******* level7.2
+跳跃测试
+****** level6.2
+跳跃测试*2
+**** level4.4
+****** level6.3
+******* level7.3
+******** level8.1
+******* level7.4
+***** level5.3
 
 * 列表测试
 - level1(ind0)
@@ -636,6 +680,49 @@ APPEND TEST|     M      |       大地图       |
 |-|
 
 * 文本效果测试
+** 换行有效性测试
+AAAAAAAAAA\\
+BBBBBBBBB
+
+AAAAAAAAA \\
+BBBBBBBBBB
+
+AAAAAAAAA\\         
+BBBBBBBBBB
+
+AAAAAAAAA\\a
+BBBBBBBBBB
+
+AAAAAAAAA\\	
+BBBBBBBBBB
+
+空行测试：
+
+\\
+*** 普通文本中对 =\= 的处理
+\\a
+
+\\\
+
+\\\\
+
+a\\\
+b
+
+A\\\\
+B
+
++C\\D+
+
++E\F+
+
+[[http://localhost\/][linkd\\test]]
+
+#+begin_quote
+总结：在行末有 =\\= 的会解释为换行，如果一行中只有它则会创建一个空行。如果
+在前面有 =\= 则不会解释为换行，而是会将其作转义处理,即 =\\= -> =\= ，而code有特权
+不会被转义
+#+end_quote
 ** 链接
 单链接测试：[[http://bing.com]]
 
@@ -648,6 +735,8 @@ APPEND TEST|     M      |       大地图       |
 [[http://baidu.com ][有文本链接测试4 ] ]
 
 [ [http://baidu.com ][有文本链接测试5]]
+
+[[http://baidu.com] [有文本链接测试6]]
 
 [[./test.jpg][有文本图片链接测试]]
 

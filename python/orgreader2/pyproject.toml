@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orgreader2"
+version = "0.0.1"
+authors = [
+	{name="QiuFulan"}
+]
+description = "An org export tool with an effect close to emacs' native html output"
+# readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+	"argcomplete",
+	"requests",
+	"pygments",
+]
+classifiers = [
+	"Programming Language :: Python :: 3",
+	"Operating System :: OS Independent",
+]
+license = "MIT"
+
+[project.scripts]
+orgreader2 = "orgreader2.orgreader2:main"
+
+[project.urls]
+Homepage = "https://github.com/youlanjie/my-test"

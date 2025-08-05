@@ -1,0 +1,78 @@
+#+TITLE: my-test
+#+HTML_HEAD: <link rel="stylesheet" type="text/css" href="http://localhost/theme/main.css"/>
+
+* 简介
+- 这是我的一个测试文件仓库
+- 目录解释
+  - =./src_c= 存放c语言测试文件(多数仅限linux使用)
+  - =./shell= 存放自制shell(zsh)脚本，偏实用向，目前在努力改用python实现一些功能
+  - =./python= 存放自制python程序，有部分是shell程序更高效率兼跨平台的移植
+    - 为目前(2025.8)主要开发方向
+  - =./manim= 存放写的一些垃圾manim动画
+  - =./javascript= 存些js脚本（油猴脚本）
+
+#+begin_quote
+我英文渣，文件名都是乱取的 :|
+#+end_quote
+
+* 部分可能有用的文件
+** ./src_c
+- =tetris.c= \\
+  终端俄罗斯方块游戏(不使用ncruses)
+- =Text_effects.c= \\
+  打印ANSI转义颜色、显示效果(可供查询)
+- =ASCII.c= \\
+  打印ASCII字符表
+- =print_in_box.c= \\
+  在限制范围内打印文本（类似于窗口）(不使用ncruses)
+- =socket.c= \\
+  套接字程序（服务端+客户端）+本地化测试(locale)
+- =script-helper.c= \\
+  按照特定格式执行shell脚本，会标记执行进度并跳过已执行片段，遇到错误自动停止
+- =Type_conversion.c= \\
+  调用ffmpeg转换媒体文件(实际上使用shell实现或许更好)
+* 部分程序食用方法
+** c语言程序编译命令
+请使用下列命令下载子模块，否则会有部分程序无法编译
+#+begin_src shell
+git submodule init
+git submodule update
+#+end_src
+
+请在项目目录运行以下命令编译所有程序（注：该脚本需要使用zsh）：
+
+#+begin_src shell
+cd ./src_c
+./build.sh
+#+end_src
+
+更多帮助内容请使用=./build.sh -h=查看
+
+或者使用以下命令编译大部分程序
+
+#+begin_src shell
+  cd ./src_c
+  ls -1|grep ".c$"|sed "/build.c\|gtk.c/d"|sed "s/^\(.*\).c$/gcc \1\.c $(find ./include/lib -name "*.c"|sed ":a;N;s/\n/ /g;b a"|sed 's/\//\\\//g') -lncurses -lm -o bin\/\1/"|sh
+#+end_src
+
+** 补充说明
+- script-helper.c 脚本文件格式要求
+  #+begin_src
+    # COMMAND START
+    # 上面这行作为命令的开始（不得改变），也可作为上一命令的结束（但不建议这么做）。
+    # 如果要快速禁用某条命令，则只需将开始符更改任意字符即可。
+    # 中间的字符会随着命令一起被打印出来（类似make）
+    # COMMAND DID  
+    # 上面这行为命令的开始，但是被标记为已执行状态（注意`DID`后还有两个空格）
+    # COMMAND END  
+    # 上面这行为命令的结束（注意`END`后还有两个空格）
+
+    # 补充：命令开始后的到结束前的所有内容都会传给system()函数执行
+  #+end_src
+- socket.c
+  - 利用Socket实现的“聊天”工具，具有最基础的传输文本功能，基于TCP协议。
+  - 具有服务器和客户端两种方式，需要先启动服务器后再启动客户端以建立连接。
+  - 支持中英文显示（需在使用下列命令后在项目根目录下执行可执行文件才可显示英文）
+    #+begin_src shell
+      msgfmt Lang/en_US/socket.po -o Lang/en_US/LC_MESSAGES/socket.mo
+    #+end_src
