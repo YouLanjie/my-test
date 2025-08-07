@@ -37,6 +37,10 @@ def get_output(files:list[Path], title:str, subtitle:str, link:tuple[Path|None, 
                 if link[1] else "| |"
     ret = f"""\
 #+title: {title}
+# fancybox
+#+HTML_HEAD: <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox.css">
+#+HTML_HEAD: <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox.umd.js"></script>
+# user's theme
 #+HTML_HEAD: <link rel='stylesheet' type='text/css' href='{args.css_file}'/>
 #+HTML_LINK_UP: ../
 #+HTML_LINK_HOME: ./
@@ -152,7 +156,7 @@ def main():
                                       setting={"pygments_css":False,"mathjax_script":False})
             doc.setting["css_in_html"] = ""
             save_file(Path(f"{output_d}/{objname}.html"),
-                      str(doc.to_html()),
+                      str(doc.to_html()).replace("<img ", '<img  data-fancybox="gallery"'),
                       f"({index}/{total})")
         # print(output)
 
