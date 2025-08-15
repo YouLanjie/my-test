@@ -21,6 +21,14 @@ IMG_EXTS=["png","jpg","jpeg","dng","gif","webp"]
 VID_EXTS=["mp3","m4a","3ga","3gp","wav",
       "mp4","mkv","webm","mpeg","mov"]
 
+def get_sort_key(s:str)->str:
+    """尝试获取内容中的日期，否则返回原字符串"""
+    result = re.match(r'.*?([1-2]\d{3})[-_年. ]*([0-1]\d)[-_月. ]*([0-3]\d)[-_日. ]*'
+                      r'([0-2]\d)[-_小时. ]*([0-6]\d)[-_分钟. ]*([0-6]\d)[-_秒钟. ]*.*', s)
+    if result:
+        return "-".join(result.groups())
+    return s
+
 def safety_name(s:str)->str:
     """对中括号加上转义"""
     return re.sub(r"([][])", r"\\\1", s)
@@ -38,8 +46,11 @@ def get_output(files:list[Path], title:str, subtitle:str, link:tuple[Path|None, 
     ret = f"""\
 #+title: {title}
 # fancybox
-#+HTML_HEAD: <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox.css">
-#+HTML_HEAD: <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox.umd.js"></script>
+{f"""
+#+HTML_HEAD: <link rel="stylesheet" href={repr(args.fancybox_css)}>
+#+HTML_HEAD: <script src={repr(args.fancybox_js)}></script>
+#+HTML_HEAD: <script>window.onload = function() {"{"}Fancybox.bind('[data-fancybox]', {"{}"}){"}"}</script>
+""" if args.enable_fancybox else ""}
 # user's theme
 #+HTML_HEAD: <link rel='stylesheet' type='text/css' href='{args.css_file}'/>
 #+HTML_LINK_UP: ../
@@ -54,7 +65,9 @@ def get_output(files:list[Path], title:str, subtitle:str, link:tuple[Path|None, 
         prefix = "./" if safe_name[0] != "/" else "file://"
         if re.match(r".*\.(?:"+"|".join(VID_EXTS)+r")", i.name):
             li.append("-\n  #+begin_export html\n"
-                      f"<video controls><source src=\"{prefix}{str(i)}\"></video>\n"
+                      f"<video controls src={repr(prefix+str(i))} data-fancybox=\"gallery\">"
+                      f"<source src={repr(prefix+str(i))}/></video>\n"
+                      f"<a href={repr(prefix+str(i))}>原文件</a>\n"
                       "#+end_export")
         else:
             li.append(f"- [[{prefix}{safe_name}]]")
@@ -142,7 +155,7 @@ def main():
         file_list = [calculate_relative(i, output_d)
                 for i in dirs.iterdir()
                 if i.is_file() and pattern.match(i.name)]
-        file_list = natsort.natsorted(file_list)
+        file_list = natsort.natsorted(file_list, key=lambda x:get_sort_key(x.name))
         output = get_output(file_list, title,
                 f"{dir_list.index(dirs)+1} / {dirs}" if len(dir_list) > 1 else f"{dirs}",
                 (lastdir, nextdir), args)
@@ -156,7 +169,7 @@ def main():
                                       setting={"pygments_css":False,"mathjax_script":False})
             doc.setting["css_in_html"] = ""
             save_file(Path(f"{output_d}/{objname}.html"),
-                      str(doc.to_html()).replace("<img ", '<img  data-fancybox="gallery"'),
+                      str(doc.to_html()).replace("<img ", '<img data-fancybox="gallery"'),
                       f"({index}/{total})")
         # print(output)
 
@@ -172,8 +185,22 @@ def parse_arguments() -> argparse.Namespace:
             help='在图片间插入标题用于快速跳转(指定分组)')
     parser.add_argument('-N', '--no-export', action="store_true", help='保存org文件但不导出')
     parser.add_argument('-S', '--save-org', action="store_true", help='保存org文件并导出')
+    parser.add_argument('--enable-fancybox', action="store_true", help='启用fancybox')
+    parser.add_argument('--enable-old-fancybox', action="store_true", help='启用旧版fancybox(需要未指定fancybox链接)')
+    parser.add_argument('--fancybox-js', default=None,
+                        help='设置fancybox的js文件地址')
+    parser.add_argument('--fancybox-css',default=None,
+                        help='设置fancybox的css文件地址')
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
+    urls = [{"js":"https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox/fancybox.umd.js",
+             "css":"https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox/fancybox.css"},
+            {"js":"https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox.umd.js",
+             "css":"https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox.css"}]
+    if args.fancybox_js is None:
+        args.fancybox_js = urls[args.enable_old_fancybox]["js"]
+    if args.fancybox_css is None:
+        args.fancybox_css = urls[args.enable_old_fancybox]["css"]
     return args
 
 if __name__ == "__main__":
