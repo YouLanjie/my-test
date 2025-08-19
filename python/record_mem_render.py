@@ -1,65 +1,56 @@
 #!/usr/bin/env python
 
 import re
-import subprocess
 import argparse
 import sys
 import time
 from pathlib import Path
+import psutil
 import numpy as np
 import pandas as pd
 
 def get_mem_by_free() -> tuple[float,float]:
-    vm_rss = 0
-    vm_swap = 0
-    output = subprocess.run("free|sed '1d'",
-                            shell=True,check=False,
-                            capture_output=True).stdout.decode().splitlines()
-    try:
-        vm_rss = int(output[0].split()[2])
-        if len(output) > 1:
-            vm_swap = int(output[1].split()[2])
-    except ValueError:
-        pass
-    return (vm_rss/1024, vm_swap/1024)
+    vm_rss = psutil.virtual_memory().used
+    vm_swap = psutil.swap_memory().used
+    return (vm_rss/1024/1024, vm_swap/1024/1024)
 
 def get_mem_by_grep(grep:str) -> tuple[float, float]:
-    pid_list = subprocess.run("ps aux|grep "+repr(grep)+"|sed '1d'|awk '{print $2}'",
-                              shell=True,check=False,capture_output=True).stdout.decode().splitlines()
     count = {"RSS":0, "Swap":0}
-    for pid in pid_list:
-        status = Path(f"/proc/{pid}/status")
-        if not status.is_file():
-            continue
-        status_text = status.read_text(encoding="utf-8")
-        vm_rss = re.search(r"VmRSS:\s*(\d+)", status_text)
-        vm_swap = re.search(r"VmSwap:\s*(\d+)", status_text)
-        count["RSS"] += int(vm_rss.group(1)) if vm_rss else 0
-        count["Swap"] += int(vm_swap.group(1)) if vm_swap else 0
-    return (count["RSS"]/1024, count["Swap"]/1024)
-
-def record(tag) -> str:
-    save_text = [f"Time,SystemVmRSS,SystemVmSwap,AppVmRSS({tag}),AppVmSwap({tag})"]
-    counter = []
-    lt = ""
-    try:
-        # print("time | sys | grep")
-        print(save_text[-1])
-        while True:
-            t = time.strftime("%Y-%m-%dT%H:%M:%S+08:00")
-            if lt == t:
-                time.sleep(0.1)
+    for pid in psutil.pids():
+        try:
+            process = psutil.Process(pid)
+            if not re.search(grep, f"{process.username()} {process.name()} {process.cmdline()}"):
                 continue
-            lt = t
-            free = get_mem_by_free()
-            grep = get_mem_by_grep(tag)
-            counter.append((t,free,grep))
-            save_text.append(f"{t},{free[0]:.2f},{free[1]:.2f},{grep[0]:.2f},{grep[1]:.2f}")
-            # print(f"{t}: {free}, {grep}")
-            print(save_text[-1])
-    except KeyboardInterrupt:
-        print("# C-c 退出", file=sys.stderr)
-    return "\n".join(save_text)
+            vm_rss = process.memory_full_info().rss
+            vm_swap = process.memory_full_info().swap
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+        count["RSS"] += vm_rss
+        count["Swap"] += vm_swap
+    return (count["RSS"]/1024/1024, count["Swap"]/1024/1024)
+
+def record(tag, output):
+    text = f"Time,SystemVmRSS,SystemVmSwap,AppVmRSS({tag}),AppVmSwap({tag})\n"
+    lt = ""
+    with Path(output).open("a",encoding="utf-8") as f:
+        try:
+            print("time | sys | grep")
+            f.write(text)
+            while True:
+                t = time.strftime("%Y-%m-%dT%H:%M:%S+08:00")
+                if lt == t:
+                    time.sleep(0.1)
+                    continue
+                lt = t
+                free = get_mem_by_free()
+                grep = get_mem_by_grep(tag)
+                text = f"{t},{free[0]:.2f},{free[1]:.2f},{grep[0]:.2f},{grep[1]:.2f}\n"
+                print(f"{t}: {free}, {grep}")
+                f.write(text)
+                f.flush()
+        except KeyboardInterrupt:
+            print("# C-c 退出", file=sys.stderr)
+    # return "\n".join(save_text)
 
 def get_args() -> argparse.Namespace:
     argparser = argparse.ArgumentParser(description="记录内存占用并绘制表格")
@@ -126,11 +117,9 @@ def main():
     args = get_args()
     if not args.input:
         args.output = args.output or f"{time.strftime("%Y%m%d_%H%M%S")}{"_"+args.grep if args.grep else ""}.csv"
-        save_text = record(args.grep)
-        Path(args.output).write_text(save_text, encoding="utf-8")
+        record(args.grep, args.output)
         return
     render(args)
 
 if __name__ == "__main__":
     main()
-

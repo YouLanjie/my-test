@@ -14,13 +14,14 @@ import argparse
 from pathlib import Path
 import json
 
+import pytools
+
 class Video():
     """存储单个视频信息"""
     def __init__(self, file:Path):
         if file.is_file() is False:
             print(f"`{str(file)}`不是文件")
             sys.exit(1)
-        self.timestamp = file.stat().st_mtime
         self.file = str(file)
         # 针对分p视频的单个视频
         self.dir_self = str(file.parents[0])
@@ -30,6 +31,10 @@ class Video():
         data = json.loads(content)
         self.avid = str(data.get("avid")) #"AV"+
         self.bvid = str(data.get("bvid")) #[]
+        # 时间戳设置
+        self.timestamp = data.get("time_create_stamp")
+        self.u_timestamp = data.get("time_update_stamp")
+        self.f_timestamp = file.stat().st_mtime
         # 分P总标题/合集分标题
         self.maintitle = str(data.get("title"))
         self.owner = str(data.get("owner_name"))
@@ -56,6 +61,12 @@ class Video():
             self.title = self.maintitle
         elif mode == "part":
             self.title = self.part
+        elif mode == "auto_reverse":
+            self.title = self.maintitle
+            if self.part not in ("None", "", self.maintitle):
+                self.title = f"{self.part} - {self.title}"
+            if self.subtitle not in ("None", "", self.maintitle, f"{self.maintitle} {self.part}"):
+                self.title = f"{self.subtitle} - {self.title}"
         else:
             self.title = self.maintitle
             if self.part not in ("None", "", self.maintitle):
@@ -87,25 +98,12 @@ class Ui():
         curses.init_pair(3, curses.COLOR_WHITE, curses.COLOR_BLACK)
         self.list = curses.newwin(self.height + 1, self.width, 0, 0)
         self.info = curses.newwin(info_height, self.width, self.height + 1, 0)
+        self.sets = curses.newwin(int(self.height/2), int(self.width/2), int(self.height/4), int(self.width/4))
         self.content = content
         # self.height = len(self.content)
-    def gsl(self, s, lim, start=0):
-        """根据打印宽度截断字符串"""
-        width = 0
-        count = 0
-        for c in s[start:]:
-            if ord(c) <= 127:
-                width += 1
-                count += 1
-            else:
-                width += 2
-                count += 1
-            if lim > 0 and width+1 >= lim - 2:
-                break
-        return s[start:count]
     def print_list(self, content):
         """打印视频列表"""
-        self.list.clear()
+        self.list.erase()
         for i in range(self.position, self.position+self.height):
             if i >= len(content):
                 break
@@ -113,11 +111,13 @@ class Ui():
             width = self.width - 2
             color = 0
             if isinstance(p, list):
-                title = self.gsl((p[0].title if len(p)==1 else p[0].maintitle)+" "*width, width)
+                title = pytools.get_str_in_width(
+                        (p[0].title if len(p)==1 else p[0].maintitle),
+                        width-1, align="<l>")
                 if len(p) != 1:
                     color+=curses.color_pair(2)
             else:
-                title = self.gsl(p.title+" "*width, width)
+                title = pytools.get_str_in_width(p.title, width-1, align="<l>")
             if i in self.collection:
                 color+=curses.A_BOLD
             if i == self.select:
@@ -137,7 +137,7 @@ class Ui():
         if isinstance(p, list):
             sets = len(p) == 1
             p = p[0]
-        self.info.clear()
+        self.info.erase()
         self.info.addstr(f"BV:    {p.bvid:12} | AV: AV{p.avid}\n")
         self.info.addstr("DIR:   ")
         self.info.addstr(f"{p.dir_self if sets else p.dir_parent+" <SET>"}\n",
@@ -166,9 +166,82 @@ class Ui():
         curses.endwin()
         os.system(cmd)
         curses.reset_prog_mode()
+    def setting(self):
+        """设置界面"""
+        scr = self.sets
+        inp = ""
+        select = 0
+        edit_mode = False
+        while inp.lower() != "q":
+            scr.erase()
+            if scr.getmaxyx()[0] <= 3:
+                return
+            title = "SETTING"
+            if edit_mode:
+                title += "(editing)"
+            scr.addstr("\n"+pytools.get_str_in_width(title, scr.getmaxyx()[1]))
+            offset = 0
+            while select-offset >= scr.getmaxyx()[0] - 3:
+                offset += 1
+            i = 0
+            while i+offset < len(CONFIG) and i < scr.getmaxyx()[0] - 3:
+                key = list(CONFIG)[i+offset]
+                pre = "  > " if select == i+offset else "    "
+                scr.addstr(pre+pytools.get_str_in_width(f"({i}) {key}: {CONFIG[key]}",
+                                                         scr.getmaxyx()[1]-8, align="<l>")+"\n")
+                i+=1
+            scr.box()
+            scr.refresh()
+            scr.keypad(True)
+            inp = chr(scr.getch())
+            if edit_mode:
+                if inp == chr(27):
+                    edit_mode = False
+                    continue
+                if inp == chr(curses.KEY_BACKSPACE):
+                    if CONFIG[list(CONFIG)[select]]:
+                        CONFIG[list(CONFIG)[select]] = CONFIG[list(CONFIG)[select]][:-1]
+                    continue
+                if inp in "\r\n"+chr(curses.KEY_ENTER):
+                    continue
+                CONFIG[list(CONFIG)[select]] += inp
+                continue
+            if inp in "lj"+chr(curses.KEY_DOWN)+chr(curses.KEY_RIGHT):
+                select+=1
+            elif inp in "hk"+chr(curses.KEY_UP)+chr(curses.KEY_LEFT):
+                select-=1
+            elif inp == "g":
+                select=0
+            elif inp == "G":
+                select=-1
+            elif inp == " ":
+                if isinstance(CONFIG[list(CONFIG)[select]], bool):
+                    CONFIG[list(CONFIG)[select]] = not CONFIG[list(CONFIG)[select]]
+                else:
+                    CONFIG[list(CONFIG)[select]] = ""
+                    edit_mode = True
+            select %= len(CONFIG)
+        self.refresh_list()
+    def refresh_list(self):
+        def sort_key(x):
+            if CONFIG["sort_type"] == "uf_time":
+                return x[0].u_timestamp
+            if CONFIG["sort_type"] == "f_time":
+                return x[0].f_timestamp
+            if CONFIG["sort_type"] == "owner":
+                return x[0].owner
+            return x[0].timestamp
+        self.content = sorted(self.content, key=sort_key, reverse=CONFIG["sort_reverse"])
+        title_mode = ("maintitle", "part", "auto", "auto_reverse")
+        if CONFIG["name_format"] not in title_mode:
+            CONFIG["name_format"] = "auto"
+        for i in self.content:
+            for j in i:
+                j.reset_title(CONFIG["name_format"])
     def main(self):
         """ui主程序"""
         self.check(self.content)
+        self.refresh_list()
         self.stdscr.refresh()
         inp = "0"
         deep = 0
@@ -183,25 +256,26 @@ class Ui():
             self.print_list(cont)
             self.print_info(cont)
             inp = chr(self.stdscr.getch())
-            if inp == "j":
+            if inp in "j"+chr(curses.KEY_DOWN):
                 self.select+=1
-            elif inp == "k":
+            elif inp in "k"+chr(curses.KEY_UP):
                 self.select-=1
             elif inp == "g":
                 self.select=0
             elif inp == "G":
                 self.select=-1
-            elif inp == "l" and len(self.content[self.select]) != 1 and deep == 0:
+            elif inp in "l"+chr(curses.KEY_RIGHT) and len(self.content[self.select]) != 1 and deep == 0:
                 position,select,self.position,self.select = self.position, self.select, 0, 0
                 collection, self.collection = self.collection, []
                 deep = 1
-            elif inp == "h" and deep == 1:
+            elif inp in "h"+chr(curses.KEY_LEFT) and deep == 1:
                 self.position,self.select = position,select
                 self.collection = collection
                 deep = 0
             elif inp == "r":
                 self.select = len(cont) - self.select - 1
                 cont.reverse()
+                CONFIG["sort_reverse"] = not CONFIG["sort_reverse"]
             elif inp == "p":
                 self.cmd(cmd_genal(obj, "play"))
             elif inp == "P":
@@ -224,22 +298,24 @@ class Ui():
                 self.collection = []
             elif inp == "a":
                 self.collection = list(range(len(cont)))
-            elif inp in ("1", "2", "3"):
+            elif inp in "1234":
                 if not isinstance(obj[0], list):
                     obj = [obj]
-                title_mode = {"1":"maintitle", "2":"part", "3":"auto"}
-                for i in obj:
-                    for j in i:
-                        j.reset_title(title_mode[inp])
-            elif inp == "4":
+                title_mode = {"1":"maintitle", "2":"part", "3":"auto",
+                              "4":"auto_reverse"}
+                CONFIG["name_format"] = title_mode[inp]
+                self.refresh_list()
+            elif inp == "5":
                 CONFIG["vfat_name"] = not CONFIG["vfat_name"]
+            elif inp == "o":
+                self.setting()
             self.check([self.content, self.content[select]][deep])
         # curses.endwin()
 
 def get_video_dimensions(file_path:Path) -> tuple[int, int]:
     cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
            "-show_entries", "stream=width,height", "-of", "json", str(file_path)]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     data = json.loads(result.stdout)
     width = data["streams"][0]["width"]
     height = data["streams"][0]["height"]
@@ -279,33 +355,34 @@ def cmd_genal(li, mode) -> str:
             base_output = output
             t+=f"# {j.title if len(i) == 1 else j.part} <Dir: {j.dir_self}>\n"
             if mode == "3gp":
-                t+=f"ffmpeg -i \"{str(vid)}\" -i \"{str(aud)}\""\
-                    +" -r 12 -b:v 400k -s 352x288 -ab 12.2k -ac 1 -ar 8000 -c copy "
+                t+=f'ffmpeg -i {repr(str(vid))} -i {repr(str(aud))}'\
+                    +' -r 12 -b:v 400k -s 352x288 -ab 12.2k -ac 1 -ar 8000 -c copy '
                 output+=".3gp"
             elif mode == "mp4":
-                t+=f"ffmpeg -i \"{str(vid)}\" -i \"{str(aud)}\" -c copy "
+                t+=f"ffmpeg -i {repr(str(vid))} -i {repr(str(aud))} -c copy "
                 output+=".mp4"
             elif mode in ("m4a" "copy"):
-                t+=f"cp \"{str(aud)}\" "
+                t+=f"cp {repr(str(aud))} "
                 output+=".m4a"
             elif mode == "play":
-                t+=f"echo \"Now Playing:{j.title}\"\n{CONFIG["player"]} \"{str(aud)}\"\n"
+                t+=f'echo "Now Playing:{j.title}"\n{CONFIG["player"]} {repr(str(aud))}\n'
                 continue
             elif mode == "play_mp4":
-                t+=f"echo \"Now Playing:{j.title}\"\n{CONFIG["player"]} \"{str(vid)}\" &\n"+\
-                        f"{CONFIG["player"]} \"{str(aud)}\"\n"
+                t+=f'echo "Now Playing:{j.title}"\n{CONFIG["player"]} {repr(str(vid))} &\n'+\
+                        f'{CONFIG["player"]} "{repr(str(aud))}"\n'
                 continue
             else:
-                t+=f"ffmpeg -i \"{str(aud)}\" "
+                t+=f'ffmpeg -i {repr(str(aud))} '
                 output+=".mp3"
-            t+=f"\"{output}\"\n"
+            t+=f'{repr(str(output))}\n'
             if not CONFIG["noass"] and has_subprocess and mode not in ("play", "play_mp4"):
                 width, height = get_video_dimensions(vid)
-                t+=f"""biliass "{danmaku}" -s {width}x{height} -o "{base_output}.ass"\n"""
+                t+=f'biliass {repr(str(danmaku))} -s {width}x{height} -o '\
+                    f'{repr(str(base_output)+".ass")}\n'
         if len(i) != 1:
             t+=f"# END OF SETS: {i[0].maintitle} <AV{i[0].avid}>\n"
             t+="# =========================\n\n"
-    t+="echo \"Done!\\n\"\n"
+    t+='echo "Done!"\n'
     return t
 
 def run_main():
@@ -316,14 +393,22 @@ def run_main():
               "./"]
     parser = argparse.ArgumentParser(description="导出B站手机端缓存")
     parser.add_argument('-l', '--list', action="store_true", help='列出视频')
-    parser.add_argument('-n', '--no-vfat-name', action="store_false", help='不替换特殊字符')
+    parser.add_argument('-n', '--no-vfat-name', action="store_true", help='不替换特殊字符')
     parser.add_argument('-N', '--no-ass', action="store_true", help='不生成弹幕(加快脚本生成速度)')
     parser.add_argument('-i', '--input-dir', action="append", help='设置输入文件夹')
     parser.add_argument('-o', '--output-dir', default="", help='设置输出文件夹')
     parser.add_argument('-O', '--output-file', default=None, help='设置输出文件')
     parser.add_argument('-p', '--player', default="mpv", help='设置默认播放器')
-    parser.add_argument('-m', '--mode', default="mp3", help='设置脚本输出类型(mp3(默认)|mp4|m4a(仅复制)|3gp|play)')
+    parser.add_argument('-m', '--mode', default="mp3", choices=["mp3", "mp4", "m4a", "3gp", "play"],
+                        help='设置脚本输出类型(mp3默认,m4a仅复制)')
+    parser.add_argument('-s', '--sort', default="auto", choices=["cf_time", "uf_time", "f_time", "owner"],
+                        help='设置排序方式')
     parser.add_argument('-H', '--help-key', action="store_true", help='内部按键帮助')
+    try:
+        import argcomplete
+        argcomplete.autocomplete(parser)
+    except ModuleNotFoundError:
+        pass
     args = parser.parse_args()
     if args.help_key:
         mhelp()
@@ -331,9 +416,10 @@ def run_main():
     mode = args.mode
     CONFIG["outputd"] = args.output_dir
     outputf = args.output_file
-    CONFIG["vfat_name"] = args.no_vfat_name
+    CONFIG["vfat_name"] = not args.no_vfat_name
     CONFIG["player"] = args.player
     CONFIG["noass"] = args.no_ass
+    CONFIG["sort_type"] = args.sort
     if args.input_dir:
         inputd=args.input_dir
 
@@ -350,8 +436,8 @@ def run_main():
             li[-1].append(v)
         else:
             li.append([v])
-        li[-1] = sorted(li[-1], key=lambda x:x.page, reverse=False)
-    li = sorted(li, key=lambda x:x[0].timestamp, reverse=False)
+        li[-1] = sorted(li[-1], key=lambda x:x.page, reverse=CONFIG["sort_reverse"])
+    li = sorted(li, key=lambda x:x[0].timestamp, reverse=CONFIG["sort_reverse"])
 
     if list_mode:
         for i in li:
@@ -360,6 +446,8 @@ def run_main():
             print()
         sys.exit(0)
     if outputf is not None:
+        if not args.no_ass:
+            print("Tips: 导出太慢？尝试使用`--no-ass`选项")
         Path(outputf).write_text(cmd_genal(li, mode), encoding="utf8")
         sys.exit(0)
     return li
@@ -378,9 +466,9 @@ def mhelp(ret=0, msg=""):
     sys.exit(ret)
 
 CONFIG = {"player":"mpv", "outputd":"", "vfat_name":True,
-          "noass":False}
+          "noass":False, "sort_type":"cf_time",
+          "sort_reverse":True,
+          "name_format":"auto"}
 if __name__ == "__main__":
     video_list = run_main()
-    video_list.reverse()
     curses.wrapper(lambda stdscr: Ui(stdscr, video_list).main())
-
