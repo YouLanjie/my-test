@@ -598,7 +598,7 @@ class Title(TitleBase):
         if self.level <= self.document.meta["options"]["h"]:
             text += f"</h{self.level+2-self.document.status["lowest_title"]}>\n"
         else:
-            text += f"</b></p>\n"
+            text += "</b></p>\n"
 
         has_text_outline = False
         if self.child and not isinstance(self.child[0], Title):
@@ -707,10 +707,10 @@ class ListItem(Root):
             text += f"{self.child[0].to_html()}\n"
         for i in self.child[1:]:
             # 下一级的东西
-            for j in i.to_html().splitlines():
-                if j and j[-1] != "\n":
-                    j+="\n"
-                text += f"{j}"
+            j = i.to_html()
+            if j and j[-1] != '\n':
+                j += "\n"
+            text +=  j
         return text
 
 class List(Root):
@@ -1396,7 +1396,8 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
 <meta name="generator" content="Org Mode (third party program by python)" />
 <title>{" ".join(self.meta["title"])}</title>
 """
-        for i in (self.setting["css_in_html"],
+        for i in (f"<style>\n{self.setting["css_in_html"]}\n</style>"
+                  if self.setting["css_in_html"] else "",
                   html_head,
                   self.setting["js_in_html"]):
             if not i:
