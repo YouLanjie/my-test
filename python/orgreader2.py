@@ -1232,11 +1232,12 @@ class Document:
             css_style = pygments.formatters.get_formatter_by_name("html", style="monokai", nowrap=True).get_style_defs()
             self.setting["css_in_html"] += css_style
         if settings.get("mathjax_script"):
-            self.setting["js_in_html"] += """
-<script> window.MathJax = { tex: { ams: { multlineWidth: '85%' }, tags: 'ams', tagSide: 'right', tagIndent: '.8em' },
-    chtml: { scale: 1.0, displayAlign: 'center', displayIndent: '0em' },
-    svg: { scale: 1.0, displayAlign: 'center', displayIndent: '0em' },
-    output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
+            self.setting["js_in_html"] += """\
+<script>
+window.MathJax = { tex: { ams: { multlineWidth: '85%' }, tags: 'ams', tagSide: 'right', tagIndent: '.8em' },
+chtml: { scale: 1.0, displayAlign: 'center', displayIndent: '0em' },
+svg: { scale: 1.0, displayAlign: 'center', displayIndent: '0em' },
+output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
 </script>
 <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>"""
     def build_tree(self):
@@ -1383,21 +1384,25 @@ class Document:
         meta = f"""\n{"\n".join(\
                 [f"""<meta name="{i}" content="{" ".join(self.meta[i])}" />"""\
                 for i in ("author", "description") if self.meta[i]])}"""
-        html_head = f"\n{"\n".join(self.meta["html_head"])}" if self.meta["html_head"] else ""
+        html_head = f"{"\n".join(self.meta["html_head"])}" if self.meta["html_head"] else ""
         title = f"\n<h1 class=\"title\">{" ".join(self.meta["title"])}</h1>" \
                 if self.meta["title"] else ""
         html = f"""\
 <!DOCTYPE html>
 <html lang="zh">
-<head>{meta}
-<meta charset="utf-8" />
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />{meta}
+<meta name="generator" content="Org Mode (third party program by python)" />
 <title>{" ".join(self.meta["title"])}</title>
-{self.setting["css_in_html"]}
-{html_head}
-{self.setting["js_in_html"]}
-</head>
-<body>
 """
+        for i in (self.setting["css_in_html"],
+                  html_head,
+                  self.setting["js_in_html"]):
+            if not i:
+                continue
+            html += f"{i}\n"
+        html += "</head>\n<body>\n"
         if self.meta["html_link_home"] or self.meta["html_link_up"]:
             href_up = self.meta["html_link_up"] or "#"
             href_home = self.meta["html_link_home"] or "#"

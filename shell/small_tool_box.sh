@@ -65,6 +65,17 @@ get_mem_split_by_user() {
 	ps aux | awk '{users[$1] += $6} END {for (u in users) printf "%-10s %s MB\n",u,users[u]/1024}'
 }
 
+get_pacman_pkg_size_list() {
+	#pacman -Qi|grep '名字\|安装后大小'|sed 's/.* : //'|sed 'N;s/\n/ /'|\
+		#awk '{if ($3 == "MiB"){printf "%15.3f %s\n",$2*1024,$1}else{printf "%15.3f %s\n",$2,$1}}'|sort -n
+	pacman -Qi|grep '名字\|安装后大小'|sed 's/.* : //'|sed 'N;s/\n/ /'|\
+		awk '{if ($3 == "MiB"){printf "%15.3f %s\n",$2,$1}else{printf "%15.3f %s\n",$2/1024,$1}}'|sort -n
+}
+
+pacman_auto_remove() {
+	pacman -Qdtq |sudo pacman -Rsun -
+}
+
 if [[ $1 != "" ]];then
 	if echo "$choices"|grep -q "^$1\$";then
 		args=("$@")
