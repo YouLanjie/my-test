@@ -82,6 +82,8 @@ int flag_seed = 0;
 int flag_load = 0;
 int flag_tps = 100;
 int flag_skip = 0;
+int flag_ignore_size = 0;
+int flag_machine = 0;
 FILE *file_save = NULL;
 FILE *file_load = NULL;
 time_t game_time1 = 0, game_time2 = 0;
@@ -280,12 +282,14 @@ static int control(int input) {
 	case 'W':
 		_move(&map.type, map.type % 4 < 3 ? 1 : -3);
 		break;
+	case 'H':
 	case 'A':
 		_move(&map.x, -1);
 		break;
 	case 'S':
 		input = _move(&map.y, 1);
 		break;
+	case 'L':
 	case 'D':
 		_move(&map.x, 1);
 		break;
@@ -309,14 +313,67 @@ static int control(int input) {
 	return input;
 }
 
+static void print_ui_machine_code()
+{
+	// info
+	time(&game_time2);
+	int dtime = difftime(game_time2, game_time1);
+	printf("%d,%d,%d,%d, ",map.line, map.score, print_lock, dtime);
+	// next:
+	for (int i = 0; i <= 6; i++)
+		printf("%d,", list[list_num + i > 6 ? list_num + i - 7 : list_num + i]);
+	printf(" ");
+	// map
+	for (int i = 0; i < map.size; i++)
+		printf("%d,", map.map[i]);
+	printf("\n");
+	return;
+}
+
+static void print_ui_human(int *info)
+{
+	time(&game_time2);
+	print_map();
+	if (info && *info ^ flag_info) {
+		printf("                                                               \r\n\r\n");
+		printf("                                                          \r\n"
+			"                                                                \r");
+		fflush(stdout);
+		printf("\033[%dA", 3);
+		fflush(stdout);
+		*info = flag_info;
+	}
+	int dtime = difftime(game_time2, game_time1);
+	printf(flag_info ?
+	       "消行:%3d /分数:%3d /时间:(%02d:%02d:%02d)":
+	       "Ln:%3d /Sc:%3d /T:(%02d:%02d:%02d)",
+	       map.line, map.score, dtime / 3600, dtime / 60, dtime % 60);
+	if (flag_next) printf(flag_info ? " /种子:%d" : " /Sd:%d", flag_seed);
+	if (flag_farme) printf(flag_info ? " /帧值:%d" : " /F:%d", print_lock);
+	static int flag_farme2 = 0;
+	if (flag_farme != flag_farme2) {
+		printf("             ");
+		flag_farme2 = flag_farme;
+	}
+	printf("\r");
+	if (flag_info) {
+		printf("\n\n\r");
+		printf("<游戏> [a/s/d] 移动   [w/j/k] 旋转    [SPACE] 速降\r\n"
+		       "<设置>     [b] Debug      [i] 按键提示    [f] 预期落点显示\r"
+		       "\033[2A");
+	}
+	printf("\033[%dA", map.height + (flag_info ? 2 : 1));
+	if (flag_next) print_next();
+	return;
+}
+
 static void *print_ui(void *p)
 {
-	int farme = 0;
-	int dtime = 0;
 	int info = flag_info;
+	int farme = 0;
 	print_lock = 1;
-	printf("\033[?25l");
 
+	if (!flag_machine) printf("\033[?25l");
 	if (flag_load) {
 		fscanf(file_load, "%d", &farme);
 	}
@@ -331,68 +388,47 @@ static void *print_ui(void *p)
 			file_load = NULL;
 			flag_load = 0;
 		}
-		if (flag_load && flag_skip) goto END_OF_PRINT;
-		time(&game_time2);
-		dtime = difftime(game_time2, game_time1);
-		print_map();
-		if (info ^ flag_info) {
-			printf("                                                               \r\n\r\n");
-			printf("                                                          \r\n"
-				"                                                                \r");
-			fflush(stdout);
-			printf("\033[%dA", 3);
-			fflush(stdout);
-			info = flag_info;
+
+		if (!(flag_load && flag_skip)) {
+			if (flag_machine) print_ui_machine_code();
+			else print_ui_human(&info);
 		}
-		printf(flag_info ?
-		       "消行:%3d /分数:%3d /时间:(%02d:%02d:%02d)":
-		       "Ln:%3d /Sc:%3d /T:(%02d:%02d:%02d)",
-		       map.line, map.score, dtime / 3600, dtime / 60, dtime % 60);
-		if (flag_next) printf(flag_info ? " /种子:%d" : " /Sd:%d", flag_seed);
-		if (flag_farme) printf(flag_info ? " /帧值:%d" : " /F:%d", print_lock);
-		static int flag_farme2 = 0;
-		if (flag_farme != flag_farme2) {
-			printf("             ");
-			flag_farme2 = flag_farme;
-		}
-		printf("\r");
-		if (flag_info) {
-			printf("\n\n\r");
-			printf("<游戏> [a/s/d] 移动   [w/j/k] 旋转    [SPACE] 速降\r\n"
-			       "<设置>     [b] Debug      [i] 按键提示    [f] 预期落点显示\r"
-			       "\033[2A");
-		}
-		printf("\033[%dA", map.height + (flag_info ? 2 : 1));
-		if (flag_next) print_next();
-END_OF_PRINT:
+
 		if (print_lock && print_lock % 6 == 0) {    /* 默认每0.3s就移动一次 */
 			int inp = 0;
 			inp = _move(&map.y, 1);
 			/*print_lock = 1;*/
-			if (inp == -1) print_lock = 0;
+			if (inp == -1) {
+				print_lock = 0;
+				ungetc('q', stdin);
+			}
 		}
 		if (!flag_load || !flag_skip) usleep(TPS/(flag_load ? flag_tps : 1));    /* 每0.05s就刷新一次 */
 		if (print_lock) print_lock++;
 	}
 
-	printf("\033[%dB\r\n", map.height + (flag_info ? 4 : 1));
-	printf("\033[?25h游戏结束\r\n若程序未退出，请按'回车'\r\n");
-	if (flag_debug) {
-		printf("最终棋盘数据:\r\n");
-		print_map();
+	if (!flag_machine) {
+		printf("\033[%dB\r\n", map.height + (flag_info ? 4 : 1));
+		printf("\033[?25h游戏结束\r\n若程序未退出，请按'回车'\r\n");
+		if (flag_debug) {
+			printf("最终棋盘数据:\r\n");
+			print_map();
+		}
 	}
 	pthread_exit(NULL);
 	return NULL;
 }
 
+/* 处理用户输入，主线程 */
 static void run()
 {
 	int input = 0;
 
 	while(input != 'Q' && print_lock) {
 		create_fake();
-		if (!flag_load) input = _getch();
-		else {
+		if (!flag_load) {
+			input = _getch_cond((int*)&print_lock);
+		} else {
 			while (!kbhit()) usleep(TPS);
 			flag_load = 0;
 			if (file_load) fclose(file_load);
@@ -400,9 +436,8 @@ static void run()
 		}
 		if (flag_fake) delete_fake();
 		if (input == ':') {
-			usleep(TPS*6);
+			usleep(TPS*8);
 			int inp = kbhitGetchar();
-			if (inp) getchar();
 			if (inp == 'c')
 				printf("\033[2J\033[0;0H");
 			else if (inp == 'f') {
@@ -423,6 +458,7 @@ static void help(int type)
 		"    tetris [OPTIONS]\n"
 		"Option:\n"
 		"    -i        简化主ui的信息显示\n"
+		"    -I        忽略终端大小不自动调整显示等级\n"
 		"    -n        隐藏下一步的信息显示\n"
 		"    -s <SEED> 设置随机数种子\n"
 		"    -W <WIDE> 设置棋盘宽度\n"
@@ -431,6 +467,7 @@ static void help(int type)
 		"    -l <FILE> 加载指定的历史记录文件\n"
 		"    -d <NUM>  设置回放速度(值越高速度越快)\n"
 		"    -k        跳过回放显示直接加载存档\n"
+		"    -M        打印机器友好信息\n"
 		"    -K        内部按键说明\n"
 		"    -h        显示帮助\n",
 		"内部按键说明：\n"
@@ -463,7 +500,7 @@ int main(int argc, char *argv[])
 	flag_seed = time(NULL);
 
 	int ch = 0;
-	while ((ch = getopt(argc, argv, "hins:W:H:o:l:d:kK")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "hiIns:W:H:o:l:d:kKM")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -472,6 +509,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'i':
 			flag_info = 0;
+			break;
+		case 'I':
+			flag_ignore_size = 1;
 			break;
 		case 'n':
 			flag_next = 0;
@@ -504,18 +544,25 @@ int main(int argc, char *argv[])
 			help(1);
 			return 0;
 			break;
+		case 'M':
+			flag_machine = 1;
+			break;
 		default:
 			break;
 		}
 	}
 
-	if (get_winsize_col() < 66) flag_info = 0;
-	if (get_winsize_col() < 43) flag_next = 0;
-	if (get_winsize_row() < 31) flag_info = 0;
-	if (get_winsize_col() < 28 || get_winsize_row() < 27) {
-		printf("NOTE: 终端尺寸不足，会导致打印错误\n"
-		       "      最小'高x宽'为27x28\n");
-		return -1;
+	if (! flag_ignore_size) {
+		if (get_winsize_col() < 66) flag_info = 0;
+		if (get_winsize_col() < 43) flag_next = 0;
+		if (get_winsize_row() < 31) flag_info = 0;
+		if (get_winsize_col() < 28 || get_winsize_row() < 27) {
+			printf("NOTE: 终端尺寸不足，会导致打印错误\n"
+			       "      最小'高x宽'为28x27\n"
+			       "      目前大小为：%dx%d\n",
+			       get_winsize_col(), get_winsize_row());
+			return -1;
+		}
 	}
 
 	if (file_load) fscanf(file_load, "%d%d%d", &flag_seed, &map.weight, &map.height);
@@ -527,6 +574,7 @@ int main(int argc, char *argv[])
 	memset(map.map, 0, map.size);
 
 	time(&game_time1);
+	print_lock = 1;
 	pthread_create(&pid, NULL, print_ui, NULL);
 	create(map.weight / 2 - 2, map.y, Shape_max * 4);
 	run();
@@ -534,6 +582,7 @@ int main(int argc, char *argv[])
 	print_lock = 0;
 	usleep(TPS * 2);
 	free(map.map);
+	map.map = NULL;
 	if (file_save) fclose(file_save);
 	if (file_load) fclose(file_load);
 	return 0;

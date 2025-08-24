@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <time.h>
+#include <sys/time.h>
 
 int main() {
     time_t timep;
@@ -12,4 +13,8 @@ int main() {
     printf("%d:",8+p->tm_hour);/*获取当前时,这里获取西方的时间,刚好相差八个小时*/
     printf("%d:",p->tm_min); /*获取当前分*/
     printf("%d\n",p->tm_sec); /*获取当前秒*/
+
+    struct timeval t;
+    gettimeofday(&t, NULL);
+    printf("%ld.%06ld\n", time(NULL), t.tv_usec);
 }

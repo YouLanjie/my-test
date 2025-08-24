@@ -50,7 +50,7 @@ def parse_arguments() -> None:
     parser.add_argument('-p', '--prefix', default='', help='指定前缀')
     parser.add_argument('-e', '--postfix', default='', help='指定后缀')
     parser.add_argument('-m', '--mode', default='auto', help='选择重命名模式',
-                        choices=["time","md5","random","auto"])
+                        choices=["time","md5","random","keep","auto"])
     parser.add_argument('-f', '--format', default=r'%Y%m%d_%H%M%S',
                         help=r"指定时间格式 (默认: %%Y%%m%%d_%%H%%M%%S')")
     parser.add_argument('-L', '--no-follow-link', action='store_true', help='获取链接本身的修改时间')
@@ -108,7 +108,7 @@ def process_files():
             # 提取年月日
             year, month, day = match.groups()[:3]
         if check_date(int(year), int(month), int(day)) and \
-                not ARGS.no_skip and ARGS.mode not in ("random", "md5"):
+                not ARGS.no_skip and ARGS.mode not in ("random", "md5", "keep"):
             print_verbose(f"INFO 跳过:已具备类似条件'{file}'")
             skipped += 1
             continue
@@ -127,6 +127,8 @@ def process_files():
             target = Path(f"{target_format[0]}{target_mdfiytime}{target_format[1]}")
         elif ARGS.mode == "md5":
             target = Path(f"{target_format[0]}{calculate_md5(file)}{target_format[1]}")
+        elif ARGS.mode == "keep":
+            target = Path(f"{target_format[0]}{file.stem}{ARGS.postfix}{file.suffix}")
         elif ARGS.mode == "random":
             target = Path(f"{target_format[0]}{hashlib.md5(os.urandom(32)).hexdigest()}{target_format[1]}")
         else:
