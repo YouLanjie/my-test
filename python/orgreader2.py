@@ -18,7 +18,7 @@ try:
 except ImportError:
     import pytools
 
-def _get_strings_pattern(s:str,blank_char=" )-") -> re.Pattern:
+def _get_strings_pattern(s:str,blank_char=" )-,") -> re.Pattern:
     return re.compile(f"{s}([^ ].*?(?<! )){s}(?=[{blank_char}]|\n|$)",
                       re.DOTALL)
 

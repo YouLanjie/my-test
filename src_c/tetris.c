@@ -16,7 +16,7 @@
 
 #define Shape_max 9
 
-/* 方块内第i位的状态值 */
+/* 特定type的方块内第i位的状态值 */
 #define Stat ((map.shape[map.type]) >> (15 - i) & 1)
 #define Stat2(type) ((map.shape[type]) >> (15 - i) & 1)
 /* i为顺序号，(x,y)为地图坐标 */
@@ -25,6 +25,12 @@
 /* 判断出界条件 */
 #define Cond_out (x < 0 || x >= map.weight || y >= map.height || \
 		  (map.map[y * map.weight + x] != 0 && map.map[y * map.weight + x] != 8))
+
+#define Print_NextSp_ID (map.height > 4*5 ? map.height / 5 : 4)
+#define INFO_TIPS (1 << 0)
+#define INFO_SEED (1 << 1)
+#define INFO_NEXT (1 << 2)
+#define INFO_TIME (1 << 3)
 
 struct map {
 	int *map;
@@ -61,22 +67,21 @@ struct map {
 
 
 const char *print_color[] = {
-	"\033[30m",
-	"\033[31m\033[41m",
-	"\033[32m\033[42m",
-	"\033[33m\033[43m",
-	"\033[34m\033[44m",
-	"\033[35m\033[45m",
-	"\033[36m\033[46m",
-	"\033[37m\033[47m",
-	"\033[2m",
+	"30",
+	"31;41",
+	"32;42",
+	"33;43",
+	"34;44",
+	"35;45",
+	"36;46",
+	"37;47",
+	"2",
 };
 unsigned int print_lock = 1;	/* 控制进程、自动下落时间 */
 int flag_move_lock = 0;		/* 防止两个进程同时移动 */
 int flag_fake = 1;		/* 设置下落最终位置显示 */
 int flag_debug = 0;		/* 调试设置 */
-int flag_info = 1;
-int flag_next = 1;
+int flag_info = -1;
 int flag_farme = 0;
 int flag_seed = 0;
 int flag_load = 0;
@@ -157,7 +162,7 @@ static int create(int x, int y, int type)
 	return 0;
 }
 
-static int delete_fake()
+extern int delete_fake()
 {
 	for (int i = 0; i < map.size; i++) {
 		if (map.map[i] == 8)
@@ -166,7 +171,7 @@ static int delete_fake()
 	return 0;
 }
 
-static int create_fake()
+extern int create_fake()
 {
 	int x1 = map.x, y1 = map.y;
 	int flag = 0;
@@ -207,6 +212,7 @@ static int clean()
 	return 0;
 }
 
+/* RET CODE: 0:nothing, 1:failed, -1:end_of_game */
 static int _move(int *v, int step)
 {
 	int flag = 0;
@@ -227,11 +233,12 @@ static int _move(int *v, int step)
 	return flag;
 }
 
-static void print_block(int shape, int margin_left)
+static void print_block(int shape, int margin_left, int is_current)
 {
+	char *ch[2] = {"", ";2"};
 	for (int i = 0; i < 16; i++) {
 		if (i % 4 == 0) printf("\033[%dC| ", margin_left);
-		printf("%s[]\033[0m", print_color[Stat2(shape) ? shape / 4 : 8]);
+		printf("\033[%s%sm[]\033[0m", print_color[Stat2(shape) ? shape / 4 : 8], ch[is_current]);
 		if ((i + 1) % 4 == 0) printf("\r\n");
 	}
 	printf("\r\n");
@@ -240,22 +247,25 @@ static void print_block(int shape, int margin_left)
 
 static void print_next()
 {
-	for (int i = 0; i <= 6; i++) {
-		int shape = list[flag_debug ? (i > 6 ? i - 6 : i) : (list_num + i > 6 ? list_num + i - 7 : list_num + i)];
-		if (i <= 4) print_block(shape, map.weight * 2);
+	int seperate_id = Print_NextSp_ID;
+	int i = 0;
+	for (i = 0; i <= 6; i++) {
+		int shape = list[((flag_debug ? 0 : list_num) + i) % 7];
+		int is_current = flag_debug ? i == list_num : 0;
+		if (i < seperate_id) print_block(shape, map.weight * 2, is_current);
 		else {
-			if (i == 5) printf("\033[%dA", 5*5);
-			print_block(shape, map.weight * 2 + 2 + 4*2 + 1);
+			if (i == seperate_id) printf("\033[%dA", seperate_id*5);
+			print_block(shape, map.weight * 2 + 2 + 4*2 + 1, is_current);
 		}
 	}
-	printf("\033[%dA", 5*2);
+	printf("\033[%dA", (i > seperate_id ? 7-seperate_id : i)*5);
 	return;
 }
 
 static void print_map()
 {
 	for (int i = 0; i < map.size; i++) {
-		printf("%s", print_color[map.map[i]]);
+		printf("\033[%sm", print_color[map.map[i]]);
 		if (flag_debug) printf("\033[37m%02d\033[0m", map.map[i]);
 		else printf("[]\033[0m");
 		if ((i + 1) % map.weight == 0) printf("|\r\n");
@@ -265,7 +275,31 @@ static void print_map()
 	return;
 }
 
-static int control(int input) {
+int refit_screen() {
+	flag_info = -1;
+	if (flag_ignore_size) return 0;
+	int cond_next_w = map.weight*2+2+4*2+(4*2+3)*(Print_NextSp_ID < 7);
+	/* 宽度 */
+	if (get_winsize_col() < 66) flag_info &= ~INFO_TIPS;
+	if (get_winsize_col() < cond_next_w) flag_info &= ~INFO_NEXT;
+	if (get_winsize_col() < 43) flag_info &= ~INFO_SEED;
+	if (get_winsize_col() < 29) flag_info &= ~INFO_TIME;
+	/* 高度 */
+	if (map.height < 19) flag_info &= ~INFO_NEXT;
+	if (get_winsize_row() < map.height+5) flag_info &= ~INFO_TIPS;
+	if (get_winsize_col() < map.weight*2+1 || get_winsize_row() < map.height+2) {
+		printf("WARN:\n"
+		       "要求最小'宽x高':%dx%d\n"
+		       "目前终端大小为：%dx%d\n",
+		       map.weight*2+2, map.height+2,
+		       get_winsize_col(), get_winsize_row());
+		return -1;
+	}
+	return 0;
+}
+
+extern int control(int input)
+{
 	int table[256] = {['A'] = 'W', ['B'] = 'S', ['C'] = 'D', ['D'] = 'A'};
 	input = (input >= 'a' && input <= 'z') ? input - 32 : input;
 	if (input == 0x1B && kbhit()) {
@@ -276,22 +310,22 @@ static int control(int input) {
 	if (file_save) fprintf(file_save, "%d %c\n", print_lock, input);
 	switch (input) {
 	case 'J':
-		_move(&map.type, map.type % 4 > 0 ? -1 : 3);
+		input = _move(&map.type, map.type % 4 > 0 ? -1 : 3);
 		break;
 	case 'K':
 	case 'W':
-		_move(&map.type, map.type % 4 < 3 ? 1 : -3);
+		input = _move(&map.type, map.type % 4 < 3 ? 1 : -3);
 		break;
 	case 'H':
 	case 'A':
-		_move(&map.x, -1);
+		input = _move(&map.x, -1);
 		break;
 	case 'S':
 		input = _move(&map.y, 1);
 		break;
 	case 'L':
 	case 'D':
-		_move(&map.x, 1);
+		input = _move(&map.x, 1);
 		break;
 	case ' ':
 		input = 0;
@@ -305,7 +339,7 @@ static int control(int input) {
 		flag_debug = flag_debug ? 0 : 1;
 		break;
 	case 'I':
-		flag_info ^= 1;
+		flag_info ^= INFO_TIPS;
 		break;
 	default:
 		break;
@@ -313,7 +347,37 @@ static int control(int input) {
 	return input;
 }
 
-static void print_ui_machine_code()
+extern char *get_map_info()
+{
+	char header[100] = "";
+	time(&game_time2);
+	int dtime = difftime(game_time2, game_time1);
+	sprintf(header, "%d,%d,%d,%d, ",map.line, map.score, print_lock, dtime);
+	for (int i = 0; i <= 6; i++) {
+		char temp[5] = "";
+		sprintf(temp, "%d,", list[list_num + i > 6 ? list_num + i - 7 : list_num + i]);
+		strcat(header, temp);
+	}
+	strcat(header, " ");
+
+	char map_str[map.size * 3];
+	memset(map_str, 0, map.size*3);
+	for (int i = 0; i < map.size; i++) {
+		char temp[5] = "";
+		sprintf(temp, "%d,", map.map[i]);
+		strcat(map_str, temp);
+	}
+
+	static char *result = NULL;
+	if (result) free(result);
+	int size = strlen(header) + strlen(map_str) + 3;
+	result = malloc(size*sizeof(char));
+	strcpy(result, header);
+	strcat(result, map_str);
+	return result;
+}
+
+extern void print_ui_machine_code()
 {
 	// info
 	time(&game_time2);
@@ -327,14 +391,15 @@ static void print_ui_machine_code()
 	for (int i = 0; i < map.size; i++)
 		printf("%d,", map.map[i]);
 	printf("\n");
+	fflush(stdout);
 	return;
 }
 
-static void print_ui_human(int *info)
+extern void print_ui_human(int *info)
 {
 	time(&game_time2);
 	print_map();
-	if (info && *info ^ flag_info) {
+	if (info && (*info ^ flag_info)&INFO_TIPS) {
 		printf("                                                               \r\n\r\n");
 		printf("                                                          \r\n"
 			"                                                                \r");
@@ -344,26 +409,26 @@ static void print_ui_human(int *info)
 		*info = flag_info;
 	}
 	int dtime = difftime(game_time2, game_time1);
-	printf(flag_info ?
-	       "消行:%3d /分数:%3d /时间:(%02d:%02d:%02d)":
-	       "Ln:%3d /Sc:%3d /T:(%02d:%02d:%02d)",
-	       map.line, map.score, dtime / 3600, dtime / 60, dtime % 60);
-	if (flag_next) printf(flag_info ? " /种子:%d" : " /Sd:%d", flag_seed);
-	if (flag_farme) printf(flag_info ? " /帧值:%d" : " /F:%d", print_lock);
+	printf(flag_info&INFO_TIPS ? "消行:%3d /分数:%3d": "Ln:%3d /Sc:%3d", map.line, map.score);
+	if (flag_info&INFO_TIME)
+		printf(flag_info&INFO_TIPS ? " /时间:(%02d:%02d:%02d)" : "  /T:(%02d:%02d:%02d)",
+		       dtime / 3600, dtime % 3600 / 60, dtime % 60);
+	if (flag_info&INFO_SEED) printf(flag_info&INFO_TIPS ? " /种子:%d" : " /Sd:%d", flag_seed);
+	if (flag_farme) printf(flag_info&INFO_TIPS ? " /帧值:%d" : " /F:%d", print_lock);
 	static int flag_farme2 = 0;
 	if (flag_farme != flag_farme2) {
 		printf("             ");
 		flag_farme2 = flag_farme;
 	}
 	printf("\r");
-	if (flag_info) {
+	if (flag_info&INFO_TIPS) {
 		printf("\n\n\r");
 		printf("<游戏> [a/s/d] 移动   [w/j/k] 旋转    [SPACE] 速降\r\n"
 		       "<设置>     [b] Debug      [i] 按键提示    [f] 预期落点显示\r"
 		       "\033[2A");
 	}
-	printf("\033[%dA", map.height + (flag_info ? 2 : 1));
-	if (flag_next) print_next();
+	printf("\033[%dA", map.height + (flag_info&INFO_TIPS ? 2 : 1));
+	if (flag_info&INFO_NEXT) print_next();
 	return;
 }
 
@@ -408,7 +473,7 @@ static void *print_ui(void *p)
 	}
 
 	if (!flag_machine) {
-		printf("\033[%dB\r\n", map.height + (flag_info ? 4 : 1));
+		printf("\033[%dB\r\n", map.height + (flag_info&INFO_TIPS ? 4 : 1));
 		printf("\033[?25h游戏结束\r\n若程序未退出，请按'回车'\r\n");
 		if (flag_debug) {
 			printf("最终棋盘数据:\r\n");
@@ -420,10 +485,9 @@ static void *print_ui(void *p)
 }
 
 /* 处理用户输入，主线程 */
-static void run()
+static void get_input_and_process()
 {
 	int input = 0;
-
 	while(input != 'Q' && print_lock) {
 		create_fake();
 		if (!flag_load) {
@@ -443,11 +507,14 @@ static void run()
 			else if (inp == 'f') {
 				flag_farme ^= 1;
 			} else if (inp == 'n') {
-				flag_next ^= 1;
+				flag_info ^= INFO_NEXT;
+			} else if (inp == 'r') {
+				refit_screen();
 			}
 		}
 		input = control(input);
 		input == -1 && (input = 'Q');
+		/*if (flag_machine) print_ui_machine_code();*/
 	}
 }
 
@@ -494,11 +561,49 @@ static void help(int type)
 	return;
 }
 
+extern int init_game(int flag_has_seed)
+{
+	int dtime = 0;
+	time(&game_time1);
+	time(&game_time2);
+	if (!flag_has_seed) flag_seed = time(NULL);
+	if (file_load) fscanf(file_load, "%d%d%d%d", &flag_seed, &map.weight, &map.height, &dtime);
+	game_time1 -= dtime;
+	if (file_save) fprintf(file_save, "%d %d %d %20d\n",
+			       flag_seed, map.weight, map.height, (int)difftime(game_time2, game_time1));
+	map.weight = map.weight >= 4 ? map.weight : 10;
+	map.height = map.height >= 10 ? map.height : 25;
+	srand(flag_seed);
+
+	for (int ret = refit_screen(); ret;) return ret;
+	map.map = calloc(map.size = map.weight * map.height, sizeof(int));
+	memset(map.map, 0, map.size);
+
+	print_lock = 1;
+	create(map.weight / 2 - 2, map.y, Shape_max * 4);
+	return 0;
+}
+
+extern int end_game()
+{
+	print_lock = 0;
+	usleep(TPS * 2);
+	free(map.map);
+	map.map = NULL;
+	if (file_save) {
+		fseek(file_save, 0L, SEEK_SET);
+		fprintf(file_save, "%d %d %d %20d\n",
+			flag_seed, map.weight, map.height, (int)difftime(game_time2, game_time1));
+		fclose(file_save);
+	}
+	if (file_load) fclose(file_load);
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
 	pthread_t pid;
-	flag_seed = time(NULL);
-
+	int flag_has_seed = 0;
 	int ch = 0;
 	while ((ch = getopt(argc, argv, "hiIns:W:H:o:l:d:kKM")) != -1) {	/* 获取参数 */
 		switch (ch) {
@@ -508,15 +613,16 @@ int main(int argc, char *argv[])
 			return ch == '?' ? -1 : 0;
 			break;
 		case 'i':
-			flag_info = 0;
+			flag_info ^= INFO_TIPS;
 			break;
 		case 'I':
 			flag_ignore_size = 1;
 			break;
 		case 'n':
-			flag_next = 0;
+			flag_info ^= INFO_NEXT;
 			break;
 		case 's':
+			flag_has_seed = 1;
 			flag_seed = strtod(optarg, NULL);
 			break;
 		case 'W':
@@ -552,39 +658,10 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (! flag_ignore_size) {
-		if (get_winsize_col() < 66) flag_info = 0;
-		if (get_winsize_col() < 43) flag_next = 0;
-		if (get_winsize_row() < 31) flag_info = 0;
-		if (get_winsize_col() < 28 || get_winsize_row() < 27) {
-			printf("NOTE: 终端尺寸不足，会导致打印错误\n"
-			       "      最小'高x宽'为28x27\n"
-			       "      目前大小为：%dx%d\n",
-			       get_winsize_col(), get_winsize_row());
-			return -1;
-		}
-	}
-
-	if (file_load) fscanf(file_load, "%d%d%d", &flag_seed, &map.weight, &map.height);
-	if (file_save) fprintf(file_save, "%d %d %d\n", flag_seed, map.weight, map.height);
-	map.weight = map.weight >= 4 ? map.weight : 10;
-	map.height = map.height >= 10 ? map.height : 25;
-	srand(flag_seed);
-	map.map = calloc(map.size = map.weight * map.height, sizeof(int));
-	memset(map.map, 0, map.size);
-
-	time(&game_time1);
-	print_lock = 1;
+	init_game(flag_has_seed);
 	pthread_create(&pid, NULL, print_ui, NULL);
-	create(map.weight / 2 - 2, map.y, Shape_max * 4);
-	run();
-
-	print_lock = 0;
-	usleep(TPS * 2);
-	free(map.map);
-	map.map = NULL;
-	if (file_save) fclose(file_save);
-	if (file_load) fclose(file_load);
+	get_input_and_process();
+	end_game();
 	return 0;
 }
 
