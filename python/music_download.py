@@ -4,6 +4,8 @@ from pathlib import Path
 import json
 import re
 import subprocess
+import argparse
+import shutil
 import requests
 
 # 设置请求头
@@ -12,7 +14,7 @@ headers = {
 }
 
 def download_file(url:str, file:Path) -> bool:
-    """下载文件"""
+    """下载音频文件"""
     if file.is_file():
         print(f"INFO 跳过已下载文件 {file}")
         return True
@@ -56,13 +58,14 @@ class Song:
             self.song_data = result.get("songs")[0] if result.get("songs") else {}
         except requests.exceptions.RequestException as e:
             print('请求出错:', e)
-    def download(self, output_dir:Path, use_safe_name=True):
+    def download(self, output_dir:Path, use_safe_name=True, inpd:Path|None=None):
         """下载音频文件"""
         print(f"PROCESS: {self.full_info}")
         if not output_dir.is_dir():
             print(f"ERR: {output_dir} 不存在或非文件夹")
             return
 
+        # 获取基本信息
         output_basename = f"{self.artist} - {self.name}"
         replacement = ["/", "／"]
         if use_safe_name:
@@ -77,18 +80,24 @@ class Song:
             cover_outputf = output_dir / Path(f"{output_basename}.{extention}")
         outputf = output_dir / Path(f"{output_basename}.mp3")
 
+        # 文件下载处理
         if outputf.is_file():
             print("INFO 跳过SKIP")
             return
         url = f"https://music.163.com/song/media/outer/url?id={self.id}.mp3"
+        if inpd and inpd.is_dir():
+            fl = sorted(inpd.glob("*.mp3"), key=lambda x:x.stat().st_mtime)
+            if fl:
+                shutil.copy(fl[-1], tmp_outputf)
         if not download_file(url, tmp_outputf):
             return
         if cover_outputf:
             download_file(self.cover, cover_outputf)
 
+        # 文件合并处理
         command = ["ffmpeg", "-v", "error",
                    "-i", repr(str(tmp_outputf.resolve()))]
-        if cover_outputf:
+        if cover_outputf and cover_outputf.is_file():
             command += ["-i", repr(str(cover_outputf.resolve())),
                         "-map","0:0","-map","1:0","-id3v2_version","3"]
         command += ["-c", "copy"]
@@ -99,7 +108,7 @@ class Song:
                     "-metadata:s:v", "comment='Cover (Front)'"]
         command += [repr(str(outputf.resolve())), "&&",
                     "rm", repr(str(tmp_outputf.resolve()))]
-        if cover_outputf:
+        if cover_outputf and cover_outputf.is_file():
             command += ["&&", "rm", repr(str(cover_outputf.resolve()))]
         command = " ".join(command)
         # print(command)
@@ -200,33 +209,41 @@ def get_playlist_songs(playlist_id):
         print('请求出错:', e)  # 打印请求错误信息
         return []
 
-# 主函数
+def example1():
+    # example 1:
+    li = [Song("27961159"),
+          Song("https://music.163.com/song?id=1468651128"),
+          Song("https://music.163.com/song?id=1368929712"),
+          Song("https://music.163.com/song?id=2615855920")]
+    for i in li:
+        i.download(Path("."))
+
+def example2():
+    # 下载歌手的热门歌曲和播放列表的歌曲
+    artist_id = '41993'
+    songs = get_artist_songs(artist_id)  # 获取歌手的歌曲信息
+    songs += get_playlist_songs("14139872015")  # 获取播放列表的歌曲信息
+    save_dir = Path(".")  # 保存目录
+    for i in songs:
+        print(i.full_info)
+        i.download(save_dir)
+
 def main():
+    # 主函数
+    parser = argparse.ArgumentParser(description="网易云音乐下载器")
+    parser.add_argument("-o", "--output-dir", default=".", help="设置输出文件夹")
+    parser.add_argument("-i", "--input-dir", help="设置备用输入文件夹(抽里面的mp3当作音源)")
+    args = parser.parse_args()
     print("输入歌曲id或者链接，自动下载到当前目录，C-c退出")
     try:
         while True:
             link = input("请输入歌曲链接或者id：")
-            Song(link).download(Path("."))
+            inpd = Path(args.input_dir) if args.input_dir else None
+            Song(link).download(Path(args.output_dir), inpd=inpd)
     except KeyboardInterrupt:
         print("侦测到C-c,退出")
-
-    # example 1:
-    # li = [Song("27961159"),
-          # Song("https://music.163.com/song?id=1468651128"),
-          # Song("https://music.163.com/song?id=1368929712"),
-          # Song("https://music.163.com/song?id=2615855920")]
-    # [i.download(Path(".")) for i in li]
-    # return
-
-    # example 2:
-    # num_songs = 10  # 下载歌曲数量
-    # artist_id = '41993'
-    # songs = get_artist_songs(artist_id)  # 获取歌手的歌曲信息
-    # songs = get_playlist_songs("14139872015")  # 获取播放列表的歌曲信息
-    # save_dir = Path(".")  # 保存目录
-    # for i in songs:
-        # print(i.full_info)
-        # i.download(save_dir)
+    except EOFError:
+        print("侦测到C-d,退出")
 
 if __name__ == "__main__":
     main()

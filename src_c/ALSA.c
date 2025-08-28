@@ -22,11 +22,14 @@
 
 #define FLG_PLAY (1 << 0)
 #define FLG_SAVE (1 << 1)
-#define FLG_INPUT (1 << 2)
+/*#define FLG_INPUT (1 << 2)*/
 #define FLG_PLYARG (1 << 3)    /* 播放终端传入参数 */
 #define FLG_FADE (1 << 4)	/* 淡入淡出 */
 #define FLG_HARMONICS (1<<5)	/* 泛音 */
 #define FLG_SMMOTH_GLIDE (1<<6)
+#define FLG_PRINT (1<<7)
+#define FLG_PRINT_CSTYLE (1<<8)
+#define FLG_PLYARG_WITH_CONTROL (1<<9)
 
 int status = FLG_FADE|FLG_HARMONICS;
 /* 采样率（Hz） */
@@ -117,6 +120,7 @@ void create_wav_header(WavHeader *header, float duration)
  * */
 double wave(double x, double volume, double f)
 {
+	if (f < 0) return 0;
 	const short max_vol = (unsigned short)(-1) / 2;
 	double value = 0.0;
 	// 基频 + 5个泛音（振幅递减）
@@ -132,6 +136,8 @@ double wave(double x, double volume, double f)
 
 double adsr_envelope(int current, int total)
 {
+	if (current < 0 || current > total)
+		return 0;
 	if (!(status&FLG_FADE)) return 1.0;
 	double t = (double)current / total;
 	double attack = 0.01, decay = 0.1, sustain = 0.7, release = 0.2;
@@ -154,88 +160,131 @@ double get_glide_freq(double start, double end, double x)
 	return exp(ret);
 }
 
+struct Note {
+	double freq;
+	double amplitude;
+	int duration;    /* base on sample point */
+	int enable_glide;    /* 连音符 */
+	int enable_slide;    /* 滑动频率 */
+	int use_right_side;
+};
 
 /* 
  * 解读字符串形式的音符并产生对应声波
  * note: C D E F G A B
- * type: n分音符(或者在note中控制)
+ * type: 默认为n分音符(或者在note后缀的控制符中控制)
  * base: 以n分音符为一拍
  * speed: 速度，n拍/分钟
  * */
-int *create_note_wave(const char *note, float type, int base, float speed)
+short *create_note_wave(const char *note, double type, int base, double speed)
 {
-	double glide = 0,    /* 控制滑音 */
-	       glide_d = 0,    /* 目标调 */
-	       amplitude = 0.5;
-	double offset = 0;
 	if (note == NULL) return NULL;
-	type = type <= 0 ? 4 : type;
-	base = base <= 0 ? 4 : base;
-	speed = speed <= 0 ? 60 : speed;
+	struct Note note_list[20] = {};
+	struct Note *current_note = note_list;
+	const double note_freq[256] = { 0,
+		['c'] = 130.8, ['d'] = 146.8, ['e'] = 164.8, ['f'] = 174.6,
+		['g'] = 196.0, ['a'] = 220.0, ['b'] = 246.9,
+		['C'] = 261.6, ['D'] = 293.6, ['E'] = 329.6, ['F'] = 349.2,
+		['G'] = 392.0, ['A'] = 440.0, ['B'] = 493.9,
+		['1'] = 523.2, ['2'] = 587.3, ['3'] = 659.2, ['4'] = 698.5,
+		['5'] = 784.0, ['6'] = 880.0, ['7'] = 987.8, ['0'] = -1,
+		['{'] = 20, ['}'] = 20000};
+	int counter = -1;
 
-	for (const char *p = note; *p != '\0'; p++) {
-		if (*p == '/')
-			type *= 2;
+	for (const char *p = note; *p != '\0' && counter < 20; p++) {
+		if (!note_freq[(int)*p] && !current_note->freq)
+			continue;
+		if (note_freq[(int)*p]) {
+			if (current_note->freq)
+				current_note++;
+			current_note->freq = note_freq[(int)*p];
+			current_note->duration = SAMPLE_RATE*(base/type)*(60/speed);
+			current_note->amplitude = 0.5;
+			counter++;
+		} else if (*p == '/')
+			current_note->duration /= 2;
 		else if (*p == '*')
-			type /= 2;
+			current_note->duration *= 2;
 		else if (*p == '.')
-			type *= (2/3.0);
+			current_note->duration *= (3.0/2.0);
 		else if (*p == '~')
-			glide = 1;
+			current_note->enable_glide = 1;
+		else if (*p == 's')
+			current_note->enable_slide = 1;
 		else if (*p == '+')
-			amplitude += amplitude + 0.1 <= 1 ? 0.1 : 0;
+			current_note->amplitude += current_note->amplitude + 0.1 <= 1 ? 0.1 : 0;
 		else if (*p == '-')
-			amplitude -= amplitude - 0.1 >= 0 ? 0.1 : 0;
+			current_note->amplitude -= current_note->amplitude - 0.1 >= 0 ? 0.1 : 0;
 		else if (*p == 'l')
-			offset-=10;
+			current_note->freq-=10;
 		else if (*p == 'L')
-			offset-=100;
+			current_note->freq/=2;
 		else if (*p == 'u')
-			offset+=10;
+			current_note->freq+=10;
 		else if (*p == 'U')
-			offset+=100;
+			current_note->freq*=2;
+		else if (*p == 'r')
+			current_note->use_right_side = 1;
+		else
+			continue;
+		if (status&FLG_PRINT) printf("%c", *p);
 	}
+	current_note = NULL;
+	unsigned int buffer_frames = 0;
+	int enable_glide = 0;
+	for (int i = 0; i < 20 && note_list[i].amplitude != 0; i++) {
+		if (note_list[i].duration > buffer_frames)
+			buffer_frames = note_list[i].duration;
+		if (note_list[i].enable_glide) {
+			enable_glide += buffer_frames;
+			buffer_frames = 0;
+		}
+	}
+	buffer_frames += enable_glide;
+	enable_glide = enable_glide ? 1 : 0;
+
+	if (!(status&(FLG_PLAY|FLG_SAVE))) {
+		int *buffer = malloc(sizeof(int)*1);
+		*buffer = buffer_frames;
+		return (short*)buffer;
+	}
+
 	/* 缓冲区大小，同时控制声音片段大小
 	 * 缓冲区越大声音持续越久，也越慢 */
-	const unsigned int buffer_frames = SAMPLE_RATE*(base/type)*(60/speed);
-	int *buffer = malloc(sizeof(short)*(buffer_frames * 2 + 2));    /* 双声道 */
+	short *buffer = malloc(sizeof(short)*(buffer_frames * 2 + 2));    /* 双声道 */
 	memset(buffer, 0, sizeof(short)*(buffer_frames * 2 + 2));
-	buffer[0] = buffer_frames;
-	for (int i = 0; i < buffer_frames; i++) {    /* 生成每个采样点的声波 */
-		const double note_freq[256] = { 0,
-			['c'] = 130.8, ['d'] = 146.8, ['e'] = 164.8, ['f'] = 174.6,
-			['g'] = 196.0, ['a'] = 220.0, ['b'] = 246.9,
-			['C'] = 261.6, ['D'] = 293.6, ['E'] = 329.6, ['F'] = 349.2,
-			['G'] = 392.0, ['A'] = 440.0, ['B'] = 493.9,
-			['1'] = 523.2, ['2'] = 587.3, ['3'] = 659.2, ['4'] = 698.5,
-			['5'] = 784.0, ['6'] = 880.0, ['7'] = 987.8,
-			['{'] = 20, ['}'] = 20000};
-		short result = 0, result2 = 0;
-		short *num = &result;
-		for (const char *p = note; *p != '\0'; p++) {
-			if (*p == 'r')
-				num = &result2;
-			else if (*p == ',')
-				break;
-			/* 滑音触发判断 */
-			if (glide == 1) glide = note_freq[(int)*p];
-			else if (glide && !glide_d) {
-				glide_d = note_freq[(int)*p];
-				/*printf("glide:%lf\nglide_d:%lf\nnote_freq[(int)*p]:%lf\nobj:%lf\nture_obj:%lf\n",*/
-				       /*glide,glide_d, note_freq[(int)*p], exp(glide+glide_d), exp(glide+glide_d)+offset);*/
-			}
-			/* SAMPLE_RATE: 每采样一个SAMPLE_RATE就相当于经过一秒 */
-			// 替换原amplitude_fade调用
-			double env = adsr_envelope(i, buffer_frames)*amplitude;
-			// amplitude_fade(amplitude, buffer_frames, i)
-			if (glide_d) {
-				double freq = get_glide_freq(glide,glide_d,((float)i/buffer_frames));
-				*num = (short)wave((float)i/SAMPLE_RATE, env, freq+offset);
-			} else
-				*num += (short)wave((float)i/SAMPLE_RATE, env, note_freq[(int)*p]+offset);
+	*(int*)buffer = buffer_frames;
+	struct Note *p = note_list;
+	int use_right_side = 0;
+	int flag_slide = 0;
+	for (int i = 0; i < 20 && p->amplitude != 0; i++,p++) {
+		short num = 0;
+		if (p->enable_slide) {
+			flag_slide = p->freq;
+			continue;
 		}
-		((short*)buffer)[i * 2 + 2] = result;    /* 左声道 */
-		((short*)buffer)[i * 2 + 3] = result2 ? result2 : result;    /* 右声道 */
+		for (int i = 0; i < buffer_frames; i++) {    /* 生成每个采样点的声波 */
+			double env = adsr_envelope(i - (p->enable_glide || enable_glide ? 0 : enable_glide),
+						   (p->enable_glide || enable_glide) ? buffer_frames : p->duration)*p->amplitude;
+			double freq = flag_slide ? get_glide_freq(flag_slide, p->freq, (double)i/p->duration) : p->freq;
+			num = (short)wave((double)i/SAMPLE_RATE, env, freq);
+			if (p->enable_glide)
+				num *= (1 - 1/(1+exp((double)(p->duration+enable_glide-i)/800)));
+			if (enable_glide)
+				num *= (1/(1+exp((double)(enable_glide-i)/800)));
+			if (use_right_side)
+				buffer[i * 2 + 3] = num;    /* 右声道 */
+			else {
+				buffer[i * 2 + 2] += num;    /* 左声道 */
+				buffer[i * 2 + 3] += num;    /* 右声道 */
+			}
+		}
+		if (p->use_right_side)
+			use_right_side = 1;
+		if (p->enable_glide) {
+			use_right_side = 0;
+			enable_glide += p->duration;
+		}
 	}
 	return buffer;
 }
@@ -255,56 +304,66 @@ int play_wav(snd_pcm_t *pcm_handle, short *wave, int size) {
 }
 #endif
 
-char *str_in_group(char *p, char *splits, int id)
+char *str_in_group(char *p, char *splitors, int id)
 {
-	if (!p) return NULL;
-	int i = 0, il = 0, count = 0, flag = 1;
+	if (!p || !splitors) return NULL;
+
+	int splitor_table[256] = {0};
+	for (char *sp = splitors;sp && *sp; sp++) splitor_table[(int)*sp] = 1;
+
+	int i = 0, il = 0, count = 0, flag = 2;
 	for (; p[i] && flag; i++) {
-		for (char *sp = splits;flag && sp && *sp != '\0';sp++) {
-			if (p[i] == *sp) {
-				if (count == id) {
-					flag = 0;
-					break;
-				} else {
-					il = i+1;
-					count++;
-				}
-			}
+		if (! splitor_table[(int)p[i]]) {
+			flag = 1;
+			continue;
 		}
+		if (flag == 2) {
+			il = i+1;
+			continue;
+		}
+		if (count >= id) {
+			flag = 0;
+			break;
+		}
+		il = i+1;
+		count++;
+		flag = 2;
 	}
 	if (id > count) return NULL;
 	if (!p[i]) return p+il;
-	char tmp = p[i];
-	p[i] = 0;
-	char *ret = malloc(strlen(p)+1);
-	strcpy(ret, p+il);
-	p[i] = tmp;
+	static char *ret = NULL;
+	if (ret) free(ret);
+	ret = malloc(i-il+1);
+	memset(ret, 0, i-il+1);
+	memcpy(ret, p+il, i-il);
 	return ret;
 }
 
 int melody(int id, char *filename, int speed, char *input)
 {
-	id %= 6;
-	const char *note[6][514] = {
+	id %= 7;
+	const char *note[7][514] = {
 		{
 			"4 4",
 			"C","C","G","G","A","A","G*", "F","F","E","E","D","D","C*",    /* 一闪一闪亮晶晶 */ /* 满天都是小星星 */
 			"G","G","F","F","E","E","D*", "G","G","F","F","E","E","D*",    /* 挂在天上放光明 */ /* 好像许多小眼睛 */
 			"C","C","G","G","A","A","G*", "F","F","E","E","D","D","C*",    /* 一闪一闪亮晶晶 */ /* 满天都是小星星 */
 		}, {
-			"4 4",
-			"C/","C/","C",     "g/","a/","g",     "E/.","D//","C/","a/", "D*",
-			"E/","E/","E",     "G/","G/","G",     "A/.","G//","C/","E/", "D*",
-			"E*",              "G*",              "E/.","D//","C/","D/", "a*",
-			"A1*~",            "GE*~",            "C","E",               "G*",
-			"A","G",           "E","G",           "1.++","A/",       "G","E",
-			"G/","/","D/","/", "C","* ",
-			"C/","C/","C",     "g/","a/","g",     "E/.","D//","C/","a/", "D*",
-			"E/","E/","E",     "G/","G/","G",     "A/.","G//","C/","E/", "D*",
-			"E*",              "G*",              "E/.","D//","C/","D/", "a*",
-			"A/","A1~","1/",   "G/.","GE~","E//", "C","E",               "G*",
-			"A","G",           "E","G",           "1.++","A/",       "G","E",
-			"C/","/","G/","/", "1"," "
+			"2 4",
+			"C/","C/","C",       "g/","a/","g",     "E/.","D//","C/","a/", "D*",
+			"E/","E/","E",       "G/","G/","G",     "A/.","G//","C/","E/", "D*",
+			"E*",                "G*",              "E/.","D//","C/","D/", "a*",
+			"As1*",              "GsE*",            "C","E",               "G*",
+			"A/","0/","G/","0/", "E/","0/","G/","0/",
+			"1.++","A/","G/","0/","E/","0/",	/* 打败美帝 */
+			"G/","0/","D/","0/","C","0",		/* 野心狼 */
+			"C/","C/","C",       "g/","a/","g",     "E/.","D//","C/","a/", "D*",
+			"E/","E/","E",       "G/","G/","G",     "A/.","G//","C/","E/", "D*",
+			"E*",                "G*",              "E/.","D//","C/","D/", "a*",
+			"As1*",              "GsE*",            "C","E",               "G*",
+			"A/","0/","G/","0/", "E/","0/","G/","0/",
+			"1.++","A/","G/","0/","E/","0/",	/* 打败美帝 */
+			"1/","0/","G/","0/", "1","0"		/* 野心狼 */
 		}, {
 			"4 4",
 			"C","C","C","C","C","C","C","C","C","C",
@@ -315,38 +374,98 @@ int melody(int id, char *filename, int speed, char *input)
 			"C","D","E","F","G","A","B",
 			"1","2","3","4","5","6","7",    /* 10.5s音频测试 */
 		}, {
-			"4 4",
-			"3/.","2//","1/","A/", "G/","A//","G//","E/","G/", "1/","1//","1//","1/","1/", "1","C//","D//","E//","F//",
-			"G","E/.","D//", "C/","E/","G/","1/", "3","2/.","3//", "1*", "2","2/.","3//", "2/","1/","B/","A/",
-			"G","A/.","1//", "G*", "E/","E//","E//","D/","E/", "G/","E//","G//","A/","G/", "1","2", "3*",
-			"2/.","1//","B/","A/", "G/","A//","G/","E/","G/", "1","1/","1/", "1","G/.","A//", "E", "G", "1/","1/","2/","1/",
-			"G*", "G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*", "3","3/","5/", "4.","3/", "2/","B/","A/","G//","G//",
-			"3.","2/", "1","B/","A/", "G.","E/", "G/","G//","A//","B/","1/", "2*", "2","G/.","A//", "E","G",
-			"1/","1/","2/","1/", "G*", "G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*", "3","3/","5/", "4.","3/",
-			"2/", "B/","A/","G//","G//", "3.","2//", "1","B/","A/", "G.","E/", "G/","A/","B/","2/",
-			"1*", "1","C//","D//","E//","F//",    /* Specifit */
+			"2 4",
+			"3/.","2//","1/","A/", "G/","A//","G//","E/","G/", "1/","1//","1//","1/","1/",
+			"1","C//","D//","E//","F//",    /* 前奏 */
+			"G","E/.","D//", "C/","E/","G/","1/", "3","2/.","3//", "1*",
+			"2","2/.","3//", "2/","1/","B/","A/", "G","A/.","1//", "G*", 
+			"E/","E//","E//","D/","E/", "G/","E//","G//","A/","G/", "1","2", "3*",
+			"2/.","1//","B/","A/", "G/","A//","G//","E/","G/", "1","1/","1/", "1",
+			"G/.","A//", "E", "G", "1/","1/","2/","1/", "G*",    /* 为了五大洲的友谊 */
+			"G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*",    /* 为了全人类的理想 */
+			"3","3/","5/", "4.","3/", "2/","B/","A/","G//","G//", "3.","2/", "1",    /* 为了发扬奥林匹克的精神 */
+			"B/","A/", "G.","E/", "G/","G//","A//","B/","1/", "2*", "2",    /* 我们竞技在那运动场 */
+			"G/.","A//", "E", "G", "1/","1/","2/","1/", "G*",    /* 为了五大洲的友谊 */
+			"G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*",    /* 为了全人类的理想 */
+			"3","3/","5/", "4.","3/", "2/","B/","A/","G//","G//", "3.","2/", "1",    /* 为了发扬奥林匹克的精神 */
+			"B/","A/", "G.","E/", "G/","A/","B/","2/", "1*",    /* 我们竞技在那运动场 */
+			"1","C//","D//","E//","F//",
 			/* REPEAT NEXT */
-			"G","E/.","D//", "C/","E/","G/","1/", "3","2/.","3//", "1*", "2","2/.","3//", "2/","1/","B/","A/",
-			"G","A/.","1//", "G*", "E/","E//","E//","D/","E/", "G/","E//","G//","A/","G/", "1","2", "3*",
-			"2/.","1//","B/","A/", "G/","A//","G/","E/","G/", "1","1/","1/", "1","G/.","A//", "E", "G", "1/","1/","2/","1/",
-			"G*", "G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*", "3","3/","5/", "4.","3/", "2/","B/","A/","G//","G//",
-			"3.","2/", "1","B/","A/", "G.","E/", "G/","G//","A//","B/","1/", "2*", "2","G/.","A//", "E","G",
-			"1/","1/","2/","1/", "G*", "G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*", "3","3/","5/", "4.","3/",
-			"2/", "B/","A/","G//","G//", "3.","2//", "1","B/","A/", "G.","E/", "G/","A/","B/","2/",
-			"1*", "1",    /* 运动员进行曲 */
+			"G","E/.","D//", "C/","E/","G/","1/", "3","2/.","3//", "1*",
+			"2","2/.","3//", "2/","1/","B/","A/", "G","A/.","1//", "G*", 
+			"E/","E//","E//","D/","E/", "G/","E//","G//","A/","G/", "1","2", "3*",
+			"2/.","1//","B/","A/", "G/","A//","G//","E/","G/", "1","1/","1/", "1",
+			"G/.","A//", "E", "G", "1/","1/","2/","1/", "G*",    /* 为了五大洲的友谊 */
+			"G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*",    /* 为了全人类的理想 */
+			"3","3/","5/", "4.","3/", "2/","B/","A/","G//","G//", "3.","2/", "1",    /* 为了发扬奥林匹克的精神 */
+			"B/","A/", "G.","E/", "G/","G//","A//","B/","1/", "2*", "2",    /* 我们竞技在那运动场 */
+			"G/.","A//", "E", "G", "1/","1/","2/","1/", "G*",    /* 为了五大洲的友谊 */
+			"G","A/.","G//", "E","G", "1/","1/","2/.","1//", "3*",    /* 为了全人类的理想 */
+			"3","3/","5/", "4.","3/", "2/","B/","A/","G//","G//", "3.","2/", "1",    /* 为了发扬奥林匹克的精神 */
+			"B/","A/", "G.","E/", "G/","A/","B/","2/", "1*",    /* 我们竞技在那运动场 */
+			"1", "0",    /* 运动员进行曲 */
 		}, {
-			"4 8 #bpm:180",
-			"GA~", "G/", "FE~", "D/", "C.", "g.",
-			"C/", "E/", "1/", "B/", "A./", "E//", "G*",
-			"A/", "B/", "A/", "GF~", "E/", "D.", "a.",
-			"b/", "a/", "g/", "G/", "C./", "D//", "E*",
-			"G/", "A/", "G/", "F/", "E/", "D/", "C.", "g.",
-			"C/", "E/", "1/", "B/", "2./", "1//", "A*",
-			"1/", "B/", "A/", "G.",
-			"A/", "G/", "F/", "E.",
-			"b", "a/", "g", "D/",
-			/* 我和我的祖国（未完成） */
-		},
+			"6 8 #如果嫌慢可设置bpm:180,\
+			由于本曲有八六八九两种拍子，但不支持多拍，\
+			报WARN说有9拍的属正常现象",
+
+			"1/", "2/", "3/", "2/", "1/", "A/", "B/", "A./", "E//", "G.~G.",
+			"1/", "2/", "3/", "2/", "1/", "A/", "B/", "G./", "E//", "A.~A.",
+			"G/", "F/", "E/", "D.", "b/", "a/", "g/", "E.", "F.", "D", "C/", "C.~C.",    /* 前奏 */
+
+			"G/~A/", "G/", "F/~E/", "D/", "C.", "g.",		/* 我和~我~的~祖~国~ */
+			"C/", "E/", "1/", "B/", "A./", "E//", "G.~G.",		/* 一刻也不能分割 */
+			"A/", "B/", "A/", "G/~F/", "E/", "D.", "a.",		/* 无论我走到哪里 */
+			"b/", "a/", "g/", "G/", "C./", "D//", "E.~E.",		/* 都流出一首赞歌 */
+			"G/", "A/", "G/", "F/", "E/", "D/", "C.", "g.",		/* 我歌唱每一座高山 */
+			"C/", "E/", "1/", "B/", "2./", "1//", "A.~A.",		/* 我歌唱每一条河 */
+			"1/", "B/", "A/", "G.",			/* 袅袅炊烟 */
+			"A/", "G/", "F/", "E.",			/* 小小村落 */
+			"b", "a/", "g/~g/", "D/", "C.~C.",	/* 路下一道辙 */
+			"1/", "2/~3/", "2/", "1/", "A/", "B/~A./~E//", "G.~G.",			/* 我最亲爱的祖~国~ */
+			"1/", "2/", "3/", "2/", "1/", "A/", "B/", "G./", "E//", "A.~A.",	/* 我永远紧依着你的心窝 */
+			"G/", "F/", "E/", "D.",			/* 你用你那 */
+			"b/", "a/", "g/", "E.",			/* 母亲的脉搏 */
+			"F.", "D", "C/", "C.~C", "0/",		/* 和我诉说 */
+			/* 重复上一段 */
+			"G/~A/", "G/", "F/~E/", "D/", "C.", "g.",		/* 我的~祖~国~和~我~ */
+			"C/", "E/", "1/", "B/", "A./", "E//", "G.~G.",		/* 像海和浪花一朵 */
+			"A/", "B/", "A/", "G/~F/", "E/", "D.", "a.",		/* 浪是那海的赤子 */
+			"b/", "a/", "g/", "G/", "C./", "D//", "E.~E.",		/* 海是那浪的依托 */
+			"G/", "A/", "G/", "F/", "E/", "D/", "C.", "g.",		/* 每当大海在微笑 */
+			"C/", "E/", "1/", "B/", "2./", "1//", "A.~A.",		/* 我就是笑的酒窝 */
+			"1/", "B/", "A/", "G.",			/* 我分担着 */
+			"A/", "G/", "F/", "E.",			/* 海的忧愁 */
+			"b", "a/", "g/~g/", "D/", "C.~C.",	/* 分享海的欢乐 */
+			"1/", "2/~3/", "2/", "1/", "A/", "B/~A./~E//", "G.~G.",			/* 我最亲爱的祖~国~ */
+			"1/", "2/", "3/", "2/", "1/", "A/", "B/", "G./", "E//", "A.~A.",	/* 你是大海永不干涸 */
+			"G/", "F/", "E/", "D.",			/* 永远给我 */
+			"b/", "a/", "g/", "E.",			/* 碧浪清波 */
+			"F.", "D", "C/", "C.~C", "0/",		/* 心中的歌 */
+			/* 结束句 */
+			"1/", "2/", "3/", "2/", "1/", "A/", "B/~A./~E//", "G.~G.",		/* 我最亲爱的祖~国~ */
+			"1/", "2/", "3/", "2/", "1/", "A/", "B/", "G./", "E//", "A.~A.",	/* 你是大海永不干涸 */
+			"G/", "F/", "E/", "D.",			/* 永远给我 */
+			"b/", "a/", "g/", "E.",			/* 碧浪清波 */
+			"G.", "2", "1/","1.~1.", "0/"	/* 心中的歌 */
+			/* 我和我的祖国 */
+		}, {
+			"2 4",
+			"C./", "E//", "G/", "G/", "A", "G", "E./", "C//", "G/", "G//", "G//",
+			"E", "C", "g/", "g//", "g//", "g/", "g//", "g//", "C", "0/",
+			"g/", "C.", "C/", "C./", "C//", "g/", "a//", "b//", "C", "C","0/",
+			"E/", "C/", "D//", "E//", "G", "G", "E./", "E//", "C./", "E//", "G./", "E//", "D", "D*",
+			"A", "G", "D", "E", "G/", "E/", "0/", "G/", "E/", "D//", "E//", "C", "E", "0",
+			"g./", "a//", "C/", "C/", "E./", "E//", "G/", "G/", "D/", "D//", "D//", "a", "D.",
+			"g/","C.",
+			"C/", "E.",
+			"E/", "G*",
+			"C./", "E//", "G/", "G/", "A", "G",
+			"E./", "C//", "G/", "G//", "G//", "E/", "0/","C/", "0/",
+			"g", "C", "E./", "C//", "G/", "G//", "G//", "E/", "0/", "C/", "0/",
+			"g", "C", "g", "C", "g", "C", "C", "0",
+			/* 义勇军进行曲 */
+		}
 	};
 	/*
 	 * c d e f g a b
@@ -354,7 +473,7 @@ int melody(int id, char *filename, int speed, char *input)
 	 * 1 2 3 4 5 6 7
 	 * */
 
-	FILE *wav_file;
+	FILE *wav_file = NULL;
 	WavHeader wav_header;
 	double size = 0;
 	if (status & FLG_SAVE) {
@@ -379,26 +498,55 @@ int melody(int id, char *filename, int speed, char *input)
 	int type = 4, base = 4;
 	if (!(status&FLG_PLYARG))
 		sscanf(note[id][0], "%d %d", &type, &base);
+	else if (status&FLG_PLYARG_WITH_CONTROL) {
+		/* base分音符为一拍, 每小节type拍 */
+		sscanf(input, "%d %d", &type, &base);
+		i+=2;
+	}
 	char *p = status&FLG_PLYARG ? input : (char*)note[id][i+1];
-	for (i = 0; (status&FLG_PLYARG && p && p[0]) || (!(status&FLG_PLYARG) &&note[id][i+1] != NULL); i++) {
+	double tempo_counter = 0;
+	for (; (status&FLG_PLYARG && p && p[0]) || (!(status&FLG_PLYARG) &&note[id][i+1] != NULL); i++) {
 		p = status&FLG_PLYARG ? \
 		    (input) : \
 		    (char*)note[id][i+1];
-		p = str_in_group(p, "| ", status&FLG_PLYARG ?i:0);
+		p = str_in_group(p, "| \r\n", status&FLG_PLYARG ?i:0);
 		/*printf(" -> ret:%s\n", p);*/
-		if (!p) continue;
-		int *wave = create_note_wave(p, type, base, speed);
-		if (!wave || wave[0] <= 10) {
-			printf("波形为空,Code:[%d]\n", wave ? wave[0] : -1);
+		if (!p || !*p) continue;
+		if (status&FLG_PRINT)
+			printf(status&FLG_PRINT_CSTYLE?"\"":"");
+		short *wave = create_note_wave(p, 4, base, speed);
+		if (!wave || *(int*)wave <= 10) {
+			fprintf(stderr,"波形为空,Code:[%d], ind:%d, str:'%s'\n",
+			       wave ? *(int*)wave : -1, i, p);
+			free(wave);
 			continue;
 		}
-		size+=(float)wave[0]/SAMPLE_RATE;
-		if (status & FLG_SAVE) fwrite(wave+1, sizeof(int), *wave, wav_file);
+		if (status&FLG_PRINT) {
+			printf(status&FLG_PRINT_CSTYLE?"\", ":" ");
+			tempo_counter += round(((double)*(int*)wave / SAMPLE_RATE * speed/60)*100)/100;
+			char *colors[2][2] = {{"", ""}, {"\e[31m", "\e[0m"}};
+			int istty = isatty(STDERR_FILENO);
+			int istty2 = isatty(STDOUT_FILENO);
+			if (tempo_counter >= type && !(status&FLG_PRINT_CSTYLE)) {
+				if (tempo_counter > type) {
+					printf("%s%s<<%s", istty2 ? "\e[7m" : "", colors[istty2][0], colors[istty2][1]);
+					fprintf(stderr, "[%sWARN%s 不符合的拍子(%d:'%s':%f)，可能有计算错误]\n",
+						colors[istty][0], colors[istty][1], i, p, tempo_counter);
+				}
+				/*printf("%s(%f)| %s", colors[istty][0], tempo_counter, colors[istty][1]);*/
+				printf("%s| %s", colors[istty2][0], colors[istty2][1]);
+				tempo_counter = 0;
+			}
+		}
+		size+=(double)*(int*)wave/SAMPLE_RATE;
+		if (status & FLG_SAVE) fwrite(wave+2, sizeof(int), *(int*)wave, wav_file);
 #ifdef ENABLE_ALSA
-		if (status & FLG_PLAY) play_wav(pcm_handle, (short*)wave+1, *wave);
+		if (status & FLG_PLAY) play_wav(pcm_handle, wave+2, *(int*)wave);
 #endif
 		free(wave);
 	}
+	if (status&FLG_PRINT)
+		printf("\n");
 	if (status & FLG_SAVE) {
 		fseek(wav_file, 0, SEEK_SET);
 		create_wav_header(&wav_header, size);	// 重新生成准确的头信息
@@ -476,8 +624,8 @@ int main(int argc, char *argv[])
 {
 	int ch = 0, id = 0, speed = 120;
 	char filename[125] = "output.wav",
-	     notes[500] = {0};
-	while ((ch = getopt(argc, argv, "hi:psnmHo:S:r:C:")) != -1) {	/* 获取参数 */
+	     *notes = NULL;
+	while ((ch = getopt(argc, argv, "hi:psnmHo:S:r:C:Pcd")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -492,14 +640,18 @@ int main(int argc, char *argv[])
 			       "    -o <FILE> 输出文件(output.wav)\n"
 			       "    -S <NUM>  设置曲速(120)\n"
 			       "    -r <FILE> 输入文件（启用后其他选项无效）\n"
-			       "    -C <STR>  额外指定音符(用`|`分割)\n"
+			       "    -C <STR>  额外指定音符(用`|`或` `分割)\n"
+			       "    -d        指定额外音符时读取头两个数字作拍号\n"
+			       "    -P        打印音符(格式化)\n"
+			       "    -c        打印音符时采用c语言样式\n"
 			       "    -h        显示帮助\n"
 			       "  NUM: 0: 小星星\n"
 			       "       1: 中国人民志愿军战歌\n"
 			       "       2: 20s音频测试\n"
 			       "       3: 10.5升调音频测试\n"
 			       "       4: 运动员进行曲\n"
-			       "       5: 我和我的祖国（未完成）\n"
+			       "       5: 我和我的祖国\n"
+			       "       6: 义勇军进行曲\n"
 #ifndef ENABLE_ALSA
 			       "[!] 本程序在编译时关闭了`ENABLE_ALSA`\n"
 			       "    意味着无法提供任何ALSA方面的支持\n"
@@ -536,10 +688,21 @@ int main(int argc, char *argv[])
 			return read_play_wave(filename);
 			break;
 		case 'C':
+			if (notes)
+				break;
 			status |= FLG_PLYARG;
+			notes = malloc(sizeof(char)*(strlen(optarg)+1));
+			memset(notes, 0, sizeof(char)*(strlen(optarg)+1));
 			strcpy(notes, optarg);
-			if (!notes[0])
-				status |= FLG_INPUT;
+			break;
+		case 'P':
+			status |= FLG_PRINT;
+			break;
+		case 'c':
+			status |= FLG_PRINT_CSTYLE;
+			break;
+		case 'd':
+			status |= FLG_PLYARG_WITH_CONTROL;
 			break;
 		default:
 			break;
@@ -547,5 +710,7 @@ int main(int argc, char *argv[])
 	}
 	speed = speed <= 2 ? 120 : speed;
 	melody(id, filename, speed, notes);
+	if (notes)
+		free(notes);
 	return 0;
 }

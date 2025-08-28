@@ -76,6 +76,15 @@ pacman_auto_remove() {
 	pacman -Qdtq |sudo pacman -Rsun -
 }
 
+debug_coredump() {
+	tmpfile="/tmp/corefile.uuid.`uuidgen`"
+	echo "请输入pid并回车:"
+	zstdcat `find /var/lib/systemd/coredump -name "*$(head -n 1)*"` >$tmpfile
+	echo "请输入程序名并回车:"
+	gdb "$(head -n 1)" $tmpfile
+	rm $tmpfile
+}
+
 if [[ $1 != "" ]];then
 	if echo "$choices"|grep -q "^$1\$";then
 		args=("$@")

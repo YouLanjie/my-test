@@ -128,15 +128,23 @@ int main(int argc, char *argv[])
 		fclose(fp);
 	} else flag_color[0] = 2;
 
+	printf("\033[2J");
 	while (inp != 'q') {
 		sprintf(str[2], " X  Y WD HI FY HY C\n");
 		for (int i = 0; i < window_num; i++)
 			sprintf(str[2], "%s%2d %2d %2d %2d %2d %2d %1d\n", str[2], x[i], y[i], wd[i], hi[i], hy[i], fy[i], flag_color[i]);
 		sprintf(str[2], "%sfocus window:%d\n", str[2], flag_window);
-		printf("\033[2J\033[0;0H");
+		printf("\033[0;0H");
 		for (int i = 0; i < window_num - flag_info; i++)
 			_print_in_box(str[i], x[i], y[i], wd[i], hi[i], hy[i], fy[i], color[i][flag_color[i] - 1], 1);
 		inp = _getch();
+		printf("\033[0;0H");
+		for (int i = 0; i < window_num - flag_info && inp != 'q'; i++) {
+			_print_in_box("", x[i], y[i], wd[i], 1, 0, 0, "\e[0m", 0);
+			_print_in_box("", x[i], y[i], 1, hi[i], 0, 0, "\e[0m", 0);
+			_print_in_box("", x[i]+wd[i]-1, y[i], 1, hi[i], 0, 0, "\e[0m", 0);
+			_print_in_box("", x[i], y[i]+hi[i]-1, wd[i], 1, 0, 0, "\e[0m", 0);
+		}
 		if (inp == 'w') y[flag_window - 1]--;
 		if (inp == 's') y[flag_window - 1]++;
 		if (inp == 'a') x[flag_window - 1]--;
