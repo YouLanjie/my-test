@@ -31,22 +31,30 @@
   按照特定格式执行shell脚本，会标记执行进度并跳过已执行片段，遇到错误自动停止
 - =Type_conversion.c= \\
   调用ffmpeg转换媒体文件(实际上使用shell实现或许更好)
+- =ALSA.c= \\
+  原本是想要学习下Linux怎么让程序发出声音，一通ai问出来个ALSA，索性抄了代码自己
+  摸索，然后根据自己的想法和需求逐渐增加了一些功能。比如说将声音保存为wav文件，
+  根据自定义语法规则（类似于简谱）生成声音，读取wav文件并用ALSA播放等等。目前最
+  有用的应该是用来生成纯音（毕竟合成音响还是太干了，又还不支持读写midi）（捂脸）
 * 部分程序食用方法
 ** c语言程序编译命令
+#+begin_quote
+此部分命令均要求在 =src_c= 目录执行
+#+end_quote
 请使用下列命令下载子模块，否则会有部分程序无法编译
 #+begin_src shell
 git submodule init
 git submodule update
 #+end_src
 
-请在项目目录运行以下命令编译所有程序（注：该脚本需要使用zsh）：
+请在 =src_c= 目录运行以下命令编译所有程序（注：该脚本需要使用zsh）：
 
 #+begin_src shell
 cd ./src_c
 ./build.sh
 #+end_src
 
-更多帮助内容请使用=./build.sh -h=查看
+更多帮助内容请使用 =./build.sh -h= 查看
 
 或者使用以下命令编译大部分程序
 
@@ -54,8 +62,7 @@ cd ./src_c
   cd ./src_c
   ls -1|grep ".c$"|sed "/build.c\|gtk.c/d"|sed "s/^\(.*\).c$/gcc \1\.c $(find ./include/lib -name "*.c"|sed ":a;N;s/\n/ /g;b a"|sed 's/\//\\\//g') -lncurses -lm -o bin\/\1/"|sh
 #+end_src
-
-** 补充说明
+** COMMENT 补充说明
 - script-helper.c 脚本文件格式要求
   #+begin_src
     # COMMAND START
@@ -76,3 +83,30 @@ cd ./src_c
     #+begin_src shell
       msgfmt Lang/en_US/socket.po -o Lang/en_US/LC_MESSAGES/socket.mo
     #+end_src
+- ALSA.c\\
+  使用以下命令进行食用
+  #+begin_src bash
+    # 编译好ALSA.c程序，该文件不依赖libtools.a (submodule)
+    cd src_c/
+    gcc ALSA.c -o ALSA
+    # 查看帮助
+    ./ALSA -h
+    # 将《小星星》保存到指定文件(自己用文件管理器或者播放器打开)
+    ./ALSA -so "小星星.wav" -i 0
+  #+end_src
+  在src_c/res/中存有《One Last Kiss》的简谱（自定义格式），（来源在这），如果要
+  食用请执行以下命令
+  #+begin_src bash
+    # 切换到src_c/res/目录
+    cd res
+    # 将当前目录的所有`ALSA_OneLastKiss_`开头的txt文件转换成对应的wav文件(需要点时间)
+    ls ALSA_OneLastKiss_*.txt|sed 's/\.txt$//'|while read i;do ../ALSA -C "$(cat "$i.txt")" -S 112 -so "$i.wav";done
+    # 如果使用的mpv播放器，使用以下命令播放
+    mpv ALSA_OneLastKiss_part_a.wav;mpv ALSA_OneLastKiss_part_b1.wav & ;mpv ALSA_OneLastKiss_part_b2.wav;mpv ALSA_OneLastKiss_part_c.wav
+    # 总之就是先播放ALSA_OneLastKiss_part_a.wav
+    # 再同时播放ALSA_OneLastKiss_part_b1.wav和ALSA_OneLastKiss_part_b2.wav
+    # 最后再播放ALSA_OneLastKiss_part_c.wav
+
+    # 有实力的可以用ffmpeg合并了再播放，下面的命令抄ai的
+    ffmpeg -i ALSA_OneLastKiss_part_a.wav -i ALSA_OneLastKiss_part_b1.wav -i ALSA_OneLastKiss_part_b2.wav -i ALSA_OneLastKiss_part_c.wav -filter_complex "[1][2]amix=inputs=2[bc];[0][bc][3]concat=n=3:v=0:a=1[out]" -map "[out]" output.mp3
+  #+end_src

@@ -121,15 +121,16 @@ void create_wav_header(WavHeader *header, float duration)
 double wave(double x, double volume, double f)
 {
 	if (f < 0) return 0;
+	static const double harmonicsp[15] = {
+		1,0.340,0.102,0.085,0.070,0.065,0.028,0.085,0.011,0.030,0.010,0.014,0.012,0.013,0.004
+	};
 	const short max_vol = (unsigned short)(-1) / 2;
 	double value = 0.0;
-	// 基频 + 5个泛音（振幅递减）
-	value += 0.6 * sin(2 * M_PI * f * x);	// 基频
-	if (status&FLG_HARMONICS) {
-		value += 0.3 * sin(2 * M_PI * 2 * f * x);	// 二次谐波
-		value += 0.2 * sin(2 * M_PI * 3 * f * x);	// 三次谐波
-		value += 0.1 * sin(2 * M_PI * 4 * f * x);	// 四次谐波
-		value += 0.05 * sin(2 * M_PI * 5 * f * x);	// 五次谐波
+	// 基频 + 14个泛音（振幅递减）
+	for (int i = 0; i < 15; i++) {
+		value += harmonicsp[i] * sin(2 * M_PI * (i+1) * f * x);	// 基频
+		if (!(status&FLG_HARMONICS))
+			break;
 	}
 	return volume * max_vol * value;
 }
@@ -199,7 +200,7 @@ short *create_note_wave(const char *note, double type, int base, double speed)
 				current_note++;
 			current_note->freq = note_freq[(int)*p];
 			current_note->duration = SAMPLE_RATE*(base/type)*(60/speed);
-			current_note->amplitude = 0.5;
+			current_note->amplitude = 0.2;
 			counter++;
 		} else if (*p == '/')
 			current_note->duration /= 2;
@@ -272,13 +273,17 @@ short *create_note_wave(const char *note, double type, int base, double speed)
 				num *= (1 - 1/(1+exp((double)(p->duration+enable_glide-i)/800)));
 			if (enable_glide)
 				num *= (1/(1+exp((double)(enable_glide-i)/800)));
-			if (use_right_side)
+			if (use_right_side == 1)
 				buffer[i * 2 + 3] = num;    /* 右声道 */
+			else if (use_right_side == 2)
+				buffer[i * 2 + 3] += num;    /* 右声道 */
 			else {
 				buffer[i * 2 + 2] += num;    /* 左声道 */
 				buffer[i * 2 + 3] += num;    /* 右声道 */
 			}
 		}
+		if (use_right_side == 1)
+			use_right_side = 2;
 		if (p->use_right_side)
 			use_right_side = 1;
 		if (p->enable_glide) {

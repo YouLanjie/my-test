@@ -24,10 +24,13 @@ int main()
 		{0, ['0'] = '0', '1', '2', '3', '4', '5', '6', '7'},
 	};
 	char othre_allowed[256] = {
-		0, ['.'] = 1, ['/'] = 1, ['*'] = 1, ['+'] = 1, ['-'] = 1,
+		0, ['.'] = 1,
+		['/'] = 1, ['*'] = 1,
+		['+'] = 1, ['-'] = 1,
 		['~'] = 1, ['S'] = 's',
 	};
-	printf("type your music below\n----------------------------------\n");
+	printf("type your music below(str will be printed by stderr when exit)\n"
+	       "----------------------------------\n");
 	/*printf("\e[7");*/
 	printf("\n\n\n\n\n\n");
 	while (inp != 'Q') {
@@ -52,6 +55,7 @@ int main()
 		}
 	}
 	printf("\n");
+	fprintf(stderr, "%s\n", str);
 	return 0;
 }
 
