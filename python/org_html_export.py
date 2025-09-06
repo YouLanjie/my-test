@@ -2,9 +2,9 @@
 
 import argparse
 from pathlib import Path
+from pathlib import PurePosixPath
 import re
 import orgreader2
-import argcomplete
 import pytools
 
 try:
@@ -13,7 +13,7 @@ except ModuleNotFoundError as e:
     INPUT = input("tyr: pip install natsort ? (y/N)")
     if INPUT in ("y", "yes"):
         import pip
-        if not pip.main(["install","natsort", "beautifulsoup4"]):
+        if not pip.main(["install","natsort"]):
             print("安装成功，请重新启动程序")
     raise e
 
@@ -61,6 +61,7 @@ def get_output(files:list[Path], title:str, subtitle:str, link:tuple[Path|None, 
 """
     li = []
     for i in files:
+        i = PurePosixPath(i)
         safe_name = safety_name(str(i))
         prefix = "./" if safe_name[0] != "/" else "file://"
         if re.match(r".*\.(?:"+"|".join(VID_EXTS)+r")", i.name):
@@ -191,7 +192,10 @@ def parse_arguments() -> argparse.Namespace:
                         help='设置fancybox的js文件地址')
     parser.add_argument('--fancybox-css',default=None,
                         help='设置fancybox的css文件地址')
-    argcomplete.autocomplete(parser)
+    try:
+        __import__("argcomplete").autocomplete(parser)
+    except ModuleNotFoundError:
+        pass
     args = parser.parse_args()
     urls = [{"js":"https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox/fancybox.umd.js",
              "css":"https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox/fancybox.css"},
