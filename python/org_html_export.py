@@ -43,13 +43,15 @@ def get_output(files:list[Path], title:str, subtitle:str, link:tuple[Path|None, 
         navigation += f" {len(files)} "
         navigation += f"| [[./{safety_name(str(link[1]))}][{safety_name(link[1].stem)}]] |" \
                 if link[1] else "| |"
+    fancybox_config = """Carousel:{formatCaption:(carouselRef,slide)=>{\
+return `${slide.caption ? slide.caption + " | " : ""}${slide.alt}`},},""" if args.add_caption else ""
     ret = f"""\
 #+title: {title}
 # fancybox
 {f"""
 #+HTML_HEAD: <link rel="stylesheet" href={repr(args.fancybox_css)}>
 #+HTML_HEAD: <script src={repr(args.fancybox_js)}></script>
-#+HTML_HEAD: <script>window.onload = function() {"{"}Fancybox.bind('[data-fancybox]', {"{}"}){"}"}</script>
+#+HTML_HEAD: <script>window.onload = function() {"{"}Fancybox.bind('[data-fancybox]', {"{"+fancybox_config+"}"}){"}"}</script>
 """ if args.enable_fancybox else ""}
 # user's theme
 #+HTML_HEAD: <link rel='stylesheet' type='text/css' href='{args.css_file}'/>
@@ -170,7 +172,7 @@ def main():
                                       setting={"pygments_css":False,"mathjax_script":False})
             doc.setting["css_in_html"] = ""
             save_file(Path(f"{output_d}/{objname}.html"),
-                      str(doc.to_html()).replace("<img ", '<img data-fancybox="gallery"'),
+                      str(doc.to_html()).replace("<img ", '<img data-fancybox="gallery" '),
                       f"({index}/{total})")
         # print(output)
 
@@ -188,10 +190,9 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-S', '--save-org', action="store_true", help='保存org文件并导出')
     parser.add_argument('--enable-fancybox', action="store_true", help='启用fancybox')
     parser.add_argument('--enable-old-fancybox', action="store_true", help='启用旧版fancybox(需要未指定fancybox链接)')
-    parser.add_argument('--fancybox-js', default=None,
-                        help='设置fancybox的js文件地址')
-    parser.add_argument('--fancybox-css',default=None,
-                        help='设置fancybox的css文件地址')
+    parser.add_argument('--add-caption', action="store_true", help='为文件添加caption')
+    parser.add_argument('--fancybox-js', default=None, help='设置fancybox的js文件地址')
+    parser.add_argument('--fancybox-css',default=None, help='设置fancybox的css文件地址')
     try:
         __import__("argcomplete").autocomplete(parser)
     except ModuleNotFoundError:

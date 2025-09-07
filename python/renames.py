@@ -5,6 +5,7 @@ import os
 import sys
 import re
 import time
+import datetime
 import shutil
 import argparse
 import hashlib
@@ -88,12 +89,9 @@ def calculate_md5(file: Path):
             hash_md5.update(chunk)
     return hash_md5.hexdigest()
 
-def check_date(year:int, month:int, day:int) -> bool:
-    return 1970 < year < 2050 and 0 < month < 13 and 0 < day < 32
-
 def process_files():
     pattern_ymd = re.compile(r'.*?(\d{4})[-_年]*(\d{2})[-_月]*(\d{2}).*', re.I)
-    pattern_stmp =  re.compile(r'.*?(\d{13}).*', re.I)
+    pattern_stmp =  re.compile(r'.*?(?<!\d)(\d{13})(?!\d).*', re.I)
     processed = 0
     skipped = 0
 
@@ -107,16 +105,24 @@ def process_files():
         if match:
             # 提取年月日
             year, month, day = match.groups()[:3]
-        if check_date(int(year), int(month), int(day)) and \
-                not ARGS.no_skip and ARGS.mode not in ("random", "md5", "keep"):
+
+        has_date = True
+        try:
+            datetime.date(int(year), int(month), int(day))
+            if not 1949 < int(year) < time.gmtime().tm_year+1:
+                raise ValueError
+        except ValueError:
+            has_date = False
+
+        if has_date and not ARGS.no_skip and ARGS.mode not in ("random", "md5", "keep"):
             print_verbose(f"INFO 跳过:已具备类似条件'{file}'")
             skipped += 1
             continue
-        if not ARGS.ignore_timestamp:
+        if not ARGS.ignore_timestamp and not has_date:
             match = pattern_stmp.match(str(file))
             if match:
                 timestamp_ = float(match.group(1))/1000
-                if 0 < timestamp_ < 2840111999:
+                if 0 < timestamp_ < time.time()+60*60*24*365:
                     timestamp = timestamp_
         # 文件全名: file.name
         # 文件名: file.stem
