@@ -117,7 +117,16 @@
 *** FASDAF :TEST:
 这样的标签也是可行的
 
-** 超过一定等级的标题转换成list测试
+** 超过一定等级的标题转换成list测试1
+**** level4.0
+***** level5.0
+****** level6.0
+***** level5.0.1
+** 超过一定等级的标题转换成list测试2(bug test)
+#+begin_quote
+经测试，emacs原生html导出在处理自上而下（从level5的标题到level4）的超出h的
+options设定的标题时，会出现忘记添加 =<ul>= 或者 =<ol>= 标签，导致显示错误
+#+end_quote
 ***** level5.1
 **** level4.1
 内容测试
@@ -699,29 +708,38 @@ BBBBBBBBBB
 空行测试：
 
 \\
-*** 普通文本中对 =\= 的处理
-\\a
+*** 普通文本中对 =\= 和 =\\= 的处理
+(<定位符号>)
+
+
+\\a(2)
+
+3:
 
 \\\
+
+4:
 
 \\\\
 
 a\\\
-b
+b(3)
 
 A\\\\
-B
+B(4)
 
-+C\\D+
++C\\D(2)+
 
-+E\F+
++E\F(1)+
 
 [[http://localhost\/][linkd\\test]]
 
 #+begin_quote
-总结：在行末有 =\\= 的会解释为换行，如果一行中只有它则会创建一个空行。如果
++总结：在行末有 =\\= 的会解释为换行，如果一行中只有它则会创建一个空行。如果
 在前面有 =\= 则不会解释为换行，而是会将其作转义处理,即 =\\= -> =\= ，而code有特权
-不会被转义
+不会被转义+
+
+以上为错误内容，据最新测试，所有转义由MathJax.js自动处理，输出时保持原义
 #+end_quote
 ** 链接
 单链接测试：[[http://bing.com]]
@@ -785,6 +803,107 @@ B
 经测试，换行的链接能识别，但是如果是在链接出断开会破坏链接，如果是在链接文本处则不会
 #+end_quote
 
+*** 自动识别的链接测试
+纯链接:\\
+bing.com
+
+带有协议前缀:\\
+http:0
+
+http:01
+
+http:012
+
+http:/
+
+http:/1
+
+http://
+
+http:baidu.com
+
+http://cctv.com/测试 content
+
+https://tv.cctv.com/2025/08/29/VIDAHV8r0zaLCzZdlz9q49DX250829.shtml
+
+其他协议测试：
+
+ftp:0
+
+ftp:01
+
+ftp:012
+
+ftp:/
+
+ftp:/1
+
+ftp://
+
+ftp://localhost/
+
+sftp://localhost/
+
+file:/
+
+file:0
+
+file:01
+
+file://
+
+mailto://
+
+tel://
+
+tel://110
+
+sms://110
+
+mms://
+
+ed2k://
+
+边界测试：
+
+(http://localhost)
+
+)http://localhost(
+
+http://localhost()
+
+[http://localhost]
+
+]http://localhost[
+
+http://localhost[]
+
+{http://localhost}
+
+}http://localhost{
+
+http://localhost{}
+
+http://localhost{}/
+
+<http://localhost>
+
+>http://localhost<
+
+http://localhost<>
+
+http://localhost/~`;'"\|,."+-*&^%$#@!
+
+http://localhost/~`;'"\|,."+-*&^%$#@!/
+
+http://localhost/~`;'"\|,."+-*&^%$#@!<>[](){}/
+
+http://localhost/~`;'"\|,."+-*&^%$#@!<>
+
+#+begin_quote
+测试表明，只需要协议头+一定长度的有效字符即可被识别为链接,不可有回车，空格等，但
+是可以有中文，
+#+end_quote
 *** 图片测试
 图片测试1：
 [[./test.jpg]]

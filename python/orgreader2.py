@@ -34,7 +34,7 @@ class Strings:
             ("del", _get_strings_pattern(r"\+")),
             ("underline", _get_strings_pattern("_")),
             ]
-    img_exts=["png", "jpg", "jpeg", "gif", "webp"]
+    img_exts=["png", "jpg", "jpeg", "gif", "webp", "svg", "avif"]
     rules = {"code":("<code>","</code>"),
              "italic":("<i>", "</i>"),
              "bold":("<b>", "</b>"),
@@ -97,7 +97,7 @@ class Strings:
                     continue
                 if last != i and re.findall(r"[^ ]", s[last:i]):
                     # 补充增加前面的纯文本内容
-                    li.append(re.sub(r"\\\\", r"\\",s[last:i]))
+                    li.append(s[last:i])
                 last = i
                 i+=ret.span()[1]
                 if current_pattern[0] == "link":
@@ -115,7 +115,7 @@ class Strings:
             i+=1
         if last != i and re.findall(r"[^ ]", s[last:i]):
             # 补充增加前面的纯文本内容(若非空)
-            li.append(re.sub(r"\\\\", r"\\",s[last:i]))
+            li.append(s[last:i])
         if not is_sub:
             self.cache[s] = li
         return li
@@ -176,6 +176,7 @@ class Strings:
                 ret += str(i)
         if ret and ret[0] == "\n":
             ret = ret[1:]
+        ret.replace("\\", "<span>\\</span>")
         return ret
     def list_to_text(self, li:list) -> str:
         """将给定的已经分好的列表转回文字"""
@@ -574,16 +575,18 @@ class Title(TitleBase):
         ids = self.id[self.document.status["lowest_title"]-1:-1]
         lv = ".".join([str(i) for i in ids])
 
-        text = f"""<div class="outline-{self.level+1}">\n"""
+        text = ""
         if self.level <= self.document.meta["options"]["h"]:
+            text += f"""<div id="outline-container-{re.sub(r"\.","-",lv)}" class=\"outline-{self.level+1}\">\n"""
             text += f"""<h{self.level+2-self.document.status["lowest_title"]} """+\
                 f"""id="org-title-{re.sub(r"\.","-",lv)}">"""
+            headline_num = self.document.meta["options"]["num"]
+            if (isinstance(headline_num,bool) and headline_num) or len(ids) <= headline_num:
+                text += """<span class="section-number-"""+\
+                        f"""{self.level+2-self.document.status["lowest_title"]}">{lv}.</span>"""
         else:
-            text += f"""<p id="org-title-{re.sub(r"\.","-",lv)}"><b>"""
-        headline_num = self.document.meta["options"]["num"]
-        if (isinstance(headline_num,bool) and headline_num) or len(ids) <= headline_num:
-            text += """<span class="section-number-"""+\
-                    f"""{self.level+2-self.document.status["lowest_title"]}">{lv}.</span>"""
+            text += f"""<li>\n<a id="org-title-{re.sub(r"\.","-",lv)}"></a>"""
+
         if self.todo:
             text+=f" <span class=\"{self.todo[0]} {self.todo[1]}\">{self.todo[1]}</span>"
         text += f" {title}"
@@ -595,10 +598,11 @@ class Title(TitleBase):
                 li.append(f"""<span class="{i}">{i}</span>""")
             text += "&nbsp;".join(li)
             text += """</span>"""
+
         if self.level <= self.document.meta["options"]["h"]:
             text += f"</h{self.level+2-self.document.status["lowest_title"]}>\n"
         else:
-            text += "</b></p>\n"
+            text += "<br/>\n"
 
         has_text_outline = False
         if self.child and not isinstance(self.child[0], Title):
@@ -607,33 +611,86 @@ class Title(TitleBase):
             has_text_outline = True
 
         for i in self.child:
-            if has_text_outline and isinstance(i, Title):
+            if has_text_outline and isinstance(i, TitleOutline):
                 text += "</div>"
                 has_text_outline = False
             text += i.to_html()
         if has_text_outline:
             text += "</div>"
-        text += "</div>"
+
+        if self.level <= self.document.meta["options"]["h"]:
+            text += "</div>"
+        else:
+            text += "</li>\n"
+        return text
+
+class TitleOutline(TitleBase):
+    """标题（多项集合）"""
+    def __init__(self, document) -> None:
+        super().__init__(document)
+        match = RULES[type(self).__name__]["match"]\
+                .match(self.document.lines[self.document.current_line])
+        if match is None:
+            return
+        self.line = Strings("", self)
+        self.add(Title(document))
+    def add(self, obj):
+        if isinstance(obj, TitleOutline):
+            if self.current == self and obj.child:
+                obj = obj.child[0]
+        return super().add(obj)
+    def end_condition(self, match: re.Match | None) -> bool:
+        if match is None:
+            return False
+        if len(match.group(1)) < self.level:
+            return True
+        # 针对下级
+        if self.current == self:
+            return False
+        if isinstance(self.current, Block):
+            return True
+        return False
+    def to_text(self) -> str:
+        text = ""
+        for i in self.child:
+            text += i.to_text()
+        return text
+    def to_html(self) -> str:
+        text = ""
+        for i in self.child:
+            if text and text[-1] != "\n":
+                text += "\n"
+            # 每个列表组的每个项目
+            text += f"{i.to_html()}"
+        if self.level > self.document.meta["options"]["h"] and text != "":
+            headline_num = self.document.meta["options"]["num"]
+            li_type = "ul"
+            if (isinstance(headline_num,bool) and headline_num) or self.level <= headline_num:
+                li_type = "ol"
+            text = f"""<{li_type} class="org-ol">{text}</{li_type}>\n"""
         return text
 
 class Footnotes(TitleBase):
-    """脚注标题"""
+    """脚注(大标题)"""
     def __init__(self, document) -> None:
         super().__init__(document)
         self.opt["printable"] = False
 
 class Footnote(Root):
-    """脚注(整行)"""
+    """脚注(整行甚至多行的定义)"""
     def __init__(self, document) -> None:
         super().__init__(document)
-        self.line.s = re.sub(r"^ *", "", self.line.s)
         # self.opt["printable"] = False
         match = RULES[type(self).__name__]["match"].match(self.line.s)
         if match is None:
             return
+        self.line.s = ""
         self.name = match.group(1)
         self.type = "str" if re.findall("[^0-9]", self.name) else "int"
-        self.line = Strings(match.group(2), self)
+        # self.line = Strings(match.group(2), self)
+        t = Text(document)
+        t.line.s = match.group(2)
+        self.add(t)
         self.id = -1
         self.document.status["footnotes"][self.name] = self
     def end_condition(self, match: re.Match | None) -> bool:
@@ -848,8 +905,12 @@ class BlockCode(Block):
         fmt = pygments.formatters.get_formatter_by_name("html", style="monokai", nowrap=True)
         try:
             lang = self.lang
-            if isinstance(lang, str) and lang.lower().startswith("conf"):
+            if not isinstance(lang, str):
+                lang = ""
+            if lang.lower().startswith("conf"):
                 lang = "cfg"
+            elif lang.lower() == "vimrc":
+                lang = "vim"
             compiled = pygments.highlight(
                     self.line.s,
                     get_lexer_by_name(lang),
@@ -1146,9 +1207,9 @@ RULES = {
                         r"^([*]+) +(Footnotes *.*)(?: +:(.*):)?"),
                      "class":Footnotes,
                      "end":re.compile(r"^([*]+) +(.*)", re.I)},
-    "Title":        {"match":re.compile(
+    "TitleOutline": {"match":re.compile(
                             r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
-                     "class":Title,
+                     "class":TitleOutline,
                      "end":re.compile(
                             r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
     "BlockCode":    {"match":re.compile(r"^ *#\+begin_src(?:[ ]+(.*))?", re.I),
@@ -1188,6 +1249,11 @@ RULES = {
     "ListItem":     {"match":re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.))( +(?:.*)|$)", re.I),
                      "class":List,
                      "end":re.compile(r"^( *)(.*)", re.I)},
+    "Title":        {"match":re.compile(
+                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
+                     "class":Title,
+                     "end":re.compile(
+                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
     }
 
 class Document:
@@ -1469,10 +1535,10 @@ def _set_css(args, doc:Document):
         return
     css_content = gzip.decompress(css_file.read_bytes()).decode()
     match = re.search(
-            r"<style type=\\\"text/css\\\">.*?</style>",
+            r"<style type=\\\"text/css\\\">(.*?)</style>",
             css_content, re.DOTALL)
     if match:
-        doc.setting["css_in_html"] += match.group().replace("\\", "")
+        doc.setting["css_in_html"] += match.group(1).replace("\\", "")
 
 def print_feature():
     """打印相较于emacs的特性"""
