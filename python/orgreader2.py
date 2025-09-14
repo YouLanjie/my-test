@@ -1258,9 +1258,9 @@ RULES = {
 
 class Document:
     """文档类，操作基本单位"""
-    def __init__(self, lines:list[str], file_name:str="", setupfiles:list[str]|None=None,
+    def __init__(self, lines:list[str]|str, file_name:str="", setupfiles:list[str]|None=None,
                  setting:dict|None=None) -> None:
-        self.lines = lines
+        self.lines = lines.splitlines() if isinstance(lines, str) else lines
         self.current_line = 0
         self.setting = {"file_name":file_name, "indent_str":"|   ", "footnote_style":("", ""),
                         "css_in_html":"", "js_in_html":""}

@@ -3,7 +3,10 @@
 import argparse
 from pathlib import Path
 from pathlib import PurePosixPath
+import os
 import re
+import multiprocessing
+import time
 import orgreader2
 import pytools
 
@@ -85,12 +88,20 @@ return `${slide.caption ? slide.caption + " | " : ""}${slide.alt}`},},""" if arg
     ret += f"\n* Tail\n{navigation}" if link else ""
     return ret
 
-def get_input_dir(inp:Path, pattern:re.Pattern)->list[Path]:
+def get_input_dir(inp:Path, pattern:re.Pattern, fallback_path=None)->list[Path]:
     """获取可用输入文件夹列表并排序"""
-    dir_list = [i for i in inp.iterdir() \
-            if i.is_dir() and \
-            [j for j in i.iterdir() \
-            if j.is_file() and pattern.match(j.name)]]
+    li = [i for i in inp.iterdir() if i.is_dir()]
+    dir_list = []
+    for i in li:
+        for j in i.iterdir():
+            if j.is_file() and pattern.match(j.name):
+                dir_list.append(i)
+                break
+    if not dir_list and isinstance(fallback_path, Path):
+        for j in fallback_path.iterdir():
+            if j.is_file() and pattern.match(j.name):
+                dir_list.append(fallback_path)
+                break
     dir_list = natsort.natsorted(dir_list)
     return dir_list
 
@@ -112,6 +123,51 @@ def calculate_relative(p1:Path, p2:Path) -> Path:
         return reslove
     return absolute
 
+class Sites:
+    """转换网页临时数据结构"""
+    def __init__(self, dir_list:list[Path], output_d:Path, title:str, args:argparse.Namespace) -> None:
+        extra_exts=[i for i in args.extern.split("|") if i!=""]
+        self.pattern = re.compile(r".*\.(?:"+"|".join(IMG_EXTS+VID_EXTS+extra_exts)+")", re.I)
+        self.dir_list = dir_list
+        self.output_d = output_d
+        self.title = title
+        self.args = args
+    def process_sigal_page(self, index:int, running, finish_count, lock):
+        lock.acquire()
+        running.value += 1
+        lock.release()
+
+        lastdir = Path(f"{self.dir_list[index-1]}.html") if index > 0 else None
+        dirs = self.dir_list[index]
+        nextdir = Path(f"{self.dir_list[index+1]}.html") if index+1 < len(self.dir_list) else None
+        file_list = [calculate_relative(i, self.output_d)
+                for i in dirs.iterdir()
+                if i.is_file() and self.pattern.match(i.name)]
+        file_list = natsort.natsorted(file_list, key=lambda x:get_sort_key(x.name))
+        output = get_output(file_list, self.title,
+                f"{self.dir_list.index(dirs)+1} / {dirs}" if len(self.dir_list) > 1 else f"{dirs}",
+                (lastdir, nextdir), self.args)
+        objname = dirs.name
+        if len(self.dir_list) <= 1:
+            objname = "index"
+        if self.args.save_org or self.args.no_export:
+            save_file(Path(f"{self.output_d}/{objname}.org"), output)
+        if not self.args.no_export:
+            doc = orgreader2.Document(output.splitlines(),
+                                      setting={"pygments_css":False,"mathjax_script":False})
+            doc.setting["css_in_html"] = ""
+            lock.acquire()
+            finish_count.value += 1
+            lock.release()
+            save_file(Path(f"{self.output_d}/{objname}.html"),
+                      str(doc.to_html()).replace("<img ", '<img data-fancybox="gallery" '),
+                      f"({finish_count.value}/{len(self.dir_list)})")
+        # print(output)
+        lock.acquire()
+        running.value -= 1
+        lock.release()
+        return
+
 def main():
     """主函数"""
     args = parse_arguments()
@@ -127,10 +183,8 @@ def main():
     if args.title:
         title = args.title
 
-    dir_list : list[Path] = get_input_dir(input_d, pattern)
-    if not dir_list and \
-            [j for j in input_d.iterdir() if j.is_file() and pattern.match(j.name)]:
-        dir_list = [input_d]
+    print("INFO 获取合法目录列表")
+    dir_list : list[Path] = get_input_dir(input_d, pattern, input_d)
 
     if len(dir_list) > 1:
         print("INFO 创建首页")
@@ -149,32 +203,18 @@ def main():
         print("INFO 单文件(无章节)")
     else:
         pytools.print_err("WARN 好像没有找到识别范围内文件呢喵")
-    dir_lists = [(Path(f"{i}.html") if i else None, j, Path(f"{k}.html") if k else None) \
-            for i,j,k in zip([None]+dir_list, dir_list, dir_list[1:]+[None])]
+    sites = Sites(dir_list, output_d, title, args)
     index = 0
-    total = len(dir_lists)
-    for lastdir,dirs,nextdir in dir_lists:
+    running = multiprocessing.Value('i', 0)
+    finish_count = multiprocessing.Value('i', 0)
+    lock = multiprocessing.Lock()
+    max_pth = (os.cpu_count() or 4) / 2
+    for index,_ in enumerate(dir_list):
+        multiprocessing.Process(target=sites.process_sigal_page,
+                                args=(index, running,finish_count,lock)).start()
         index+=1
-        file_list = [calculate_relative(i, output_d)
-                for i in dirs.iterdir()
-                if i.is_file() and pattern.match(i.name)]
-        file_list = natsort.natsorted(file_list, key=lambda x:get_sort_key(x.name))
-        output = get_output(file_list, title,
-                f"{dir_list.index(dirs)+1} / {dirs}" if len(dir_list) > 1 else f"{dirs}",
-                (lastdir, nextdir), args)
-        objname = dirs.name
-        if len(dir_list) <= 1:
-            objname = "index"
-        if args.save_org or args.no_export:
-            save_file(Path(f"{output_d}/{objname}.org"), output)
-        if not args.no_export:
-            doc = orgreader2.Document(output.splitlines(),
-                                      setting={"pygments_css":False,"mathjax_script":False})
-            doc.setting["css_in_html"] = ""
-            save_file(Path(f"{output_d}/{objname}.html"),
-                      str(doc.to_html()).replace("<img ", '<img data-fancybox="gallery" '),
-                      f"({index}/{total})")
-        # print(output)
+        while running.value > max_pth:
+            time.sleep(0.01)
 
 def parse_arguments() -> argparse.Namespace:
     """解释参数"""
