@@ -6,12 +6,7 @@ from pathlib import Path
 import time
 import re
 import gzip
-# 第三方库
-import requests
-import pygments
-import pygments.formatters
-from pygments.lexers import get_lexer_by_name
-from pygments.util import ClassNotFound
+import importlib
 
 try:
     from . import pytools
@@ -408,14 +403,16 @@ class Meta(Root):
             content = setupfile.read_text(encoding="utf8")
         elif re.match(r"http[s]?://.+", self.value):
             try:
-                req = requests.get(self.value, timeout=3)
+                req = importlib.import_module("requests").get(self.value, timeout=3)
                 pytools.print_err(f"WARN [{self.document.setting["file_name"]}] 在文件中插入外部链接可能拖慢转译速度({req.elapsed})[{self.value}]")
                 if req.status_code == 200:
                     req.encoding = req.apparent_encoding
                     content = req.text
                 else:
                     pytools.print_err(f"WARN [{self.document.setting["file_name"]}] 加载文件异常，状态码: {req.status_code}")
-            except (requests.exceptions.RequestException, IOError) as e:
+            except ModuleNotFoundError:
+                pytools.print_err(f"WARN 模块requests不可用，无法调用网络setupfile")
+            except (importlib.import_module("requests").exceptions.RequestException, IOError) as e:
                 pytools.print_err(f"WARN [{self.document.setting["file_name"]}] 加载文件错误: {e}")
                 return
         else:
@@ -902,24 +899,30 @@ class BlockCode(Block):
             return ""
         ret = "<div class=\"org-src-container\">"
         ret += f"<pre class=\"src src-{self.lang.lower() if self.lang else "nil"}\">"
-        fmt = pygments.formatters.get_formatter_by_name("html", style="monokai", nowrap=True)
         try:
-            lang = self.lang
-            if not isinstance(lang, str):
-                lang = ""
-            if lang.lower().startswith("conf"):
-                lang = "cfg"
-            elif lang.lower() == "vimrc":
-                lang = "vim"
-            compiled = pygments.highlight(
-                    self.line.s,
-                    get_lexer_by_name(lang),
-                    fmt)
-        except ClassNotFound:
-            compiled = pygments.highlight(
-                    self.line.s,
-                    get_lexer_by_name("text"),
-                    fmt)
+            pygments = importlib.import_module("pygments")
+            get_lexer_by_name = importlib.import_module("pygments.lexers").get_lexer_by_name
+            fmt = importlib.import_module("pygments.formatters").get_formatter_by_name("html", style="monokai", nowrap=True)
+            try:
+                lang = self.lang
+                if not isinstance(lang, str):
+                    lang = ""
+                if lang.lower().startswith("conf"):
+                    lang = "cfg"
+                elif lang.lower() == "vimrc":
+                    lang = "vim"
+                compiled = pygments.highlight(
+                        self.line.s,
+                        get_lexer_by_name(lang),
+                        fmt)
+            except pygments.util.ClassNotFound:
+                compiled = pygments.highlight(
+                        self.line.s,
+                        get_lexer_by_name("text"),
+                        fmt)
+        except ModuleNotFoundError:
+            pytools.print_err("WARN 模块pygments不可用，使用基础fallback")
+            compiled = self.line.s.replace("&", "&amp;").replace("<","&lt;").replace(">","&gt")
         ret += compiled
         ret += "</pre></div>"
         return ret
@@ -1295,7 +1298,12 @@ class Document:
         if isinstance(setting,dict):
             settings.update(setting)
         if settings.get("pygments_css"):
-            css_style = pygments.formatters.get_formatter_by_name("html", style="monokai", nowrap=True).get_style_defs()
+            try:
+                get_formatter = importlib.import_module("pygments.formatters").get_formatter_by_name
+                css_style = get_formatter("html", style="monokai", nowrap=True).get_style_defs()
+            except ModuleNotFoundError:
+                css_style = ""
+                pytools.print_err("WARN 模块pygments不可用，无法获取对应css")
             self.setting["css_in_html"] += css_style
         if settings.get("mathjax_script"):
             self.setting["js_in_html"] += """\
@@ -1584,42 +1592,29 @@ def run_main() -> Document|str|None:
             return None
         inp_fname = str(inpf[-1])
         inp = inpf[-1].read_text(encoding="utf8")
-    if args.diff:
-        # pip install org-python
-        import orgpython
-        ret = orgpython.to_html(inp)
-        print(ret)
+
+    ret = Document(inp.splitlines(), file_name=inp_fname,
+                   setting={"pygments_css":args.pygments_css})
+    _set_css(args, ret)
+    if args.debug:
+        print(ret.root.to_node_tree())
+    elif args.text_mode:
+        print(" Table of Contents")
+        print("===================")
+        print(ret.table_of_content_to_text())
+        print(ret.to_text())
     else:
-        ret = Document(inp.splitlines(), file_name=inp_fname,
-                       setting={"pygments_css":args.pygments_css})
-        _set_css(args, ret)
-        if args.debug:
-            print(ret.root.to_node_tree())
-        elif args.text_mode:
-            print(" Table of Contents")
-            print("===================")
-            print(ret.table_of_content_to_text())
-            print(ret.to_text())
-            # __import__('rich').print(ret.meta)
-            # print(ret.meta)
-            # from pprint import pprint
-            # pprint(ret.status)
-            # pprint(ret.status["table_of_content"])
-            # print(ret.status["setupfiles"])
-            # pprint(vars(ret))
+        if args.auto_output:
+            Path(f"{inp_fname.replace(".org",".html")}").write_text(
+                    ret.to_html(),encoding="utf8")
         else:
-            if args.auto_output:
-                Path(f"{inp_fname.replace(".org",".html")}").write_text(
-                        ret.to_html(),encoding="utf8")
-            else:
-                print(ret.to_html())
+            print(ret.to_html())
     return ret
 
 def parse_arguments():
     """解释参数"""
-    import argparse
+    argparse=importlib.import_module("argparse")
     parser = argparse.ArgumentParser(description='解析org文件')
-    parser.add_argument('-d', '--diff', action="store_true", help='使用org-python导出')
     parser.add_argument('-i', '--input', default=None, help='指定输入文件')
     parser.add_argument('-t', '--text-mode', action="store_true", help='以text形式输出')
     parser.add_argument('-x', '--debug', action="store_true", help='调试输出')
@@ -1628,8 +1623,7 @@ def parse_arguments():
     parser.add_argument('--pygments-css', action="store_true", help='内置pygments生产的css文件')
     parser.add_argument('--feature-info', action="store_true", help='查看特性信息')
     try:
-        import argcomplete
-        argcomplete.autocomplete(parser)
+        importlib.import_module("argcomplete").autocomplete(parser)
     except ModuleNotFoundError:
         pass
     args = parser.parse_args()

@@ -9,10 +9,12 @@ import datetime
 import shutil
 import argparse
 import hashlib
+import tempfile
 from pathlib import Path
 import argcomplete
 
 class Args:
+    """临时存储参数"""
     def __init__(self) -> None:
         self.format = r"%Y%m%d_%H%M%S"
         self.ignore_timestamp = False
@@ -24,9 +26,7 @@ class Args:
         self.no_skip = False
         self.postfix = ""
         self.prefix = ""
-        self.print_recover = False
         self.recover = ["#!/usr/bin/env python","import shutil"]
-        self.recover_file = None
         self.verbose = False
     def set_arg(self, arg:argparse.Namespace):
         self.format = arg.format
@@ -39,8 +39,6 @@ class Args:
         self.no_skip = arg.no_skip
         self.postfix = arg.postfix
         self.prefix = arg.prefix
-        self.print_recover = arg.print_recover
-        self.recover_file = arg.recover_file
         self.verbose = arg.verbose
 
 ARGS = Args()
@@ -58,8 +56,6 @@ def parse_arguments() -> None:
     parser.add_argument('-k', '--keep-name', action="store_true", help='保存老名字')
     parser.add_argument('-N', '--no-skip', action="store_true", help='不跳过名字已具备类似条件的文件')
     parser.add_argument('-I', '--ignore-timestamp', action="store_true", help='忽略文件名中可能含有的时间戳')
-    parser.add_argument('-o', '--recover-file', default=None, help='指定恢复脚本输出文件')
-    parser.add_argument('-P', '--print-recover', action="store_true", help='打印恢复脚本')
     parser.add_argument('-n', '--no-apply', action='store_true', help='不进行任何更改')
     parser.add_argument('-v', '--verbose', action='store_true', help='执行时显示更多输出')
     argcomplete.autocomplete(parser)
@@ -72,12 +68,10 @@ def print_verbose(s:str):
         print(s)
 
 def save_recover():
-    if not ARGS.recover_file:
-        return
-    log_file = Path(ARGS.recover_file)
-    with log_file.open("a", encoding="utf8") as f:
-        f.write("\n".join(ARGS.recover))
-        f.close()
+    fd = tempfile.mkstemp(prefix=f"rename.rec.tmpfile.{time.strftime("%Y%m%d_%H%M%S")}.")
+    os.write(fd[0], "\n".join(ARGS.recover).encode("utf-8"))
+    os.close(fd[0])
+    print(f"INFO: 恢复文件为'{fd[1]}'")
 
 def calculate_md5(file: Path):
     hash_md5 = hashlib.md5()
@@ -174,9 +168,6 @@ def main():
         sys.exit(1)
     process_files()
     save_recover()
-    if ARGS.print_recover:
-        print("---------以下是恢复脚本---------")
-        print("\n".join(ARGS.recover))
 
 if __name__ == '__main__':
     main()
