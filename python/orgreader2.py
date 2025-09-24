@@ -41,22 +41,45 @@ class Strings:
         self.cache:dict[str,list[str]]= {}
         if isinstance(node, Root):
             self.upward = node
+    def _parse_link_find_chapter(self, s:str) -> tuple[str|None,str]:
+        doc = self.upward.document
+        level = ""
+        obj = None
+        for i in doc.status["table_of_content"]:
+            if i[-1]["title"].s != s:
+                continue
+            level = "-".join(str(j) for j in i[doc.status["lowest_title"]-1:-1])
+            obj = f"#org-title-{level}"
+        return (obj, level.replace("-","."))
     def _parse_link(self, ret, li, last):
         mode = "link"
         link = re.sub(r"\\([][])", r"\1", ret.group(1))
         match = re.match(r"((?:http[s]?:)?)(.*)",link)
         if not match:
-            pytools.print_err(f"WARN [{self.upward.document.setting["file_name"]}] re模块出问题了?(匹配为空) - {link}")
+            warninfo = f"WARN [{self.upward.document.setting["file_name"]}:{self.upward.start+1}] "
+            warninfo += f"re模块出问题了?(匹配为空) - {link}"
+            pytools.print_err(warninfo)
             return
-        # 非`http`开头(网络链接)和`#`开头: 转义(一般为文件名)
-        if not match.group(1) and not match.group(2).startswith("#"):
-            if not link.startswith("./") and not Path(link).is_file():
-                pytools.print_err(f"ERROR [{self.upward.document.setting["file_name"]}] Unable to resolve link: {link}")
-            for j in "%[]\"\\ #?":
-                if j not in link:
-                    continue
-                link = link.replace(j, f"%{hex(ord(j))[2:].upper()}")
         alt = ret.group(2)
+        # 非`http[s]:`开头(非网络链接)
+        if not match.group(1):
+            obj_link, level = self._parse_link_find_chapter(link)
+            if obj_link:
+                link = obj_link
+                if not alt:
+                    alt = level
+            elif not match.group(2).startswith("#"):
+                # 非章节名且非#开头
+                file_path = re.match(r"((?:file:)?)(.*)",link)
+                file_path = file_path.group(2) if file_path else link
+                if not link.startswith("./") and not Path(file_path).is_file():
+                    warninfo = f"ERROR [{self.upward.document.setting["file_name"]}:"+\
+                        f"{self.upward.start+1}]"
+                    pytools.print_err(f"{warninfo} Unable to resolve link: {link}")
+                for j in "%[]\"\\ #?":
+                    if j not in link:
+                        continue
+                    link = link.replace(j, f"%{hex(ord(j))[2:].upper()}")
         ret = re.match(r".*/(.*\.(?:"+"|".join(self.img_exts)+r"))",link,re.I)
         if not alt and ret:
             mode,alt = self._parse_img(ret, last)
@@ -144,7 +167,7 @@ class Strings:
             elif i[0] == "fn":
                 fns : dict = self.upward.document.status["footnotes"]
                 if not fns.get(i[1]):
-                    pytools.print_err(f"ERROR [{self.upward.document.setting["file_name"]}] 引用没有定义的脚注'{i[1]}'")
+                    pytools.print_err(f"ERROR [{self.upward.document.setting["file_name"]}:{self.upward.start+1}] 引用没有定义的脚注'{i[1]}'")
                     continue
                 fn : Footnote = fns[i[1]]
                 num = self.upward.document.status["footnote_count"]
@@ -404,19 +427,27 @@ class Meta(Root):
         elif re.match(r"http[s]?://.+", self.value):
             try:
                 req = importlib.import_module("requests").get(self.value, timeout=3)
-                pytools.print_err(f"WARN [{self.document.setting["file_name"]}] 在文件中插入外部链接可能拖慢转译速度({req.elapsed})[{self.value}]")
+                warntext = f"WARN [{self.document.setting["file_name"]}:{self.start+1}] "
+                warntext += f"在文件中插入外部链接可能拖慢转译速度({req.elapsed})[{self.value}]"
+                pytools.print_err(warntext)
                 if req.status_code == 200:
                     req.encoding = req.apparent_encoding
                     content = req.text
                 else:
-                    pytools.print_err(f"WARN [{self.document.setting["file_name"]}] 加载文件异常，状态码: {req.status_code}")
+                    warntext = f"WARN [{self.document.setting["file_name"]}:{self.start+1}] "
+                    warntext += f"加载文件异常，状态码: {req.status_code}"
+                    pytools.print_err(warntext)
             except ModuleNotFoundError:
-                pytools.print_err(f"WARN 模块requests不可用，无法调用网络setupfile")
+                pytools.print_err("WARN 模块requests不可用，无法调用网络setupfile")
             except (importlib.import_module("requests").exceptions.RequestException, IOError) as e:
-                pytools.print_err(f"WARN [{self.document.setting["file_name"]}] 加载文件错误: {e}")
+                warntext = f"WARN [{self.document.setting["file_name"]}:{self.start+1}] "
+                warntext += f"加载文件错误: {e}"
+                pytools.print_err(warntext)
                 return
         else:
-            pytools.print_err(f"WARN [{self.document.setting["file_name"]}] 异常文件名提示: '{self.value}'")
+            warntext = f"WARN [{self.document.setting["file_name"]}:{self.start+1}] "
+            warntext += f"异常文件名提示: '{self.value}'"
+            pytools.print_err(warntext)
         self.document.status["setupfiles"].append(self.value)
         doc = Document(content.splitlines(), setupfiles=self.document.status["setupfiles"])
         self.document.status["setupfiles"]=list(\
@@ -451,8 +482,8 @@ class Meta(Root):
         table = {"t":True, "nil":False}
         for option in options:
             if is_error:
-                pytools.print_err(f"ERROR [{self.document.setting["file_name"]}]:"
-                                  f"{self.document.current_line} 错误的OPTIONS: {keys}")
+                pytools.print_err(f"ERROR [{self.document.setting["file_name"]}:"
+                                  f"{self.document.current_line+1}] 错误的OPTIONS: {keys}")
                 is_error = False
             keys = option.lower().split(":")
             if len(keys) != 2:
@@ -466,6 +497,13 @@ class Meta(Root):
                     continue
                 value = table[value]
             self.document.meta["options"][key] = value
+            if is_error:
+                pytools.print_err(f"ERROR [{self.document.setting["file_name"]}:"
+                                  f"{self.document.current_line+1}] 错误的OPTIONS: {keys}")
+                is_error = False
+        if is_error:
+            pytools.print_err(f"ERROR [{self.document.setting["file_name"]}:"
+                              f"{self.document.current_line+1}] 错误的OPTIONS: {keys}")
     def to_text(self) -> str:
         if self.key == "caption":
             self.document.meta["caption"] = (self.start, self.value)
@@ -545,7 +583,7 @@ class Title(TitleBase):
         if todo:
             self.line.s = " ".join(self.line.s.split()[ind:])
             self.todo = todo
-        li.append({"title":self.line.to_text(), "tag":self.tag.s,
+        li.append({"title":self.line, "tag":self.tag.s,
                    "todo":todo, "start":self.start, "comment":self.comment})
         self.id = li
         if not self.comment:
@@ -755,7 +793,12 @@ class ListItem(Root):
         return text
     def to_html(self) -> str:
         text = ""
-        if isinstance(self.child[0], Text):
+        flag = True
+        for i in self.child[1:]:
+            if not isinstance(i, (Comment, List)):
+                flag = False
+                break
+        if isinstance(self.child[0], Text) and flag:
             text += f"{self.child[0].line.to_html()}\n"
         else:
             text += f"{self.child[0].to_html()}\n"
@@ -882,7 +925,7 @@ class BlockCode(Block):
         lines = [re.sub(f"^{" "*self.baise}", "", i) for i in lines]
         self.line = ""
         for i in lines:
-            i = re.sub(r"^(?: *),([*,]|#\+)", r"\1", i)
+            i = re.sub(r"^( *),([*,]|#\+)", r"\1\2", i)
             self.line += f"{i}\n"
         self.line = Strings(self.line, self)
         return True
@@ -1205,7 +1248,7 @@ class Table(TextBase):
 
 #^ *#\+begin_([^ \n]+)(?:[ ]+(.*?))?\n(.*?)^ *#\+end_\1\n?
 RULES = {
-    "Meta":         {"match":re.compile(r"^[ ]*#\+([^:]*):[ ]*(.*)", re.I), "class":Meta},
+    "Meta":         {"match":re.compile(r"^[ ]*#\+([^: ]*)(?! ):[ ]*(.*)", re.I), "class":Meta},
     "Footnotes":    {"match":re.compile(
                         r"^([*]+) +(Footnotes *.*)(?: +:(.*):)?"),
                      "class":Footnotes,
@@ -1396,7 +1439,7 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
                 continue
             if isinstance(j, dict):
                 ret1 = f"{"."*((count-1)*3-1)}{" " if count>1 else ""}{lastest}. "
-                ret1+=f"{f"{j["todo"][1]} " if j["todo"] else ""}{j["title"]}"
+                ret1+=f"{f"{j["todo"][1]} " if j["todo"] else ""}{j["title"].to_text()}"
                 if j["tag"]:
                     ret1=pytools.get_str_in_width(f"{ret1}", 40, align="<l>")
                     ret1+=f":{j["tag"]}:"
@@ -1422,7 +1465,7 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
                 text = f"{level} "
             if i[-1]["todo"]:
                 text+=f"<span class=\"todo {i[-1]["todo"][0]}\">{i[-1]["todo"][1]}</span> "
-            text+=f"{i[-1]["title"]}"
+            text+=f"{i[-1]["title"].to_text()}"
             if i[-1]["tag"]:
                 text+=f"""{"&nbsp;"*3}<span class="tag">"""
                 tags = i[-1]["tag"].split(":")
@@ -1603,6 +1646,8 @@ def run_main() -> Document|str|None:
         print("===================")
         print(ret.table_of_content_to_text())
         print(ret.to_text())
+        for i in ret.status["table_of_content"]:
+            pytools.print_err(i)
     else:
         if args.auto_output:
             Path(f"{inp_fname.replace(".org",".html")}").write_text(

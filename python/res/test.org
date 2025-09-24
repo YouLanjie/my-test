@@ -37,16 +37,22 @@
 #+end_src
 
 * meta与注释测试
-#+nonexistmeta
-#+非法meta键
-# comment message
-# 注释信息
-#+ metawithspace
-#+ 有空格的meta
-#+nonexistwithvaluemeta: 《非法带值meta键测试》
+#+非法meta格式
+#+有冒号的合法meta格式:
 #+describe:
-#合法但空的meta/不带空格的注释
-# 带空格的注释
+#+nonexistwithvaluemeta: 《非法带值meta键测试》
+#+ 有冒号与后面有空格的meta格式: test1
+ #+有冒号与前面有空格的meta格式: test2
+#+内含 空格测试: 2
+#+_下划线开头测试: 4
+#+/其他字符开头测试: 5
+#+*其他字符开头测试: 5
+#+%其他字符开头测试: 5
+#+-其他字符开头测试: 5
+#不带空格的注释
+# comment message
+# 注释信息 / 带空格的注释
+   # 前面有空格的注释
 *** 跳跃型子标题测试1
 ** 子标题测试1
 **** 跳跃型子标题测试2
@@ -151,6 +157,32 @@ options设定的标题时，会出现忘记添加 =<ul>= 或者 =<ol>= 标签，
 ******* level7.4
 ***** level5.3
 
+** 链接对标题的引用功能测试
+*** 1
+**** 2
+*** 3
+*** 4
+*** COMMENT 5
+*** TODO 6
+*** TODO COMMENT 7
+*** 8[[http://baidu.com]]
+*** 9[[file:///home/Chglish/Pictures/本地/编辑/2025_08_20_开学倒计时/2025_08_20_开学倒计时_16x10_withouttext.png]]
+*** 10
+- [[1]]
+- [[2]]
+- [[3]]
+- [[4]]
+- [[6]]
+- [[8\[\[http://baidu.com\]\]]]
+- [[9\[\[file:///home/Chglish/Pictures/本地/编辑/2025_08_20_开学倒计时/2025_08_20_开学倒计时_16x10_withouttext.png\]\]]]
+- [[10][RENAME]]
+- [[11]]
+- [[12 \[\[http://baidu.com\]\]]]
+# - [[5][因为注释这个会报错]]
+# - [[7][这个也会报错(注释原因)]]
+*** 11
+*** 12 [[http://baidu.com]]
+
 * 列表测试
 - level1(ind0)
  子内容-1(lv1)
@@ -230,6 +262,28 @@ options设定的标题时，会出现忘记添加 =<ul>= 或者 =<ol>= 标签，
       - test2
     #+end_quote
     - level3
+
+- 套p测试
+  - 1
+  - 2
+    | table |
+  - 3
+    #+begin_quote
+    4
+    #+end_quote
+  - 5
+
+    6
+  - 7
+  - 8
+    - 9
+  - 10
+    # 11
+    - 12
+  - 13
+    | 14 |
+    - 15
+  #+title: test
 ** 其他列表测试
 - li1: =-=
   + li2: =+=
