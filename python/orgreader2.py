@@ -422,8 +422,10 @@ class Meta(Root):
     def _load_sub_setupfile(self):
         content = ""
         setupfile=Path(f"{Path(self.document.setting["file_name"]).parent}/{self.value}")
+        setupfile_name = ""
         if setupfile.is_file():
             content = setupfile.read_text(encoding="utf8")
+            setupfile_name = str(setupfile)
         elif re.match(r"http[s]?://.+", self.value):
             try:
                 req = importlib.import_module("requests").get(self.value, timeout=3)
@@ -449,7 +451,9 @@ class Meta(Root):
             warntext += f"异常文件名提示: '{self.value}'"
             pytools.print_err(warntext)
         self.document.status["setupfiles"].append(self.value)
-        doc = Document(content.splitlines(), setupfiles=self.document.status["setupfiles"])
+        doc = Document(content.splitlines(),
+                       file_name=setupfile_name,
+                       setupfiles=self.document.status["setupfiles"])
         self.document.status["setupfiles"]=list(\
                 set(self.document.status["setupfiles"])&\
                 set(doc.status["setupfiles"])
