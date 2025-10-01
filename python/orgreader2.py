@@ -3,7 +3,7 @@
 
 # 标准库
 from pathlib import Path
-import time
+import datetime
 import re
 import gzip
 import importlib
@@ -13,6 +13,17 @@ try:
 except ImportError:
     import pytools
 
+def _get_strtime(dt:datetime.datetime = datetime.datetime.now(), h=True,m=True,s=True) -> str:
+    t = dt.strftime("%Y-%m-%d ")
+    t += "一二三四五六日"[dt.weekday()]
+    l = [i[1] for i in ((h,"%H"),(m,"%M"),(s,"%S")) if i[0]]
+    t += dt.strftime(" "+":".join(l) if l else "")
+    return t
+
+def _html_filter(s:str):
+    s = s.replace("&", "&amp;").replace("<","&lt;").replace(">","&gt;")
+    return s
+
 def _get_strings_pattern(s:str,blank_char=" )-,") -> re.Pattern:
     return re.compile(f"{s}([^ ].*?(?<! )){s}(?=[{blank_char}]|\n|$)",
                       re.DOTALL)
@@ -20,7 +31,9 @@ def _get_strings_pattern(s:str,blank_char=" )-,") -> re.Pattern:
 class Strings:
     """行内字符串类，提供行内格式转换"""
     pattern = [
-            ("link", re.compile(r"^\[\[((?:[^\[\]\\]|\\.)*)(?:\]\[((?:[^\[\]\\]|\\.)*))?\]\]")),
+            ("link", re.compile(r"^\[\[((?:[^\[\]\\]|\\.)*)(?:\]\[(.*?))?\]\]")),
+            ("timestamp",
+             re.compile(r"([\[<])(\d{4})-(\d{2})-(\d{2})(?:\D*(?<= )(\d\d?):(\d{2}).*|.*)[\]>]")),
             ("fn", re.compile(r"\[fn:([^]]*)\]")),
             ("code", _get_strings_pattern("=")),
             ("code", _get_strings_pattern("~")),
@@ -34,7 +47,7 @@ class Strings:
              "italic":("<i>", "</i>"),
              "bold":("<b>", "</b>"),
              "del":("<del>", "</del>"),
-             "underline":("<span class=\"underline\">", "</span>")}
+             "underline":("<span class=\"underline\">", "</span>"),}
     def __init__(self, s:str, node, parse_able : bool = True) -> None:
         self.s = s
         self.parse_able = parse_able
@@ -56,9 +69,7 @@ class Strings:
         link = re.sub(r"\\([][])", r"\1", ret.group(1))
         match = re.match(r"((?:http[s]?:)?)(.*)",link)
         if not match:
-            warninfo = f"WARN [{self.upward.document.setting["file_name"]}:{self.upward.start+1}] "
-            warninfo += f"re模块出问题了?(匹配为空) - {link}"
-            pytools.print_err(warninfo)
+            self.log(f"re模块出问题了?(匹配为空) - {link}")
             return
         alt = ret.group(2)
         # 非`http[s]:`开头(非网络链接)
@@ -73,10 +84,8 @@ class Strings:
                 file_path = re.match(r"((?:file:)?)(.*)",link)
                 file_path = file_path.group(2) if file_path else link
                 if not link.startswith("./") and not Path(file_path).is_file():
-                    warninfo = f"ERROR [{self.upward.document.setting["file_name"]}:"+\
-                        f"{self.upward.start+1}]"
-                    pytools.print_err(f"{warninfo} Unable to resolve link: {link}")
-                for j in "%[]\"\\ #?":
+                    self.log(f"无法解决的链接: {link}", "ERROR")
+                for j in "%[]\"\\ #?|<>":
                     if j not in link:
                         continue
                     link = link.replace(j, f"%{hex(ord(j))[2:].upper()}")
@@ -89,14 +98,29 @@ class Strings:
             alt = self.orgtext_to_list(alt , True)
         li.append([mode, link, alt])
     def _parse_img(self, ret, last):
+        """处理为img的link，返还alt后再转list"""
         mode = "img"
         alt = ret.group(1)
-        caption = self.upward.document.meta["caption"]
-        if not isinstance(self.upward, Title) and\
-                caption[0] == self.upward.start-1 and last == 0:
+        caption = self.upward.document.meta["caption"].get(self.upward.start-1)
+        if not isinstance(self.upward, Title) and caption and last == 0:
             mode = "figure"
-            alt = caption[1]
+            alt = caption
         return mode, alt
+    def _parse_timestamp(self, ret:re.Match, li:list):
+        chr_typ, year, month, day, hours, minutes = ret.groups()
+        enable_hm = bool(hours and minutes)
+        year, month, day, hours, minutes = int(year), int(month), int(day), \
+                int(hours or 0), int(minutes or 0)
+
+        day -= 1
+        year += (month-1) // 12
+        month = ([12]+list(range(1,12)))[month % 12]
+        timestamp = minutes*60 + hours*(60**2)
+        timestamp += datetime.datetime(year,month,1).timestamp()+day*(60**2*24)
+        s = _get_strtime(datetime.datetime.fromtimestamp(timestamp),h=enable_hm,m=enable_hm,s=False)
+        chr_typ2 = "]" if chr_typ == "[" else ">"
+        s = f"{chr_typ}{s}{chr_typ2}"
+        li.append(["timestamp", s])
     def orgtext_to_list(self, s:str, is_sub = False) -> list[str]:
         """解释行内字符串变成数组"""
         if not is_sub and self.cache.get(s):
@@ -120,6 +144,8 @@ class Strings:
                 i+=ret.span()[1]
                 if current_pattern[0] == "link":
                     self._parse_link(ret, li, last)
+                elif current_pattern[0] == "timestamp":
+                    self._parse_timestamp(ret, li)
                 elif current_pattern[0] == "code":
                     li.append([current_pattern[0], [ret.group(1)]])
                 elif current_pattern[0] == "fn":
@@ -143,31 +169,33 @@ class Strings:
             return ""
         ret = ""
         last_stat = ""
+        i : str | list = ""
         for i in li:
             if isinstance(i, str):
-                i = i.replace("\n", "<br/>")
+                i = _html_filter(i).replace("\n", "<br/>")
                 ret+=i
                 continue
+            i = [_html_filter(i) if isinstance(i, str) else i for i in i]
             if i[0] == "link":
-                ret += f"""\n<a href="{i[1]}">{self.list_to_html(i[2])}</a>"""
+                ret += f"""\n<a href={repr(i[1])}>{self.list_to_html(i[2])}</a>"""
             elif i[0] == "img":
                 ret += "<div class=\"figure\"><p>" \
                         if isinstance(self.upward, Text) and \
                         not self.upward.opt.get("in_list") and len(li) == 1 else ""
-                ret += f"""\n<img src="{i[1]}" alt="{self.list_to_html(i[2])}" />\n"""
+                ret += f"""\n<img src={repr(i[1])} alt="{self.list_to_html(i[2])}" />\n"""
                 ret += "</p></div>\n" \
                         if isinstance(self.upward, Text) and \
                         not self.upward.opt.get("in_list") and len(li) == 1 else ""
             elif i[0] == "figure":
                 self.upward.document.status["figure_count"]+=1
-                ret += f"""\n<div class="figure">\n<p><img src="{i[1]}" alt="{i[1]}" /></p>\n"""
+                ret += f"""\n<div class="figure">\n<p><img src={repr(i[1])} alt={repr(i[1])} /></p>\n"""
                 ret += """<p><span class="figure-number">Figure """+\
                         f"""{self.upward.document.status["figure_count"]}: </span>"""+\
                         f"""{self.list_to_text(i[2])}</p></div>"""
             elif i[0] == "fn":
                 fns : dict = self.upward.document.status["footnotes"]
                 if not fns.get(i[1]):
-                    pytools.print_err(f"ERROR [{self.upward.document.setting["file_name"]}:{self.upward.start+1}] 引用没有定义的脚注'{i[1]}'")
+                    self.log(f"引用没有定义的脚注'{i[1]}'", "ERROR")
                     continue
                 fn : Footnote = fns[i[1]]
                 num = self.upward.document.status["footnote_count"]
@@ -185,6 +213,12 @@ class Strings:
                 ret += f"""href="#fn.{name}" role="doc-backlink">"""
                 outline = self.upward.document.setting["footnote_style"]
                 ret += f"""{outline[0]}{num}{outline[1]}</a></sup>"""
+            elif i[0] == "timestamp":
+                ret += '<span class="timestamp-wrapper"><span class="timestamp">'
+                ret += f"{i[1]}"
+                ret += '</span></span>'
+                ret += last_stat
+                last_stat = ""
             elif i[0] in self.rules:
                 ret += f"""{self.rules[i[0]][0]}{self.list_to_html(i[1])}{self.rules[i[0]][1]}"""
                 ret += last_stat
@@ -212,6 +246,12 @@ class Strings:
                 ret += f"""![{self.list_to_text(i[2])}]({i[1]})"""
             elif i[0] == "figure":
                 ret += f"""![{self.list_to_text(i[2])}]({i[1]})"""
+            elif i[0] == "timestamp":
+                ret += '<span class="timestamp-wrapper"><span class="timestamp">'
+                ret += f"{i[1]}"
+                ret += '</span></span>'
+                ret += last_stat
+                last_stat = ""
             elif i[0] in self.rules:
                 ret += f"""{self.rules[i[0]][0]}{self.list_to_text(i[1])}{self.rules[i[0]][1]} """
                 ret += last_stat
@@ -243,6 +283,9 @@ class Strings:
                 continue
             text+=f"{self.get_separator_between(text, i)}{i}"
         return text
+    def log(self, info = "", lv="WARN"):
+        """打印日志"""
+        self.upward.log(info, lv)
     def to_text(self) -> str:
         """输出行内文本"""
         if not self.parse_able:
@@ -254,9 +297,6 @@ class Strings:
         if not self.parse_able:
             return re.sub("\n", " ", self.s)
         text = self.get_pre_text()
-        text = re.sub("&", r"&amp;", text)
-        text = re.sub("<", r"&lt;", text)
-        text = re.sub(">", r"&gt;", text)
         return self.list_to_html(self.orgtext_to_list(text))
 
 class Root:
@@ -320,6 +360,11 @@ class Root:
     @property
     def _summary(self):
         return f"('{self.line.s}')"
+    def log(self, info = "", lv="WARN"):
+        """打印日志"""
+        warntext = f"{lv} [{self.document.setting["file_name"]}:{self.start+1}] "
+        warntext += info
+        pytools.print_err(warntext)
     def to_node_tree(self) -> str:
         """返回节点树"""
         ret = str(self)
@@ -419,6 +464,8 @@ class Meta(Root):
         elif self.key == "options":
             self._process_options()
             return
+        elif self.key == "caption":
+            self.document.meta[self.key][self.start] = self.value
     def _load_sub_setupfile(self):
         content = ""
         setupfile=Path(f"{Path(self.document.setting["file_name"]).parent}/{self.value}")
@@ -429,27 +476,19 @@ class Meta(Root):
         elif re.match(r"http[s]?://.+", self.value):
             try:
                 req = importlib.import_module("requests").get(self.value, timeout=3)
-                warntext = f"WARN [{self.document.setting["file_name"]}:{self.start+1}] "
-                warntext += f"在文件中插入外部链接可能拖慢转译速度({req.elapsed})[{self.value}]"
-                pytools.print_err(warntext)
+                self.log(f"在文件中插入外部链接可能拖慢转译速度({req.elapsed})[{self.value}]")
                 if req.status_code == 200:
                     req.encoding = req.apparent_encoding
                     content = req.text
                 else:
-                    warntext = f"WARN [{self.document.setting["file_name"]}:{self.start+1}] "
-                    warntext += f"加载文件异常，状态码: {req.status_code}"
-                    pytools.print_err(warntext)
+                    self.log(f"加载文件异常，状态码: {req.status_code}")
             except ModuleNotFoundError:
-                pytools.print_err("WARN 模块requests不可用，无法调用网络setupfile")
+                self.log("模块requests不可用，无法调用网络setupfile")
             except (importlib.import_module("requests").exceptions.RequestException, IOError) as e:
-                warntext = f"WARN [{self.document.setting["file_name"]}:{self.start+1}] "
-                warntext += f"加载文件错误: {e}"
-                pytools.print_err(warntext)
+                self.log(f"加载文件错误: {e}")
                 return
         else:
-            warntext = f"WARN [{self.document.setting["file_name"]}:{self.start+1}] "
-            warntext += f"异常文件名提示: '{self.value}'"
-            pytools.print_err(warntext)
+            self.log(f"异常文件名提示: '{self.value}'")
         self.document.status["setupfiles"].append(self.value)
         doc = Document(content.splitlines(),
                        file_name=setupfile_name,
@@ -486,8 +525,7 @@ class Meta(Root):
         table = {"t":True, "nil":False}
         for option in options:
             if is_error:
-                pytools.print_err(f"ERROR [{self.document.setting["file_name"]}:"
-                                  f"{self.document.current_line+1}] 错误的OPTIONS: {keys}")
+                self.log(f"错误的OPTIONS: {keys}", "ERROR")
                 is_error = False
             keys = option.lower().split(":")
             if len(keys) != 2:
@@ -502,19 +540,13 @@ class Meta(Root):
                 value = table[value]
             self.document.meta["options"][key] = value
             if is_error:
-                pytools.print_err(f"ERROR [{self.document.setting["file_name"]}:"
-                                  f"{self.document.current_line+1}] 错误的OPTIONS: {keys}")
+                self.log(f"错误的OPTIONS: {keys}", "ERROR")
                 is_error = False
         if is_error:
-            pytools.print_err(f"ERROR [{self.document.setting["file_name"]}:"
-                              f"{self.document.current_line+1}] 错误的OPTIONS: {keys}")
+            self.log(f"错误的OPTIONS: {keys}", "ERROR")
     def to_text(self) -> str:
-        if self.key == "caption":
-            self.document.meta["caption"] = (self.start, self.value)
         return ""
     def to_html(self) -> str:
-        if self.key == "caption":
-            self.document.meta["caption"] = (self.start, self.value)
         return ""
 
 class TitleBase(Root):
@@ -968,8 +1000,8 @@ class BlockCode(Block):
                         get_lexer_by_name("text"),
                         fmt)
         except ModuleNotFoundError:
-            pytools.print_err("WARN 模块pygments不可用，使用基础fallback")
-            compiled = self.line.s.replace("&", "&amp;").replace("<","&lt;").replace(">","&gt")
+            self.log("模块pygments不可用，使用基础fallback")
+            compiled = _html_filter(self.line.s)
         ret += compiled
         ret += "</pre></div>"
         return ret
@@ -1326,7 +1358,7 @@ class Document:
             "setupfile":[],
             "html_link_home":"",
             "html_link_up":"",
-            "caption":(-2, ""),
+            "caption":{},
             "html_head":[],
             "seq_todo":{"todo":["TODO"], "done":["DONE"]},
             # H:最大视为标题等级
@@ -1350,7 +1382,7 @@ class Document:
                 css_style = get_formatter("html", style="monokai", nowrap=True).get_style_defs()
             except ModuleNotFoundError:
                 css_style = ""
-                pytools.print_err("WARN 模块pygments不可用，无法获取对应css")
+                self.root.log("模块pygments不可用，无法获取对应css")
             self.setting["css_in_html"] += css_style
         if settings.get("mathjax_script"):
             self.setting["js_in_html"] += """\
@@ -1568,9 +1600,7 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
 {f"<p class=\"author\">作者: {" ".join(self.meta["author"])}</p>\n" if self.meta["author"] else ""}\
 {f"<p class=\"description\">描述: {" ".join(self.meta["description"])}</p>\n" \
 if self.meta["description"] else ""}\
-<p class="date">生成于: \
-{time.strftime("%Y-%m-%d")} {"一二三四五六日"[int(time.strftime("%w"))]} \
-{time.strftime("%H:%M:%S")}</p>
+<p class="date">生成于: {_get_strtime()}</p>
 </div>
 """
         html += "</body>\n</html>"
@@ -1582,11 +1612,11 @@ def _set_css(args, doc:Document):
     if not args.emacs_css:
         return
     if not list(Path("/usr/share/emacs/").glob("**/ox-html.el.gz")):
-        pytools.print_err(f"WARN [{doc.setting["file_name"]}] 内嵌emacs内置css失败 - 找不到文件")
+        doc.root.log("内嵌emacs内置css失败 - 找不到文件")
         return
     css_file = list(Path("/usr/share/emacs/").glob("**/ox-html.el.gz"))[0]
     if not css_file.is_file():
-        pytools.print_err(f"WARN [{doc.setting["file_name"]}] 内嵌emacs内置css失败 - 不是文件:{css_file}")
+        doc.root.log(f"内嵌emacs内置css失败 - 不是文件:{css_file}")
         return
     css_content = gzip.decompress(css_file.read_bytes()).decode()
     match = re.search(
