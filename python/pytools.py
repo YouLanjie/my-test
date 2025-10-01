@@ -64,7 +64,10 @@ def calculate_relative(p1:Path, p2:Path) -> Path:
     parents.sort()
     both_parent = parents[-1]
     relative = p1.resolve().relative_to(both_parent)
-    back_relative = "../"*len(p2.resolve().relative_to(both_parent).parts)
+    depth = len(p2.resolve().relative_to(both_parent).parts)
+    if not p2.is_dir():
+        depth -= 1
+    back_relative = "../"*depth
     return Path(f"./{back_relative}/{relative}")
 
 def calculate_relative2(p1:Path, p2:Path) -> Path:
@@ -75,5 +78,8 @@ def calculate_relative2(p1:Path, p2:Path) -> Path:
     parents.sort()
     both_parent = parents[-1]
     relative = p1.absolute().relative_to(both_parent)
-    back_relative = "../"*len(p2.absolute().relative_to(both_parent).parts)
+    depth = len(p2.absolute().relative_to(both_parent).parts)
+    if not p2.is_dir():
+        depth -= 1
+    back_relative = "../"*depth
     return Path(f"./{back_relative}/{relative}")
