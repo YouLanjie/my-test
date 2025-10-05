@@ -1316,7 +1316,7 @@ RULES = {
                      "class":BlockVerse,
                      "end":re.compile(r"^ *#\+end_verse", re.I)},
     "Comment":      {"match":re.compile(r"^[ ]*#[ ]+(.*)", re.I),"class":Comment},
-    "List":         {"match":re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.))( +(?:.*)|$)", re.I),
+    "List":         {"match":re.compile(r"^( *)(-|\+|(?<!^)\*|[0-9]+(?:\)|\.))( +(?:.*)|$)", re.I),
                      "class":List,
                      "end":re.compile(r"^( *)(.*)", re.I)},
     "Table":        {"match":re.compile(r"^ *\|", re.I), "class":Table},

@@ -507,8 +507,19 @@ quote块和src块交错测试
 #+end_quote
 #+end_src
 
-** quote测试
+#+CAPTION: src block的caption
+#+begin_src text
+  使用了caption的src block
+#+end_src
 
+#+CAPTION: src block的caption+name
+#+name: specialsrcblock
+#+begin_src text
+  使用了caption+name的src block
+#+end_src
+
+跳转回:史莱姆
+** quote测试
 *** quote+list循环嵌套
 - Lv1
 #+begin_quote
@@ -993,7 +1004,72 @@ CAPTION测试
 
 #+CAPTION: 标题图片*2
 *** [[./test.jpg]]
+*** 其他互相引用的链接
+Dedicated targets:<<Dedicated targets>>(自我标记的链接)
 
+很明显，它不会显示
+
+引用:[[Dedicated targets]]; [[Dedicated targets][引用]]
+
+Radio targets(全局自动产生链接):\\
+<<<史莱姆>>>，一个汉语词汇(这个到会显示)
+
+测试:史莱姆王
+
+史
+莱姆
+
+史莱
+姆
+
+<<<史莱 姆>>>，空格测试
+
+<<<字符
+串>>>
+
+<<<重复全局链接>>>，重复全局链接1
+
+<<<重复全局链接>>>，重复全局链接2
+
+<<<全局链接>>>,测试嵌套问题:
+
+全局链接;重复全局链接
+
+引用pre的NAME:[[specialsrcblock]]
+
+[[http://bilibili.com][h<<<B站>>>e]](嵌套否?)
+
+B站，B站NB
+
+显然不可
+
+<<<tall>>>,tall,taller,tall1,tall点
+
+<<<2025-10-02 Thu>>>
+
+<2025-10-02 Thu>
+
+2025-10-02 Thu
+*** 史莱姆
+#+NAME: unique_id
+| TaBlE1  | tb2 |
+|---------+-----|
+| content | ct2 |
+
+#+NAME: unique_id2
+| TABLE1  | tb2 |
+|---------+-----|
+| content | ct2 |
+
+#+CAPTION: 这里不会有效果
+#+NAME: unique_id
+#+begin_quote
+It just a quote
+#+end_quote
+
+[[unique_id]]
+
+[[unique_id2]]
 ** code
 这里是一长=code1=串用于客串用的字符串
 
