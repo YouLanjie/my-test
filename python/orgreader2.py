@@ -72,6 +72,7 @@ class Strings:
             self.log(f"re模块出问题了?(匹配为空) - {link}")
             return
         alt = ret.group(2)
+        original_link = link
         # 非`http[s]:`开头(非网络链接)
         if not match.group(1):
             obj_link, level = self._parse_link_find_chapter(link)
@@ -93,7 +94,7 @@ class Strings:
         if not alt and ret:
             mode,alt = self._parse_img(ret, last)
         elif not alt:
-            alt = link
+            alt = original_link
         if alt and mode != "img":
             alt = self.orgtext_to_list(alt , True)
         li.append([mode, link, alt])
@@ -177,18 +178,18 @@ class Strings:
                 continue
             i = [_html_filter(i) if isinstance(i, str) else i for i in i]
             if i[0] == "link":
-                ret += f"""\n<a href={repr(i[1])}>{self.list_to_html(i[2])}</a>"""
+                ret += f"""\n<a href="{i[1]}">{self.list_to_html(i[2])}</a>"""
             elif i[0] == "img":
                 ret += "<div class=\"figure\"><p>" \
                         if isinstance(self.upward, Text) and \
                         not self.upward.opt.get("in_list") and len(li) == 1 else ""
-                ret += f"""\n<img src={repr(i[1])} alt="{self.list_to_html(i[2])}" />\n"""
+                ret += f"""\n<img src="{i[1]}" alt="{self.list_to_html(i[2])}" />\n"""
                 ret += "</p></div>\n" \
                         if isinstance(self.upward, Text) and \
                         not self.upward.opt.get("in_list") and len(li) == 1 else ""
             elif i[0] == "figure":
                 self.upward.document.status["figure_count"]+=1
-                ret += f"""\n<div class="figure">\n<p><img src={repr(i[1])} alt={repr(i[1])} /></p>\n"""
+                ret += f"""\n<div class="figure">\n<p><img src="{i[1]}" alt="{i[1]}" /></p>\n"""
                 ret += """<p><span class="figure-number">Figure """+\
                         f"""{self.upward.document.status["figure_count"]}: </span>"""+\
                         f"""{self.list_to_text(i[2])}</p></div>"""

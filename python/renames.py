@@ -27,6 +27,7 @@ class Args:
         self.postfix = ""
         self.prefix = ""
         self.recover = ["#!/usr/bin/env python","import shutil"]
+        self.vfat_name = False
         self.verbose = False
     def set_arg(self, arg:argparse.Namespace):
         self.format = arg.format
@@ -39,6 +40,7 @@ class Args:
         self.no_skip = arg.no_skip
         self.postfix = arg.postfix
         self.prefix = arg.prefix
+        self.vfat_name = arg.vfat_name
         self.verbose = arg.verbose
 
 ARGS = Args()
@@ -58,6 +60,7 @@ def parse_arguments() -> None:
     parser.add_argument('-I', '--ignore-timestamp', action="store_true", help='忽略文件名中可能含有的时间戳')
     parser.add_argument('-n', '--no-apply', action='store_true', help='不进行任何更改')
     parser.add_argument('-v', '--verbose', action='store_true', help='执行时显示更多输出')
+    parser.add_argument('-V', '--vfat-name', action='store_true', help='更改文件名使其符合vfat对文件名的要求')
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
     ARGS.set_arg(args)
@@ -135,6 +138,12 @@ def process_files():
             target = Path(f"{target_format[0]}{target_mdfiytime}{target_format[1]}")
             if target.exists() and file.resolve() != target.resolve():
                 target = Path(f"{target_format[0]}{target_mdfiytime}_{calculate_md5(file)}{target_format[1]}")
+        if ARGS.vfat_name:
+            replacement = ["\\/:*?\"<>", "＼／∶＊？＂〈〉｜"]
+            name = target.name
+            for k,l in zip(list(replacement[0]), list(replacement[1])):
+                name=name.replace(k, l)
+            target = target.parent/name
 
         if file.resolve() == target.resolve():
             print_verbose(f"INFO 跳过:等价的路径'{file}' - '{target}'")
