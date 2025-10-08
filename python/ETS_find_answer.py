@@ -4,8 +4,9 @@
 import sys
 from pathlib import Path
 import json
+import pprint
 
-ets_path = "/storage/emulated/0/Android/data/com.ets100.secondary/files/Download/ETS_SECONDARY/resource/"
+ETS_PATH = "/storage/emulated/0/Android/data/com.ets100.secondary/files/Download/ETS_SECONDARY/resource/"
 
 """
 structure_type: type = collector.picture, collector.3q5a, collector.read
@@ -86,7 +87,7 @@ class Docum():
         return t
 
 def run_main():
-    input_f = list(Path(ets_path).glob("**/content.json"))
+    input_f = list(Path(ETS_PATH).glob("**/content.json"))
     if len(input_f) == 0:
         print("[!] no input file was found")
         return 0
@@ -98,7 +99,7 @@ def run_main():
         if docum.type is not None:
             docs.append(docum)
     for i in docs:
-        print(i.get_content)
+        pprint.pprint(i.get_content)
 
 if __name__ == "__main__":
     run_main()
