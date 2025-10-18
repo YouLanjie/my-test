@@ -11,7 +11,6 @@ import argparse
 import hashlib
 import tempfile
 from pathlib import Path
-import argcomplete
 
 class Args:
     """临时存储参数"""
@@ -61,7 +60,10 @@ def parse_arguments() -> None:
     parser.add_argument('-n', '--no-apply', action='store_true', help='不进行任何更改')
     parser.add_argument('-v', '--verbose', action='store_true', help='执行时显示更多输出')
     parser.add_argument('-V', '--vfat-name', action='store_true', help='更改文件名使其符合vfat对文件名的要求')
-    argcomplete.autocomplete(parser)
+    try:
+        __import__("argcomplete").autocomplete(parser)
+    except ModuleNotFoundError:
+        pass
     args = parser.parse_args()
     ARGS.set_arg(args)
     return
@@ -160,7 +162,7 @@ def process_files():
             if not ARGS.no_apply:
                 shutil.move(file, target)
             print_verbose(f"INFO 移动: {file} -> {target}")
-            ARGS.recover.append(f"shutil.move(\"{target.absolute()}\", \"{file.absolute()}\")")
+            ARGS.recover.append(f"shutil.move({repr(str(target.absolute()))}, {repr(str(file.absolute()))})")
             processed += 1
         except Exception as e:
             print(f"ERROR 处理文件失败:{file} - {str(e)}")
