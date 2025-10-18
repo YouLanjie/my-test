@@ -63,6 +63,11 @@ class Message:
         self.timestamp = datetime.now().timestamp()
         self.owner = user.id
         self.content = content
+        self._id = str(uuid.uuid1())
+    @property
+    def id(self) -> str:
+        """UUID1，用于标识该条聊天记录"""
+        return self._id
     def dump_data(self) -> dict:
         "dump data for json"
         return vars(self)
@@ -85,11 +90,14 @@ class System:
                           "timestamp":1753027641.0,
                           "_id":"7d87fb06-64c9-45bc-8b24-397c60d6001b"})
         self.users.append(system)
+        self.system = system
+        self.load()
     def print_users(self) -> None:
         """print all users"""
         for u in self.users:
             print(f"({get_strtime(u.timestamp)})[{u.name}]:\"{u.note}\"")
     def print_self(self) -> None:
+        """打印登录用户自身信息"""
         if not self.now_user:
             print("[WARN] 你尚未登录")
             return
@@ -108,6 +116,9 @@ class System:
                 name = input("[INPUT] 用户名:")
                 if name in {u.name for u in self.users}:
                     print(f"[WARN] 用户 '{name}' 已存在")
+                    print("[INFO] 请重试(C-d取消)")
+                elif not name:
+                    print("[WARN] 用户名不能为空")
                     print("[INFO] 请重试(C-d取消)")
                 else:
                     break
@@ -145,6 +156,8 @@ class System:
                 print("[INFO] 操作取消")
                 return
         self.now_user = user
+        if user.login_record:
+            print(f"[INFO] 上次登录：{get_strtime(user.login_record[-1])}")
         user.login_record.append(datetime.now().timestamp())
     def logout(self):
         """登出"""
@@ -156,49 +169,74 @@ class System:
         if self.savefile.is_dir():
             print("[WARN] savefile is dir")
             return
-        t = json.dumps({"users":[u.dump_data() for u in self.users],
-                        "messages":[m.dump_data() for m in self.messages]},
-                       ensure_ascii=False, indent=2)
+        data = {"users":[u.dump_data() for u in self.users],
+                "messages":[m.dump_data() for m in self.messages],
+                "hash":["", ""]}
+        data["hash"] = [hashlib.md5(str(data["users"]).encode()).hexdigest(),
+                        hashlib.md5(str(data["messages"]).encode()).hexdigest()]
+        # t = json.dumps(data, ensure_ascii=False, indent=2)
+        t = json.dumps(data)
         self.savefile.write_text(t, encoding="utf-8")
         # print(t)
     def load(self) -> None:
         """读取数据"""
         if not self.savefile.is_file():
             print("[WARN] 数据文件不存在")
+            self.syslog("[INFO] 聊天室建立")
             return
         try:
-            data = json.loads(self.savefile.read_text(encoding="utf-8"))
-        except UnicodeDecodeError:
-            data = json.loads(self.savefile.read_text(encoding="gbk"))
+            try:
+                data = json.loads(self.savefile.read_text(encoding="utf-8"))
+            except UnicodeDecodeError:
+                data = json.loads(self.savefile.read_text(encoding="gbk"))
+        except json.JSONDecodeError:
+            data = None
         if not isinstance(data, dict):
             print("[ERROR] 读取数据失败")
             return
         for u in data.get("users") or []:
-            if u["name"] in {u.name for u in self.users}:
+            if u["_id"] in {u.id for u in self.users}:
                 continue
             user = User("", "")
             user.load_data(u)
             self.users.append(user)
         tmpu = User("", "")
         for m in data.get("messages") or []:
+            if m["_id"] in {m.id for m in self.messages}:
+                continue
             message = Message(tmpu, "")
             message.load_data(m)
             self.messages.append(message)
-    def send_message(self) -> None:
-        if not self.now_user:
+        hashs = data.get("hash")
+        if not isinstance(hashs, list) or not hashs:
+            self.syslog("[WARN] 用户数据和聊天记录缺乏安全验证")
+        else:
+            if hashs[0] != hashlib.md5(str(data.get("users")).encode()).hexdigest():
+                self.syslog("[WARN] 用户数据可能被篡改")
+            if hashs[1] != hashlib.md5(str(data.get("messages")).encode()).hexdigest():
+                self.syslog("[WARN] 聊天记录可能被篡改")
+
+    def send_message(self, message:str|None = None, user:User|None = None) -> None:
+        """发送信息"""
+        if self.now_user and not user:
+            user = self.now_user
+        if not user:
             print("[WARN] 尚未登录")
             return
         try:
-            check = True
-            message = ""
+            check = message is None
             while check:
                 message = input("[INPUT] 输入消息：")
-                check = input("[INFO] 确认？(Y/n)").lower() == "n"
-            self.messages.append(Message(self.now_user, message))
+                check = input("[ASK] 确认？(Y/n)").lower() == "n"
+            self.messages.append(Message(user, str(message)))
         except EOFError:
             print("[INFO] 取消操作")
             return
+    def syslog(self, message:str) -> None:
+        """记录系统运行日志"""
+        self.send_message(message, self.system)
     def show_message(self) -> None:
+        """显示所有历史信息"""
         userlist = {u.id:u.name for u in self.users}
         seperator = "-"*30
         if self.messages:
@@ -210,6 +248,23 @@ class System:
             print(f"[{name}]在({get_strtime(m.timestamp)})说:")
             print("\n".join("> "+i for i in  m.content.splitlines()))
             print(seperator)
+    def note_user(self, note:str|None = None, user:User|None = None) -> None:
+        """修改用户自身的备注"""
+        if self.now_user and not user:
+            user = self.now_user
+        if not user:
+            print("[WARN] 尚未登录")
+            return
+        try:
+            check = note is None
+            print(f"[INFO] 原备注：'{user.note}'")
+            while check:
+                note = input("[INPUT] 输入备注：")
+                check = input("[ASK] 确认？(Y/n)").lower() == "n"
+            user.note = str(note)
+        except EOFError:
+            print("[INFO] 取消操作")
+            return
 
 def main():
     """主函数"""
@@ -226,14 +281,15 @@ def main():
             "login":("登录", system.login),
             "logout":("登出",system.logout),
             "info":("显示登录后用户的详细信息",system.print_self),
+            "renote":("修改用户自身的备注",system.note_user),
             "p":("打印历史消息",system.show_message),
             "send":("发送消息",system.send_message),
             }
-    system.load()
     menu["p"][1]()
     print("="*10+"以上为历史信息"+"="*10)
-    menu["help"][1]()
-    print("[INFO] 使用上述命令进行操作(记得切下输入法)")
+    # menu["help"][1]()
+    print("[INFO] 使用 help 加回车获取命令列表")
+    print("[INFO] 使用命令进行操作时记得切下输入法")
     while c.lower() != "q":
         color = [f"\x1b[{32 if right else 31}m", "\x1b[0m"] if os.name == "posix" else\
                 [">"*10+"命令分隔符"+"<"*10+"\n", ""]
