@@ -29,7 +29,7 @@
 #define MARK_C  ":;"
 
 int **Maze = NULL;
-static int Rank = 0; // 控制迷宫的复杂度，数值越大复杂度越低，最小值为0
+static unsigned int Rank = 0; // 控制迷宫的复杂度，数值越大复杂度越低，最小值为0
 int level = 0;
 
 void init();
@@ -101,7 +101,7 @@ void init()
 void print_map()
 {				/*{{{ */
 	int l = L - 2;
-	int deep = L * L / 2 - Rank;    /* 并无实际意义，经验公式 */
+	int deep = L * L / 2 / (Rank||1);    /* 并无实际意义，经验公式 */
 
 	//画迷宫
 	for (int i = 1; i < L - 1; i++) {

@@ -56,8 +56,10 @@ def get_str_in_width(text:str, width:int, fill:str=' ', align:str="<c>"):
         ret_text = ret_text[:-1]
     return ret_text
 
-def calculate_relative(p1:Path, p2:Path) -> Path:
-    """计算p2相对于p1的相对路径"""
+def calculate_relative(path_to:Path, path_from:Path) -> Path:
+    """计算path_to相对于path_from的相对路径"""
+    p1 = path_to
+    p2 = path_from
     p1p = [p1.resolve()] + list(p1.resolve().parents)
     p2p = [p2.resolve()] + list(p2.resolve().parents)
     parents = list(set(p1p)&set(p2p))
@@ -70,8 +72,10 @@ def calculate_relative(p1:Path, p2:Path) -> Path:
     back_relative = "../"*depth
     return Path(f"./{back_relative}/{relative}")
 
-def calculate_relative2(p1:Path, p2:Path) -> Path:
-    """计算p2相对于p1的相对路径(使用absolute)"""
+def calculate_relative2(path_to:Path, path_from:Path) -> Path:
+    """计算path_to相对于path_from的相对路径(使用absolute)"""
+    p1 = path_to
+    p2 = path_from
     p1p = [p1.absolute()] + list(p1.absolute().parents)
     p2p = [p2.absolute()] + list(p2.absolute().parents)
     parents = list(set(p1p)&set(p2p))
