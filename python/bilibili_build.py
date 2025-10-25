@@ -38,20 +38,28 @@ class Video():
         # 分P总标题/合集分标题
         self.maintitle = str(data.get("title"))
         self.owner = str(data.get("owner_name"))
-        page_data = data.get("page_data")
+        self.is_ep = data.get("page_data") is None
+        page_data = data.get("page_data") or data.get("ep") or {}
+        # 分P排序
         self.page = page_data.get("page")
         # 分P分标题/合集总标题
         self.part = str(page_data.get("part"))
         # 分P总+分标题
         self.subtitle = str(page_data.get("download_subtitle"))
-        # ???
+        # 未知键值对
         self.indextitle = str(page_data.get("index_title"))
         self.index = page_data.get("index")
         if self.index is None:
             self.index = 0
-        self.danmaku = Path(file.parent/"danmaku.xml")
+        try:
+            self.index = int(self.index)
+        except ValueError:
+            self.index = 0
+        self.danmaku = file.parent/"danmaku.xml"
+        self.size = data.get("total_bytes")
         # set final title
         self.reset_title()
+        # __import__("pprint").pprint(vars(self))
     def getlist(self):
         """返回视频的信息列表"""
         return [self.owner, self.title, "AV"+self.avid, self.bvid, self.dir_self]
@@ -73,6 +81,10 @@ class Video():
                 self.title = f"{self.title} - {self.part}"
             if self.subtitle not in ("None", "", self.maintitle, f"{self.maintitle} {self.part}"):
                 self.title = f"{self.title} - {self.subtitle}"
+        if self.is_ep:
+            self.title = f"{self.title} - {self.index:02d}"
+            if self.indextitle not in ("None", ""):
+                self.title = f"{self.title} {self.indextitle}"
 
 class Ui():
     """TUI,需要curses"""
@@ -164,7 +176,10 @@ class Ui():
         """暂时脱离curses环境执行命令"""
         curses.def_prog_mode()
         curses.endwin()
+        print("\n>>>>>>>> RUN:\n"+"\n".join(["$ "+i for i in cmd.splitlines()]))
+        print("<<<<<<<<")
         os.system(cmd)
+        input("Press enter to return")
         curses.reset_prog_mode()
     def setting(self):
         """设置界面"""
@@ -331,17 +346,12 @@ def cmd_genal(li, mode) -> str:
     t+=f"echo \"Running mode:{mode}\"\n"
     for i in li:
         if len(i) != 1:
-            t+="# =========================\n"
-            t+=f"# SETS: {i[0].maintitle} <AV{i[0].avid}>\n"
+            t+="# "+">"*25+"\n"
+            t+=f"# {"番剧" if i[0].is_ep else "分P视频"}: '{i[0].maintitle}'\n"
+            t+=f"# 视频AV号: AV{i[0].avid}\n"
+            t+="# "+">"*25+"\n\n"
         for j in i:
-            vid = list(Path(j.dir_self).glob("**/video.m4s"))
-            aud = list(Path(j.dir_self).glob("**/audio.m4s"))
-            if len(vid) == 0 or len(aud) == 0:
-                t+=f"# {j.dir_self}:no media file({j.title})"
-                continue
             danmaku : Path = j.danmaku
-            vid = vid[0]
-            aud = aud[0]
             # 替换vfat系统不允许出现的字符（包括部分正常文件系统特殊字符）
             output = j.title
             replacement = ["/", "／"]
@@ -353,13 +363,30 @@ def cmd_genal(li, mode) -> str:
             if output[0] == "-":
                 output = "./"+output
             base_output = output
-            t+=f"# {j.title if len(i) == 1 else j.part} <Dir: {j.dir_self}>\n"
+            title = j.title if len(i) == 1 else \
+                    (j.title[len(j.maintitle)+3:] if j.is_ep else j.part)
+            t+=f"# {"" if len(i) == 1 else "分P"}标题: '{title}'\n"
+            t+=f"# 目录: '{j.dir_self}'\n"
+
+            vid = list(Path(j.dir_self).glob("**/video.m4s"))
+            aud = list(Path(j.dir_self).glob("**/audio.m4s"))
+            if len(vid) == 0 or len(aud) == 0:
+                t+="# [ERROR] 未找到符合预期的视频或音频文件\n\n"
+                continue
+
+            vid = vid[0]
+            aud = aud[0]
+            if vid.stat().st_size != j.size:
+                t+="# [WARN] 视频文件大小对不上，文件可能不完整\n"
+
+            # -v warning -progress pipe:1
+            ffmpeg = "ffmpeg -hide_banner"
             if mode == "3gp":
-                t+=f'ffmpeg -i {repr(str(vid))} -i {repr(str(aud))}'\
+                t+=f'{ffmpeg} -i {repr(str(vid))} -i {repr(str(aud))}'\
                     +' -r 12 -b:v 400k -s 352x288 -ab 12.2k -ac 1 -ar 8000 -c copy '
                 output+=".3gp"
             elif mode == "mp4":
-                t+=f"ffmpeg -i {repr(str(vid))} -i {repr(str(aud))} -c copy "
+                t+=f"{ffmpeg} -i {repr(str(vid))} -i {repr(str(aud))} -c copy "
                 output+=".mp4"
             elif mode in ("m4a" "copy"):
                 t+=f"cp {repr(str(aud))} "
@@ -372,16 +399,18 @@ def cmd_genal(li, mode) -> str:
                         f'{CONFIG["player"]} "{repr(str(aud))}"\n'
                 continue
             else:
-                t+=f'ffmpeg -i {repr(str(aud))} '
+                t+=f'{ffmpeg} -hide_banner -i {repr(str(aud))} '
                 output+=".mp3"
             t+=f'{repr(str(output))}\n'
             if not CONFIG["noass"] and has_subprocess and mode not in ("play", "play_mp4"):
                 width, height = get_video_dimensions(vid)
                 t+=f'biliass {repr(str(danmaku))} -s {width}x{height} -o '\
                     f'{repr(str(base_output)+".ass")}\n'
+            t += "\n"
         if len(i) != 1:
-            t+=f"# END OF SETS: {i[0].maintitle} <AV{i[0].avid}>\n"
-            t+="# =========================\n\n"
+            t+="# "+"<"*25+"\n"
+            t+=f"# {"番剧" if i[0].is_ep else "分P视频"}结束: {i[0].maintitle}\n"
+            t+="# "+"<"*25+"\n\n"
     t+='echo "Done!"\n'
     return t
 
@@ -405,8 +434,7 @@ def run_main():
                         help='设置排序方式')
     parser.add_argument('-H', '--help-key', action="store_true", help='内部按键帮助')
     try:
-        import argcomplete
-        argcomplete.autocomplete(parser)
+        __import__("argcomplete").autocomplete(parser)
     except ModuleNotFoundError:
         pass
     args = parser.parse_args()
@@ -436,7 +464,7 @@ def run_main():
             li[-1].append(v)
         else:
             li.append([v])
-        li[-1] = sorted(li[-1], key=lambda x:x.page, reverse=CONFIG["sort_reverse"])
+        li[-1] = sorted(li[-1], key=lambda x:x.page, reverse=not CONFIG["sort_reverse"])
     li = sorted(li, key=lambda x:x[0].timestamp, reverse=CONFIG["sort_reverse"])
 
     if list_mode:
