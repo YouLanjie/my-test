@@ -195,14 +195,14 @@ class System:
             print("[ERROR] 读取数据失败")
             return
         for u in data.get("users") or []:
-            if u["_id"] in {u.id for u in self.users}:
+            if u.get("_id") in {u.id for u in self.users}:
                 continue
             user = User("", "")
             user.load_data(u)
             self.users.append(user)
         tmpu = User("", "")
         for m in data.get("messages") or []:
-            if m["_id"] in {m.id for m in self.messages}:
+            if m.get("_id") in {m.id for m in self.messages}:
                 continue
             message = Message(tmpu, "")
             message.load_data(m)

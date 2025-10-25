@@ -10,7 +10,6 @@
 
 
 #include "include/tools.h"
-#include <stdio.h>
 
 int main(int argc, char *argv[])
 {
@@ -28,7 +27,7 @@ int main(int argc, char *argv[])
 	/*printf("SIZE: %ld\n", size);*/
 	fseek(fp, 0L, SEEK_SET);
 	/*printf("POS: %ld\n", ftell(fp));*/
-	char buff[4] = "";
+	int buff[4] = {0};
 	int s = 0;
 	int count = 0;
 	int white = 0;
@@ -45,7 +44,8 @@ int main(int argc, char *argv[])
 			}
 
 			if (count == 2) {
-				printf("%s", buff);
+				char cbuff[4] = {buff[0], buff[1], buff[2], 0};
+				printf("%s", cbuff);
 				buff[0] = 0;
 				buff[1] = 0;
 				buff[2] = 0;

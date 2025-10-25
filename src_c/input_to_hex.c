@@ -18,13 +18,10 @@ int main(void)
 	printf("请输入:\n");
 	fgets(ch, len, stdin);
 	for (int i = 0; i < len && ch[i] != 0; ++i) {
-		unsigned int out = 0;
-		for (int i2 = 0; i2 < 32; i2++) out = out * 10 + ((ch[i] << i2) >> 31);
-		out = 0 - out;
 		printf("ch[\033[1;33m%3d\033[0m]: "
-		       "\033[1;32m0x\033[1;33m%03x\033[0m: "
-		       "\033[1;32m0b\033[1;33m%08d\033[0m",
-		       i, ch[i], out);
+		       "\033[1;32m0x\033[1;33m%02x\033[0m: "
+		       "\033[1;32m0b\033[1;33m%08b\033[0m",
+		       i, ch[i] & 0xff, ch[i] & 0xff);
 		if (ch[i] < '!') {
 			printf("\n");
 		} else {
