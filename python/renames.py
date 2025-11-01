@@ -16,7 +16,7 @@ class Args:
     """临时存储参数"""
     def __init__(self) -> None:
         self.format = r"%Y%m%d_%H%M%S"
-        self.ignore_timestamp = False
+        self.timestamp = False
         self.input = "."
         self.keep_name = False
         self.mode = "auto"
@@ -30,7 +30,7 @@ class Args:
         self.verbose = False
     def set_arg(self, arg:argparse.Namespace):
         self.format = arg.format
-        self.ignore_timestamp = arg.ignore_timestamp
+        self.timestamp = arg.timestamp
         self.input = arg.input
         self.keep_name = arg.keep_name
         self.mode = arg.mode
@@ -54,9 +54,9 @@ def parse_arguments() -> None:
     parser.add_argument('-f', '--format', default=r'%Y%m%d_%H%M%S',
                         help=r"指定时间格式 (默认: %%Y%%m%%d_%%H%%M%%S')")
     parser.add_argument('-L', '--no-follow-link', action='store_true', help='获取链接本身的修改时间')
-    parser.add_argument('-k', '--keep-name', action="store_true", help='保存老名字')
+    parser.add_argument('-k', '--keep-name', action="store_true", help='保存老名字作为后缀')
     parser.add_argument('-N', '--no-skip', action="store_true", help='不跳过名字已具备类似条件的文件')
-    parser.add_argument('-I', '--ignore-timestamp', action="store_true", help='忽略文件名中可能含有的时间戳')
+    parser.add_argument('-T', '--timestamp', action="store_true", help='寻找文件名中可能含有的时间戳')
     parser.add_argument('-n', '--no-apply', action='store_true', help='不进行任何更改')
     parser.add_argument('-v', '--verbose', action='store_true', help='执行时显示更多输出')
     parser.add_argument('-V', '--vfat-name', action='store_true', help='更改文件名使其符合vfat对文件名的要求')
@@ -117,7 +117,7 @@ def process_files():
             print_verbose(f"INFO 跳过:已具备类似条件'{file}'")
             skipped += 1
             continue
-        if not ARGS.ignore_timestamp and not has_date:
+        if ARGS.timestamp and not has_date:
             match = pattern_stmp.match(str(file))
             if match:
                 timestamp_ = float(match.group(1))/1000
