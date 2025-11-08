@@ -256,7 +256,7 @@ class System:
             print(f"{colors[0]}[{name}]在({get_strtime(m.timestamp)})说:{colors[1]}")
             print("\n".join(colors[2]+"> "+colors[1]+i for i in  m.content.splitlines()))
             print(seperator)
-    def note_user(self, note:Union[str,None] = None, user:[User,None] = None) -> None:
+    def note_user(self, note:Union[str,None] = None, user:Union[User,None] = None) -> None:
         """修改用户自身的备注"""
         if self.now_user and not user:
             user = self.now_user
@@ -274,10 +274,8 @@ class System:
             print("[INFO] 取消操作")
             return
 
-def init_program(system:System):
-    """初次启动"""
-    system.syslog("[INFO] 初始化程序中(后台进行)")
-    module_list = ["requests"]
+def module_check(module_list:list = [], system = None) -> list:
+    """检查并安装需要的模块"""
     install_list = []
     avaliable_list = []
     for i in module_list:
@@ -297,33 +295,44 @@ def init_program(system:System):
         ret = subprocess.run(["python", "-m", "pip", "install", i],
                              capture_output=True, check=False)
         if ret.returncode == 0:
-            system.syslog(f"[INFO] 模块'{i}'安装成功")
+            if isinstance(system, System):
+                system.syslog(f"[INFO] 模块'{i}'安装成功")
     for i in install_list:
         try:
             import_module(i)
             avaliable_list.append(i)
         except ModuleNotFoundError:
-            system.syslog(f"[WARN] 模块'{i}'仍不可用")
-    if "requests" in avaliable_list:
-        requests = import_module("requests")
-        # url = "127.0.0.1/img/icon.jpg"
-        url = "github.com/imengyu/JiYuTrainer/releases/download/1.7.6/JiYuTrainer.exe"
-        urls = (f"http://ghfast.top/{url}", f"http://{url}")
-        ret = None
-        for i in urls:
-            try:
-                ret = requests.get(i, timeout=3)
-                if ret.status_code == 200:
-                    break
-            except requests.exceptions.ConnectionError:
-                system.syslog(f"[WARN] 链接不可达: {url}")
-                continue
-            system.syslog(f"[WARN] 链接错误: {url}")
+            if isinstance(system, System):
+                system.syslog(f"[WARN] 模块'{i}'仍不可用")
+    return avaliable_list
+
+def init_program(system:System):
+    """初次启动"""
+    system.syslog("[INFO] 初始化程序中(后台进行)")
+    if os.name == "nt":
+        if "requests" in module_check(["requests"], system):
+            requests = import_module("requests")
+            # url = "127.0.0.1/img/icon.jpg"
+            system.syslog("[INFO] 正在尝试下载反极域软件")
+            url = "github.com/imengyu/JiYuTrainer/releases/download/1.7.6/JiYuTrainer.exe"
+            urls = (f"http://ghfast.top/{url}", f"http://{url}")
             ret = None
-        if ret:
-            outf = Path("反极域软件.exe")
-            outf.write_bytes(ret.content)
-            system.syslog(f"[INFO] 保存反极域软件到'{outf.resolve()}'")
+            for i in urls:
+                try:
+                    ret = requests.get(i, timeout=3)
+                    if ret.status_code == 200:
+                        break
+                except requests.exceptions.ConnectionError:
+                    system.syslog(f"[WARN] 链接不可达: {url}")
+                    continue
+                system.syslog(f"[WARN] 链接错误: {url}")
+                ret = None
+            if ret:
+                outf = Path("反极域软件.exe")
+                outf.write_bytes(ret.content)
+                system.syslog(f"[INFO] 保存反极域软件到'{outf.resolve()}'")
+    else:
+        system.syslog(f"[INFO] 非windows nt环境，断定为测试环境")
     system.syslog("[INFO] 初始化结束")
     system.save()
 
