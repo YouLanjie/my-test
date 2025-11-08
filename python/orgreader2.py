@@ -178,7 +178,7 @@ class Strings:
                 continue
             i = [_html_filter(i) if isinstance(i, str) else i for i in i]
             if i[0] == "link":
-                ret += f"""\n<a href="{i[1]}">{self.list_to_html(i[2])}</a>"""
+                ret += f"""<a href="{i[1]}">{self.list_to_html(i[2])}</a>"""
             elif i[0] == "img":
                 ret += "<div class=\"figure\"><p>" \
                         if isinstance(self.upward, Text) and \
@@ -280,8 +280,7 @@ class Strings:
         for i in lines:
             match = re.match(r"(.*)(?<!\\)\\\\\s*$", i)
             if match:
-                text+=f"{match.group(1)}\n"
-                continue
+                i = match.group(1) + "\n"
             text+=f"{self.get_separator_between(text, i)}{i}"
         return text
     def log(self, info = "", lv="WARN"):
@@ -1637,6 +1636,7 @@ def print_feature():
 - 暂不支持: 自动标注链接（非显式指定的链接）
 - 暂不支持: 自动将指向org文件的链接改为指向其html导出文件
 - 暂不支持: 上下角标
+- 暂不支持: <<引用>>,<<<全局>>>链接
 - 去除了: 严格的链接限制(允许非`./`开头的文件引用)
 - 增加了: 链接中允许定位`#`的使用
 - 增加了: 对含有特殊字符文件的自动转义(非网络链接)
@@ -1681,8 +1681,8 @@ def run_main() -> Document|str|None:
         print("===================")
         print(ret.table_of_content_to_text())
         print(ret.to_text())
-        for i in ret.status["table_of_content"]:
-            pytools.print_err(i)
+        # for i in ret.status["table_of_content"]:
+            # pytools.print_err(i)
     else:
         if args.auto_output:
             Path(f"{inp_fname.replace(".org",".html")}").write_text(
