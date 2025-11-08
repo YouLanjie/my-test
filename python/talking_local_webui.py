@@ -85,7 +85,8 @@ RESCOURSES = {"./main_page.html":"""
 		.msg_time, .user_time {
 			color: gray;
 			float: right;
-			margin-right: 1em;
+			margin-right: 0em;
+			font-size: 60%;
 		}
 	</style>
 </head>
@@ -220,6 +221,7 @@ def gen_html(name:str, data = None) -> str:
 def get_info() -> dict:
     """从SYSTEM获取信息并处理"""
     data = {}
+    SYSTEM.load()
     userlist = {u.id:u.name for u in SYSTEM.users}
     s = ""
     for m in SYSTEM.messages:
@@ -322,7 +324,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             name = parsed_data.get("username")
             name = escape(str(name[0] if name else ""))
             passwd = parsed_data.get("passwd")
-            passwd = str(name[0] if name else "")
+            passwd = str(passwd[0] if passwd else "")
             li = {u.name:u for u in SYSTEM.users}
             s = ""
             if name not in li:
@@ -347,9 +349,9 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             name = parsed_data.get("username")
             name = escape(str(name[0] if name else ""))
             passwd = parsed_data.get("passwd")
-            passwd = str(name[0] if name else "")
+            passwd = str(passwd[0] if passwd else "")
             passwd2 = parsed_data.get("passwd2")
-            passwd2 = str(name[0] if name else "")
+            passwd2 = str(passwd2[0] if passwd2 else "")
             li = {u.name:u for u in SYSTEM.users}
             s = ""
             if name in li:
@@ -389,6 +391,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
         response_html = gen_html("./response_page.html", data)
         # response_html = gen_html("./main_page.html", get_info())
         self.wfile.write(response_html.encode())
+        SYSTEM.load()
         SYSTEM.save()
 
 # 启动服务器

@@ -370,6 +370,7 @@ def main():
             right = True
         else:
             right = False
+        system.load()
         system.save()
 
 if __name__ == "__main__":
