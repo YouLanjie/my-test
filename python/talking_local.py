@@ -1,19 +1,199 @@
 #!/usr/bin/env python
 # Created:2025.10.18
+# a chat room program based on python
 
 from pathlib import Path
 from datetime import datetime
 from getpass import getpass
 from typing import Callable, Union
 from importlib import import_module
+import threading
 import subprocess
 import uuid
 import hashlib
 import json
 import os
+import time
+
+# web ui
+import http.server
+import socketserver
+import urllib.parse
+from html import escape
+from string import Template
 
 if os.name == "posix":
-    import_module("readline")
+    # Better Input In Linux
+    try:
+        import_module("readline")
+    except ModuleNotFoundError:
+        pass
+
+SYSTEM = {}
+
+RESCOURSES_CSS_PART = """
+body {
+    font-family: Arial, sans-serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #f5f5f5;
+}
+.container {
+    background-color: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 1em;
+}
+h1 {
+    color: #333;
+    text-align: center;
+}
+.form-group {
+    margin-bottom: 20px;
+}
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+input, textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+button {
+    background-color: #4CAF50;
+    color: white;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+}
+button:hover {
+    background-color: #45a049;
+}
+.result {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #e7f3ff;
+    border-radius: 4px;
+}
+.messages, .users {
+    background-color: white;
+    padding: 5px 20px 5px 20px;
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 0.5em;
+    max-height: 70vh;
+    overflow: auto;
+    text-overflow: ellipsis;
+}
+.msg_name, .user_name {
+    font-weight: bold;
+    color: blue;
+}
+.msg_time, .user_time {
+    color: gray;
+    float: right;
+    margin-right: 0em;
+    font-size: 60%;
+}
+.messages::-webkit-scrollbar, .users::-webkit-scrollbar {
+    width: 8px;
+}
+.messages::-webkit-scrollbar-track, .users::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+.messages::-webkit-scrollbar-thumb, .users::-webkit-scrollbar-thumb {
+    background: #3498db;
+    border-radius: 4px;
+}
+"""
+
+RESCOURSES = {"./main_page.html":"""
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Python聊天室 - ${ip}</title>
+  <style>"""+RESCOURSES_CSS_PART+"""
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Python聊天室(Web UI)</h1>
+    <p>以下是消息列表（右边滑动条滑动到最下面查看最新消息）</p>
+${messages}
+${send_window}
+  </div>
+  <div class="container">
+    <h1>用户列表</h1>
+${users}
+  </div>
+  <div class="container">
+    <h1>登录状态</h1>
+${userdata}
+  </div>
+</body>
+</html>
+""", # ==================
+"./404.html":"""
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="refresh" content="3;url=/">
+  <style>"""+RESCOURSES_CSS_PART+"""
+  </style>
+</head>
+<body>
+    <p>页面将在3秒钟后自动跳转到<a href="/">主页</a></p>
+</body>
+</html>
+""", # =================
+"./response_page.html":"""
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+${meta}
+  <title>提交结果</title>
+  <style>"""+RESCOURSES_CSS_PART+"""
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="container">
+${content}
+    </div>
+  <a href="/" class="back-button">
+  <button type="submit">返回主页(部分页面会自动跳转)</button>
+  </a>
+  </div>
+</body>
+</html>
+"""}
+
+def gen_html(name:str, data = None) -> str:
+    """return html file"""
+    if not isinstance(data, dict):
+        data = {}
+    # file = Path(name)
+    # if not file.is_file():
+    if not name in RESCOURSES:
+        return """<!DOCTYPE html><html lang="zh-CN">"""+\
+                """<head><title>404<title/><meta http-equiv="refresh" content="2;url=/"><head/>"""+\
+                """<body><p>'{file}' could not be found<p/><body/>"""
+    # content = Template(file.read_text())
+    content = Template(RESCOURSES[name])
+    return content.safe_substitute(data)
 
 # 由于在py3.8时仍不支持将联合类型写成 X|Y ，心碎了
 def get_strtime(dt:Union[datetime,float] = datetime.now()) -> str:
@@ -90,6 +270,9 @@ class System:
         self.messages : list[Message] = []
         self.now_user : Union[User,None] = None
         self.savefile = Path("SAVEDATA.json")
+        self.st_mtime = 0.0
+        self.md5_hash = []
+        self.httpd : Union[None, socketserver.TCPServer]= None
 
         system = User("SYSTEM", "", "系统内置服务用用户")
         system.load_data({"_passwd":"db10fa5fb2467f50c7242356ee42ca86",
@@ -170,27 +353,37 @@ class System:
         if not self.now_user:
             print("[WARN] 你还没有登录")
         self.now_user = None
-    def save(self) -> None:
+    def save(self, readable = False) -> None:
         """保存数据"""
         if self.savefile.is_dir():
             print("[WARN] savefile is dir")
             return
+        self.load()
         data = {"users":[u.dump_data() for u in self.users],
                 "messages":[m.dump_data() for m in self.messages],
                 "hash":["", ""]}
         data["hash"] = [hashlib.md5(str(data["users"]).encode()).hexdigest(),
                         hashlib.md5(str(data["messages"]).encode()).hexdigest()]
-        # t = json.dumps(data, ensure_ascii=False, indent=2)
-        t = json.dumps(data)
+        if self.md5_hash == data["hash"] and not readable:
+            return
+        self.md5_hash = data["hash"]
+        if readable:
+            t = json.dumps(data, ensure_ascii=False, indent=4)
+        else:
+            t = json.dumps(data)
         self.savefile.write_text(t, encoding="utf-8")
         # print(t)
-    def load(self) -> None:
+    def load(self) -> bool:
         """读取数据"""
         if not self.savefile.is_file():
             print("[WARN] 数据文件不存在")
             self.syslog("[INFO] 聊天室建立")
-            import_module("threading").Thread(target=init_program,args=(self,)).start()
-            return
+            threading.Thread(target=init_program,args=(self,)).start()
+            self.save()
+            return False
+        st_mtime = self.savefile.stat().st_mtime
+        if st_mtime <= self.st_mtime:
+            return False
         try:
             try:
                 data = json.loads(self.savefile.read_text(encoding="utf-8"))
@@ -200,7 +393,8 @@ class System:
             data = None
         if not isinstance(data, dict):
             print("[ERROR] 读取数据失败")
-            return
+            return False
+        self.st_mtime = st_mtime
         for u in data.get("users") or []:
             if u.get("_id") in {u.id for u in self.users}:
                 continue
@@ -222,6 +416,10 @@ class System:
                 self.syslog("[WARN] 用户数据可能被篡改")
             if hashs[1] != hashlib.md5(str(data.get("messages")).encode()).hexdigest():
                 self.syslog("[WARN] 聊天记录可能被篡改")
+            if not self.md5_hash:
+                self.md5_hash = hashs
+        self.messages = sorted(self.messages, key=lambda x:x.timestamp)
+        return True
 
     def send_message(self, message:Union[str,None] = None, user:Union[User,None] = None) -> None:
         """发送信息"""
@@ -254,8 +452,84 @@ class System:
             if name is None:
                 name = "<未知用户>"
             print(f"{colors[0]}[{name}]在({get_strtime(m.timestamp)})说:{colors[1]}")
-            print("\n".join(colors[2]+"> "+colors[1]+i for i in  m.content.splitlines()))
+            content = m.content
+            if len(content.splitlines()) > 12:
+                content = "\n".join(content.splitlines()[:12]) +\
+                        "\n"+"="*40+"\n"+\
+                        "【以下内容由于行数超过12被系统自动截断】\n"+\
+                        f"【使用show命令查看全部内容】\n【消息ID:'{m.id}'】"
+            elif len(content) > 500:
+                content = content[:500]  +\
+                        "\n"+"="*40+"\n"+\
+                        "【以下内容由于字符数量超过500被系统自动截断】\n"+\
+                        f"【使用show命令查看全部内容】\n【消息ID:'{m.id}'】"
+            print("\n".join(colors[2]+"> "+colors[1]+i for i in  content.splitlines()))
             print(seperator)
+    def select_message(self) -> Union[Message, None]:
+        """过滤选择消息"""
+        msg_list = {}
+        userlist = {u.id:u.name for u in self.users}
+        for m in self.messages:
+            name = userlist.get(m.owner)
+            if name is None:
+                name = "<未知用户>"
+            msg = m.content.splitlines()[:1]
+            msg = msg[0][:25] if msg else ""
+            s = f"({get_strtime(m.timestamp)})[{name}]:'{msg}……'\n    ID: '{m.id}'"
+            msg_list[s] = m
+
+        obj_msg = None
+        key = None
+        try:
+            while len(msg_list) > 1:
+                print(" "*30)
+                print("\n".join(msg_list.keys()))
+                print("[INFO] 以上为待选项，通过多个关键词匹配得到对应消息")
+                key = input("[INPUT] 搜索关键词:")
+                msg_list = {k:v for k,v in msg_list.items() if key in k}
+            if len(msg_list) == 0:
+                print("[WARN] 不存在可选项")
+            else:
+                obj_msg = list(msg_list)[0]
+                print("[INFO] 最终选项：")
+                print(obj_msg)
+                obj_msg = msg_list[obj_msg]
+                if input("[ASK] 确认？(Y/n)").lower() == "n":
+                    print("[INFO] 取消操作")
+                    return
+        except EOFError:
+            print("[INFO] 取消操作")
+            return
+        if not obj_msg:
+            return
+        return obj_msg
+    def show_sigal_message(self) -> None:
+        """显示特定历史信息"""
+        obj_msg = self.select_message()
+        if not obj_msg:
+            return
+        pages = obj_msg.content.splitlines()
+        lines = 12
+        pages = ["\n".join(pages[i*lines:(i+1)*lines]) for i in range(len(pages)//lines+(len(pages)%lines!=0))]
+        try:
+            ind = 0
+            while ind < len(pages):
+                print("v"*15+f"== {ind+1}/{len(pages)} =="+"v"*15)
+                print(pages[ind])
+                print("^"*15+f"== {ind+1}/{len(pages)} =="+"^"*15)
+                number = input("[INPUT] 输入页面跳转或回车翻页:")
+                try:
+                    number = int(number)
+                    if 0 < number <= len(pages):
+                        ind = number - 1
+                except ValueError:
+                    if str(number).lower() == "q":
+                        ind = len(pages)
+                    ind += 1
+        except EOFError:
+            print("[INFO] 取消操作")
+            return
+        
     def note_user(self, note:Union[str,None] = None, user:Union[User,None] = None) -> None:
         """修改用户自身的备注"""
         if self.now_user and not user:
@@ -273,8 +547,204 @@ class System:
         except EOFError:
             print("[INFO] 取消操作")
             return
+    def web_api(self, ip = "") -> dict:
+        """返回dict for Template"""
+        data = {"ip": ip}
+        self.load()
+        userlist = {u.id:u.name for u in self.users}
+        s = ""
+        for m in self.messages:
+            name = userlist.get(m.owner)
+            if name is None:
+                name = "<未知用户>"
+            s += "<div class='messages'>\n"
+            s += f"<p><span class='msg_name'>{escape(name)}</span> <span class='msg_time'>{escape(get_strtime(m.timestamp))}</span></p>\n"
+            s += "<p>"+ "<br/>".join(m.content.splitlines()) + "</p>\n"
+            s += "</div>\n"
+        data["messages"] = s
+        s = ""
+        for u in self.users:
+            s += "<div class='users'>\n"
+            s += f"<p><span class='user_name'>{escape(u.name)}</span> <span class='user_time'>注册时间: {escape(get_strtime(u.timestamp))}</span></p>\n"
+            s += "<p>"+ "<br/>".join(u.note.splitlines()) + "</p>\n"
+            s += "</div>\n"
+        data["users"] = s
+        s = ""
+        if self.now_user:
+            u = self.now_user
+            s += "<div class='users'>\n"
+            s += f"<p><span class='user_name'>{escape(u.name)}</span> <span class='user_time'>注册时间: {escape(get_strtime(u.timestamp))}</span></p>\n"
+            s += "<p>"+ "<br/>".join(u.note.splitlines()) + "</p>\n"
+            s += "</div><div class='container'>\n"
+            s += f"<p>UUID: '{escape(u.id)}'</p>"
+            s += f"<p>密码md5值: '{escape(u.passwd)}'</p>"
+            login_record = "<br/>".join(escape("> "+f"在 {escape(get_strtime(i))} 登录过") for i in u.login_record)
+            s += f"<details><summary>登录记录</summary><p>{login_record}</p></details></div>\n"
+    
+            s += """<div class='container'><form method="POST" action="/renote">"""
+            s += """<div class="form-group">"""
+            s += f"""<label for="note">修改备注:</label><textarea name="note" rows="4" required>{escape(u.note)}</textarea>"""
+            s += """</div>"""
+            s += """<button type="submit">提交修改</button></form></div>\n"""
+    
+            s += """<p></p><form method="POST" action="/logout">"""
+            s += """<button type="submit" style="background-color:red;">退出登录</button></form>\n"""
+        else:
+            # s += "<div class='messages'>\n"
+            s += "<p>你尚未登录,请登录或注册（登录失败再注册）</p>\n"
+            s += """<form method="POST" action="/login">"""
+            s += """<div class="form-group">"""
+            s += """<label for="name">用户名:</label><input type="text" name="username" required>"""
+            s += """<label for="passwd">密码:</label><input type="password" name="passwd" required>"""
+            # <textarea id="message" name="message" rows="4" required></textarea>
+            s += """</div>"""
+            s += """<button type="submit">登录</button></form>"""
+            # s += "</div>\n"
+        data["userdata"] = s
+        s = ""
+        if self.now_user:
+            s += """<form method="POST" action="/send_message">"""
+            s += """<div class="form-group">"""
+            s += """<label for="message">填写要发送的消息:</label><textarea name="message" rows="4" required></textarea>"""
+            s += """</div>"""
+            s += """<button type="submit">发送</button></form>"""
+        data["send_window"] = s
+        return data
 
-def module_check(module_list:list = [], system = None) -> list:
+# 自定义请求处理器
+class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if not SYSTEM.get(self.client_address[0]):
+            SYSTEM[self.client_address[0]] = System()
+        # 解析URL路径
+        parsed_path = urllib.parse.urlparse(self.path)
+        # print([self.path, parsed_path])
+        # 如果访问根路径，返回主页
+        if parsed_path.path == '/':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            # 生成HTML页面(生成主页面HTML)
+            html_content = gen_html("./main_page.html", 
+                                    SYSTEM[self.client_address[0]].web_api(self.client_address[0]))
+            self.wfile.write(html_content.encode())
+        else:
+            # # 对于其他路径，使用默认的文件服务行为
+            # super().do_GET()
+            self.send_response(404)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            html_content = gen_html("./404.html")
+            self.wfile.write(html_content.encode())
+    
+    def do_POST(self):
+        # 处理POST请求
+        if not SYSTEM.get(self.client_address[0]):
+            SYSTEM[self.client_address[0]] = System()
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length).decode('utf-8')
+        # 解析表单数据
+        parsed_data = urllib.parse.parse_qs(post_data)
+        data = {"content":"<p>???? 你似乎进入到了一个禁忌之地 ???</p>",
+                "meta":"""<meta http-equiv="refresh" content="1;url=/">"""}
+
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+
+        parsed_path = urllib.parse.urlparse(self.path)
+        if parsed_path.path == '/login' and "username" in parsed_data:
+            name = parsed_data.get("username")
+            name = escape(str(name[0] if name else ""))
+            passwd = parsed_data.get("passwd")
+            passwd = str(passwd[0] if passwd else "")
+            li = {u.name:u for u in SYSTEM[self.client_address[0]].users}
+            s = ""
+            if name not in li:
+                s += f"<p>[WARN] 用户 '{name}' 不存在, 可尝试注册<p>"
+                s += """<form method="POST" action="/register">"""
+                s += """<div class="form-group">"""
+                s += f"""<label for="name">用户名:</label><input type="text" name="username" value={repr(name)} required>"""
+                s += """<label for="passwd">密码（暂不支持注册后修改或找回）:</label><input type="password" name="passwd" required>"""
+                s += """<label for="passwd2">再次输入相同的密码确认:</label><input type="password" name="passwd2" required>"""
+                s += """</div>"""
+                s += """<button type="submit">注册</button></form>"""
+                data["meta"] = ""
+            elif li[name].check_passwd(passwd):
+                SYSTEM[self.client_address[0]].now_user = li[name]
+                li[name].login_record.append(datetime.now().timestamp())
+                s += """<p>欢迎回来！</p>"""
+                s += f"""<p>{escape(name)}</p>"""
+            else:
+                s += """<p>很抱歉，登录失败了，也许你的密码输错了？</p>"""
+            data["content"] = s
+        elif parsed_path.path == '/register' and "username" in parsed_data:
+            name = parsed_data.get("username")
+            name = escape(str(name[0] if name else ""))
+            passwd = parsed_data.get("passwd")
+            passwd = str(passwd[0] if passwd else "")
+            passwd2 = parsed_data.get("passwd2")
+            passwd2 = str(passwd2[0] if passwd2 else "")
+            li = {u.name:u for u in SYSTEM[self.client_address[0]].users}
+            s = ""
+            if name in li:
+                s += """<p>注册失败！</p>"""
+                s += f"<p>[WARN] 用户 '{name}' 已存在<p>"
+            elif passwd != passwd2:
+                s += """<p>注册失败！</p>"""
+                s += """<p>两次输入的密码不一样</p>"""
+            else:
+                u = User(name, passwd)
+                SYSTEM[self.client_address[0]].users.append(u)
+                SYSTEM[self.client_address[0]].now_user = u
+                u.login_record.append(datetime.now().timestamp())
+                s += """<p>注册成功，欢迎！</p>"""
+                s += f"""<p><b>{escape(name)}</b></p>"""
+            data["content"] = s
+        elif parsed_path.path == '/renote' and "note" in parsed_data:
+            note = parsed_data.get("note")
+            note = escape(str(note[0] if note else ""))
+            if SYSTEM[self.client_address[0]].now_user:
+                SYSTEM[self.client_address[0]].now_user.note = note
+                data["content"] = """<p>修改备注成功！</p>"""
+        elif parsed_path.path == '/send_message' and "message" in parsed_data:
+            message = parsed_data.get("message")
+            message = escape(str(message[0] if message else ""))
+            if SYSTEM[self.client_address[0]].now_user:
+                SYSTEM[self.client_address[0]].messages.append(Message(SYSTEM[self.client_address[0]].now_user, str(message)))
+                data["content"] = """<p>留言成功！</p>"""
+        elif parsed_path.path == '/logout':
+            if SYSTEM[self.client_address[0]].now_user:
+                SYSTEM[self.client_address[0]].now_user = None
+                data["content"] = """<p>登出成功！</p>"""
+        else:
+            for key,value in parsed_data.items():
+                data[key] = escape(value[0])
+            # 生成响应页面
+        response_html = gen_html("./response_page.html", data)
+        self.wfile.write(response_html.encode())
+        SYSTEM[self.client_address[0]].load()
+        SYSTEM[self.client_address[0]].save()
+
+# 启动服务器
+def run_server(port=8000):
+    socketserver.TCPServer.allow_reuse_address = True
+    for i in range(port, port+100):
+        try:
+            with socketserver.TCPServer(("", i), SimpleWebUI) as httpd:
+                print(f"[INFO] 服务器(WebUI)运行在 http://localhost:{i}")
+                SYSTEM["httpd"] = httpd
+                # print("按 Ctrl+C 停止服务器")
+                try:
+                    httpd.serve_forever()
+                except KeyboardInterrupt:
+                    print("\n[INFO] 服务器已停止")
+        except OSError:
+            continue
+        break
+    SYSTEM["httpd"] = None
+
+def module_check(module_list:list, system = None) -> list:
     """检查并安装需要的模块"""
     install_list = []
     avaliable_list = []
@@ -309,51 +779,56 @@ def module_check(module_list:list = [], system = None) -> list:
 def init_program(system:System):
     """初次启动"""
     system.syslog("[INFO] 初始化程序中(后台进行)")
-    if os.name == "nt":
-        if "requests" in module_check(["requests"], system):
-            requests = import_module("requests")
-            # url = "127.0.0.1/img/icon.jpg"
-            system.syslog("[INFO] 正在尝试下载反极域软件")
-            url = "github.com/imengyu/JiYuTrainer/releases/download/1.7.6/JiYuTrainer.exe"
-            urls = (f"http://ghfast.top/{url}", f"http://{url}")
-            ret = None
-            for i in urls:
-                try:
-                    ret = requests.get(i, timeout=3)
-                    if ret.status_code == 200:
-                        break
-                except requests.exceptions.ConnectionError:
-                    system.syslog(f"[WARN] 链接不可达: {url}")
-                    continue
-                system.syslog(f"[WARN] 链接错误: {url}")
-                ret = None
-            if ret:
-                outf = Path("反极域软件.exe")
-                outf.write_bytes(ret.content)
-                system.syslog(f"[INFO] 保存反极域软件到'{outf.resolve()}'")
-    else:
-        system.syslog(f"[INFO] 非windows nt环境，断定为测试环境")
+
+    outf = Path("反极域软件.exe")
+    md5_hash = "bcbbe129e6032fdbee6e2df28fef55e3"
+    fsize = 4712960
+    has_file = outf.is_file() and outf.stat().st_size == fsize
+    has_file = has_file and hashlib.md5(outf.read_bytes()).hexdigest() == md5_hash
+    if outf.is_file() and not has_file:
+        outf.unlink()
+    if os.name == "nt" and not has_file:
+        req = import_module("urllib.request")
+        errors = import_module("urllib.error")
+        system.syslog("[INFO] 正在尝试下载反极域软件")
+        url = "github.com/imengyu/JiYuTrainer/releases/download/1.7.6/JiYuTrainer.exe"
+        urls = (f"http://ghfast.top/{url}", f"http://{url}")
+        for i in urls:
+            try:
+                req.urlretrieve(i, str(outf))
+                break
+            except errors.HTTPError as e:
+                system.syslog(f"[WARN] 链接不可用: {i} ({e})")
+            except errors.URLError as e:
+                system.syslog(f"[WARN] 域名无法访问: {i} ({e})")
+        if outf.is_file():
+            system.syslog(f"[INFO] 反极域软件已保存到'{outf.resolve()}'")
+    elif os.name != "nt":
+        system.syslog("[INFO] 非windows nt环境，断定为测试环境")
     system.syslog("[INFO] 初始化结束")
     system.save()
 
 def main():
     """主函数"""
     system = System()
+    # SYSTEM["commandline"] = SYSTEM
     c = ""
     right = True
     menu : dict[str,tuple[str,Callable]] = {
             "save":("保存数据",system.save),
+            "save2":("以人类易读形式保存数据", lambda:system.save(readable=True)),
             "load":("加载数据",system.load),
             "help":("打印命令列表", lambda:print("\n".join(
                 ["↓命令↓     -   ↓解释↓"]+[(f"{k:10} -   {v[0]}") for k,v in menu.items()]))),
             "q":("退出程序", lambda: None),
-            "list":("列出所有用户", system.print_users),
+            "ls":("列出所有用户", system.print_users),
             "reg":("注册", system.register),
             "login":("登录", system.login),
             "logout":("登出",system.logout),
             "info":("显示登录后用户的详细信息",system.print_self),
             "renote":("修改用户自身的备注",system.note_user),
             "p":("打印历史消息",system.show_message),
+            "show":("打印选择的特定历史消息",system.show_sigal_message),
             "send":("发送消息",system.send_message),
             }
     menu["p"][1]()
@@ -361,17 +836,28 @@ def main():
     # menu["help"][1]()
     print("[INFO] 使用 help 加回车获取命令列表")
     print("[INFO] 使用命令进行操作时记得切下输入法")
+    threading.Thread(target=run_server).start()
+    for i in range(100):
+        time.sleep(0.01)
+        if SYSTEM.get("httpd"):
+            break
+
     while c.lower() != "q":
         color = [f"\x1b[{32 if right else 31}m", "\x1b[0m"] if os.name == "posix" else\
                 [">"*10+"命令分隔符"+"<"*10+"\n", ""]
-        c = input(f"{color[0]}$ {color[1]}")
+        try:
+            c = input(f"{color[0]}$ {color[1]}")
+        except KeyboardInterrupt:
+            c = "q"
+        system.load()
         if c in menu:
             menu[c][1]()
             right = True
         else:
             right = False
-        system.load()
         system.save()
+    if SYSTEM.get("httpd"):
+        SYSTEM["httpd"].shutdown()
 
 if __name__ == "__main__":
     main()
