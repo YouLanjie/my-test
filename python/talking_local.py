@@ -129,7 +129,8 @@ RESCOURSES = {"./main_page.html":"""
 <body>
   <div class="container">
     <h1>Python聊天室(Web UI)</h1>
-    <p>以下是消息列表（右边滑动条滑动到最下面查看最新消息）</p>
+    <a href="#last_msg"><button type="submit">点击查看最新消息</button></a>
+    <p></p><p>以下是消息列表</p>
 ${messages}
 ${send_window}
   </div>
@@ -358,7 +359,8 @@ class System:
         if self.savefile.is_dir():
             print("[WARN] savefile is dir")
             return
-        self.load()
+        if self.savefile.is_file():
+            self.load()
         data = {"users":[u.dump_data() for u in self.users],
                 "messages":[m.dump_data() for m in self.messages],
                 "hash":["", ""]}
@@ -557,6 +559,8 @@ class System:
             name = userlist.get(m.owner)
             if name is None:
                 name = "<未知用户>"
+            if m == self.messages[-1]:
+                s += """<p id="last_msg">最新消息:</p>"""
             s += "<div class='messages'>\n"
             s += f"<p><span class='msg_name'>{escape(name)}</span> <span class='msg_time'>{escape(get_strtime(m.timestamp))}</span></p>\n"
             s += "<p>"+ "<br/>".join(m.content.splitlines()) + "</p>\n"
