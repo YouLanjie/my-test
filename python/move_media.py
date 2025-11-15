@@ -167,22 +167,20 @@ def process_files(result:dict[str,int]) -> None:
 
         # 检查目标文件是否已存在
         if target.exists():
-            # 文件内容相同
-            if diff_file(file, target):
-                print_verbose(3,f"# INFO 文件已存在且内容相同(SKIPPED): {file}")
-                backup = Path(f"{file}.bak")
-                if not backup.exists():
-                    if not ARGS.no_apply:
-                        shutil.move(file, backup)
-                    print_verbose(3,f"# INFO 重命名: {file} -> {backup}")
-                else:
-                    print_verbose(3, f"# WARN 重复文件重名: {file}")
-                result["skipped"] += 1
-                continue
-            else:
+            if not diff_file(file, target):
                 print_verbose(-1,f"# WARN 目标文件已存在但内容不同: {file}")
                 result["skipped"] += 1
                 continue
+            # 文件内容相同
+            print_verbose(3,f"# INFO 文件已存在且内容相同(SKIPPED): {file}")
+            backup = Path(f"{file}.bak")
+            if not backup.exists():
+                if not ARGS.no_apply:
+                    shutil.move(file, backup)
+                print_verbose(3,f"# INFO 重命名: {file} -> {backup}")
+            else:
+                print_verbose(3, f"# WARN 重复文件重名: {file}")
+            result["skipped"] += 1
 
         # 执行文件操作
         try:

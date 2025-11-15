@@ -15,6 +15,7 @@ import uuid
 import hashlib
 import json
 import os
+import shutil
 import time
 
 # web ui
@@ -465,6 +466,10 @@ class System:
             data = None
         if not isinstance(data, dict):
             print("[ERROR] 读取数据失败")
+            tsp = int(datetime.now().timestamp())
+            backupf = Path(f"{self.savefile.stem}_bak_{tsp}{self.savefile.suffix}")
+            print(f"[INFO] 移动原文件 '{self.savefile.resolve()}' 到 '{backupf.resolve()}'")
+            shutil.move(self.savefile, backupf)
             return False
         self.st_mtime = st_mtime
         for u in data.get("users") or []:
@@ -536,7 +541,7 @@ class System:
                     elif str(number) == "g":
                         ind = -1
                     elif str(number) == "G":
-                        ind = len(pages)-1
+                        ind = len(pages)-2
                     elif str(number).lower().startswith("h"):
                         print("[INFO] g回到第一页, G跳到最后一页")
                         print("[INFO] 输入数字页码跳转到对应页面")
@@ -823,6 +828,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             if SYSTEM.now_user.get(self.client_address[0]):
                 SYSTEM.messages.append(Message(SYSTEM.now_user[self.client_address[0]], str(message)))
                 data["content"] = """<p>留言成功！</p>"""
+                data["meta"] = """<meta http-equiv="refresh" content="1;url=/#last_msg">"""
         elif parsed_path.path == '/logout':
             if SYSTEM.now_user.get(self.client_address[0]):
                 SYSTEM.now_user.pop(self.client_address[0])
