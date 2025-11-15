@@ -8,6 +8,7 @@ from datetime import datetime
 from getpass import getpass
 from typing import Callable, Union
 from importlib import import_module
+import argparse
 import threading
 import subprocess
 import uuid
@@ -30,7 +31,7 @@ if os.name == "posix":
     except ModuleNotFoundError:
         pass
 
-RESCOURSES_CSS_PART = """
+RESCOURSES = {"css":"""
 body {
     font-family: Arial, sans-serif;
     max-width: 800px;
@@ -113,87 +114,158 @@ button:hover {
     background: #3498db;
     border-radius: 4px;
 }
-"""
 
-RESCOURSES = {"./main_page.html":"""
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Python聊天室 - ${ip}</title>
-  <style>"""+RESCOURSES_CSS_PART+"""
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>Python聊天室(Web UI)</h1>
-    <a href="#last_msg"><button type="submit">点击查看最新消息</button></a>
-    <p></p><p>以下是消息列表</p>
-${messages}
-${send_window}
-  </div>
-  <div class="container">
-    <h1>用户列表</h1>
-${users}
-  </div>
-  <div class="container">
-    <h1>登录状态</h1>
-${userdata}
-  </div>
-</body>
-</html>
+.header-padding {
+    padding: 1.3em;
+}
+.header ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+    overflow: auto;
+    background-color: #333;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+}
+.header li {
+    float: left;
+}
+.header li a {
+    display: block;
+    color: white;
+    text-align: center;
+    padding: 14px 16px;
+    text-decoration: none;
+}
+/*鼠标移动到选项上修改背景颜色 */
+.header li a:hover {
+    background-color: #111;
+}
 """, # ==================
-"./404.html":"""
-<!DOCTYPE html>
-<html>
-<head>
-  <meta http-equiv="refresh" content="3;url=/">
-  <style>"""+RESCOURSES_CSS_PART+"""
-  </style>
-</head>
-<body>
-    <p>页面将在3秒钟后自动跳转到<a href="/">主页</a></p>
-</body>
-</html>
-""", # =================
-"./response_page.html":"""
+"template":"""
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 ${meta}
-  <title>提交结果</title>
-  <style>"""+RESCOURSES_CSS_PART+"""
+  <title>${title}</title>
+  <style>${css}
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="container">
+  <div class="header">
+    <ul>
+      <li><a href="/">消息列表</a></li>
+      <li><a href="/userlist">用户列表</a></li>
+      ${loginstatus}
+    </ul>
+  </div>
+  <div class="header-padding"></div>
 ${content}
+</body>
+</html>
+""", # ==================
+"msg_list":"""
+<div class="container">
+  <h1>Python聊天室(Web UI)</h1>
+  <a href="#last_msg"><button type="submit">点击查看最新消息</button></a>
+  <p></p><p>以下是消息列表</p>
+${messages}
+${send_window}
+</div>
+""", # ==================
+"send_window":"""
+<form method="POST" action="/send_message">
+<div class="form-group">
+<label for="message">填写要发送的消息:</label><textarea name="message" rows="4" required></textarea>
+</div>
+<button type="submit">发送</button></form>
+""", # ==================
+"userlist":"""
+<div class="container">
+  <h1>用户列表</h1>
+${users}
+</div>
+""", # ==================
+"dashboard":"""
+<div class="container">
+  <h1>个人仪表板</h1>
+  ${userdata}
+</div>
+""", # ==================
+"dashboard-data":"""
+<div class='users'>
+  <p><span class='user_name'>${name}</span>
+  <span class='user_time'>注册时间: ${timestamp}</span></p>
+  <p>${note}</p>
+</div>
+<div class='container'>
+  <p>UUID: '${id}'</p>
+  <p>密码md5值: '${passwd}'</p>
+  <details>
+    <summary>登录记录</summary>
+    <p>${login_record}</p>
+  </details>
+</div>
+
+<div class='container'>
+  <form method="POST" action="/renote">
+    <div class="form-group">
+      <label for="note">修改备注:</label>
+      <textarea name="note" rows="4" required>${note}</textarea>
     </div>
+    <button type="submit">提交修改</button>
+  </form>
+</div>
+
+<form method="POST" action="/logout">
+  <button type="submit" style="background-color:red;">退出登录</button>
+</form>
+""", # ==================
+"login":"""
+<div class="container">
+  <h1>登录</h1>
+  <form method="POST" action="/login">
+     <div class="form-group">
+      <label for="name">用户名:</label><input type="text" name="username" required>
+      <label for="passwd">密码:</label><input type="password" name="passwd" required>
+    </div>
+    <button type="submit">登录</button>
+  </form>
+</div>
+""", # ==================
+"register":"""
+<div class="container">
+  <h1>注册</h1>
+  <form method="POST" action="/register">
+    <div class="form-group">
+      <label for="name">用户名:</label><input type="text" name="username" required>
+      <label for="passwd">密码（暂不支持注册后修改或找回）:</label><input type="password" name="passwd" required>
+      <label for="passwd2">再次输入相同的密码确认:</label><input type="password" name="passwd2" required>
+    </div>
+    <button type="submit">注册</button>
+  </form>
+</div>
+""", # ==================
+"404":"""
+<div class="container">
+  <h1>404 Page Not Found</h1>
+  <p>页面将在3秒钟后自动跳转到<a href="/">主页</a></p>
+</div>
+""", # =================
+"response":"""
+<div class="container">
+  <div class="container">
+${content}
+  </div>
   <a href="/" class="back-button">
   <button type="submit">返回主页(部分页面会自动跳转)</button>
   </a>
-  </div>
-</body>
-</html>
+</div>
 """}
-
-def gen_html(name:str, data = None) -> str:
-    """return html file"""
-    if not isinstance(data, dict):
-        data = {}
-    # file = Path(name)
-    # if not file.is_file():
-    if not name in RESCOURSES:
-        return """<!DOCTYPE html><html lang="zh-CN">"""+\
-                """<head><title>404<title/><meta http-equiv="refresh" content="2;url=/"><head/>"""+\
-                """<body><p>'{file}' could not be found<p/><body/>"""
-    # content = Template(file.read_text())
-    content = Template(RESCOURSES[name])
-    return content.safe_substitute(data)
 
 # 由于在py3.8时仍不支持将联合类型写成 X|Y ，心碎了
 def get_strtime(dt:Union[datetime,float] = datetime.now()) -> str:
@@ -377,7 +449,7 @@ class System:
     def load(self) -> bool:
         """读取数据"""
         if not self.savefile.is_file():
-            print("[WARN] 数据文件不存在")
+            print(f"[WARN] 数据文件'{self.savefile.resolve()}'不存在")
             self.syslog("[INFO] 聊天室建立")
             self.save()
             return False
@@ -547,95 +619,113 @@ class System:
         except (KeyboardInterrupt, EOFError):
             print("[INFO] 取消操作")
             return
-    def web_api(self, ip = "") -> dict:
-        """返回dict for Template"""
-        data = {"ip": ip}
-        self.load()
-        userlist = {u.id:u.name for u in self.users}
-        s = ""
-        for m in self.messages:
-            name = userlist.get(m.owner)
-            if name is None:
-                name = "<未知用户>"
-            if m == self.messages[-1]:
-                s += """<p id="last_msg">最新消息:</p>"""
-            s += "<div class='messages'>\n"
-            s += f"<p><span class='msg_name'>{escape(name)}</span> <span class='msg_time'>{escape(get_strtime(m.timestamp))}</span></p>\n"
-            s += "<p>"+ "<br/>".join(m.content.splitlines()) + "</p>\n"
-            s += "</div>\n"
-        data["messages"] = s
-        s = ""
-        for u in self.users:
-            s += "<div class='users'>\n"
-            s += f"<p><span class='user_name'>{escape(u.name)}</span> <span class='user_time'>注册时间: {escape(get_strtime(u.timestamp))}</span></p>\n"
-            s += "<p>"+ "<br/>".join(u.note.splitlines()) + "</p>\n"
-            s += "</div>\n"
-        data["users"] = s
-        s = ""
+    def get_html(self, ip:Union[dict,str] = "", tag = "") -> str:
+        """生成html相应页面"""
+        data = {}
+        if isinstance(ip, dict):
+            data = ip
+            ip = str(ip.get("ip"))
+        s = []
         if self.now_user.get(ip):
             u = self.now_user[ip]
-            s += "<div class='users'>\n"
-            s += f"<p><span class='user_name'>{escape(u.name)}</span> <span class='user_time'>注册时间: {escape(get_strtime(u.timestamp))}</span></p>\n"
-            s += "<p>"+ "<br/>".join(u.note.splitlines()) + "</p>\n"
-            s += "</div><div class='container'>\n"
-            s += f"<p>UUID: '{escape(u.id)}'</p>"
-            s += f"<p>密码md5值: '{escape(u.passwd)}'</p>"
-            login_record = "<br/>".join(escape("> "+f"在 {escape(get_strtime(i))} 登录过") for i in u.login_record)
-            s += f"<details><summary>登录记录</summary><p>{login_record}</p></details></div>\n"
-    
-            s += """<div class='container'><form method="POST" action="/renote">"""
-            s += """<div class="form-group">"""
-            s += f"""<label for="note">修改备注:</label><textarea name="note" rows="4" required>{escape(u.note)}</textarea>"""
-            s += """</div>"""
-            s += """<button type="submit">提交修改</button></form></div>\n"""
-    
-            s += """<p></p><form method="POST" action="/logout">"""
-            s += """<button type="submit" style="background-color:red;">退出登录</button></form>\n"""
+            s.append(f"""<a href="/dashboard">{escape(u.name)}</a>""")
         else:
-            # s += "<div class='messages'>\n"
-            s += "<p>你尚未登录,请登录或注册（登录失败再注册）</p>\n"
-            s += """<form method="POST" action="/login">"""
-            s += """<div class="form-group">"""
-            s += """<label for="name">用户名:</label><input type="text" name="username" required>"""
-            s += """<label for="passwd">密码:</label><input type="password" name="passwd" required>"""
-            # <textarea id="message" name="message" rows="4" required></textarea>
-            s += """</div>"""
-            s += """<button type="submit">登录</button></form>"""
-            # s += "</div>\n"
-        data["userdata"] = s
+            s.append("""<a href="/register">注册</a></li>""")
+            s.append("""<a href="/login">登录</a>""")
+        loginstatus = "\n".join([f"""<li style="float:right;">{i}</li>""" for i in s])
+
+        meta = ""
+        title = ""
         s = ""
-        if self.now_user.get(ip):
-            s += """<form method="POST" action="/send_message">"""
-            s += """<div class="form-group">"""
-            s += """<label for="message">填写要发送的消息:</label><textarea name="message" rows="4" required></textarea>"""
-            s += """</div>"""
-            s += """<button type="submit">发送</button></form>"""
-        data["send_window"] = s
-        return data
+        # RESCOURSES[]
+        self.load()
+        if tag == "msg_list":
+            userlist = {u.id:u.name for u in self.users}
+            for m in self.messages:
+                name = userlist.get(m.owner)
+                if name is None:
+                    name = "<未知用户>"
+                if m == self.messages[-1]:
+                    s += """<p id="last_msg">最新消息:</p>"""
+                s += "<div class='messages'>\n"
+                s += f"<p><span class='msg_name'>{escape(name)}</span> <span class='msg_time'>{escape(get_strtime(m.timestamp))}</span></p>\n"
+                s += "<p>"+ "<br/>".join(m.content.splitlines()) + "</p>\n"
+                s += "</div>\n"
+            data = {
+                "messages":s,
+                "send_window": RESCOURSES["send_window"] if self.now_user.get(ip) else ""}
+            title = "Python聊天室"
+        elif tag == "userlist":
+            for u in self.users:
+                s += "<div class='users'>\n"
+                s += f"<p><span class='user_name'>{escape(u.name)}</span> <span class='user_time'>注册时间: {escape(get_strtime(u.timestamp))}</span></p>\n"
+                s += "<p>"+ "<br/>".join(u.note.splitlines()) + "</p>\n"
+                s += "</div>\n"
+            data = {"users":s}
+            title = "用户列表"
+        elif tag == "login":
+            title = "登录"
+        elif tag == "register":
+            # <p>[WARN] 用户 '{name}' 不存在, 可尝试注册<p>
+            title = "注册"
+        elif tag == "dashboard":
+            if self.now_user.get(ip):
+                u = self.now_user[ip]
+                data = {
+                    "name":escape(u.name), "timestamp":escape(get_strtime(u.timestamp)),
+                    "note":"<br/>".join(escape(u.note).splitlines()),
+                    "id":escape(u.id), "passwd":escape(u.passwd),
+                    "login_record":"<br/>".join(\
+                            escape("> "+f"在 {escape(get_strtime(i))} 登录过") \
+                            for i in u.login_record)
+                    }
+                data = {"userdata": Template(RESCOURSES["dashboard-data"]).safe_substitute(data)}
+            else:
+                data = {"userdata":"<p>你尚未登录</p>"}
+            title = "个人仪表板"
+        elif tag == "response":
+            title = str(data.get("title"))
+            meta = str(data.get("meta"))
+            s = str(data.get("content"))
+        else:
+            tag = "404"
+            title = "404 Page Not Found"
+            meta = """<meta http-equiv="refresh" content="3;url=/">"""
+
+        if tag and tag in RESCOURSES:
+            s = Template(RESCOURSES[tag]).safe_substitute(data)
+        s = Template(RESCOURSES["template"]).safe_substitute({
+            "content":s, "css":RESCOURSES["css"],
+            "meta":meta, "title":f"{title} - {ip}",
+            "loginstatus":loginstatus})
+        return s
 
 # 自定义请求处理器
 class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         # 解析URL路径
         parsed_path = urllib.parse.urlparse(self.path)
+        path = parsed_path.path
         # print([self.path, parsed_path])
         # 如果访问根路径，返回主页
-        if parsed_path.path == '/':
+        if path in ('/', '/userlist', '/login', '/register', '/login', '/dashboard'):
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
             # 生成HTML页面(生成主页面HTML)
-            html_content = gen_html("./main_page.html",
-                                    SYSTEM.web_api(self.client_address[0]))
-            self.wfile.write(html_content.encode())
+            if path == "/":
+                path = "msg_list"
+            else:
+                path = path[1:]
+            html_content = SYSTEM.get_html(self.client_address[0], path)
         else:
             # # 对于其他路径，使用默认的文件服务行为
             # super().do_GET()
             self.send_response(404)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
-            html_content = gen_html("./404.html")
-            self.wfile.write(html_content.encode())
+            html_content = SYSTEM.get_html(self.client_address[0], "404")
+        self.wfile.write(html_content.encode())
     
     def do_POST(self):
         # 处理POST请求
@@ -644,7 +734,9 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
         # 解析表单数据
         parsed_data = urllib.parse.parse_qs(post_data)
         data = {"content":"<p>???? 你似乎进入到了一个禁忌之地 ???</p>",
-                "meta":"""<meta http-equiv="refresh" content="1;url=/">"""}
+                "meta":"""<meta http-equiv="refresh" content="2;url=/">""",
+                "ip":self.client_address[0],
+                "title":"中转界面"}
 
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
@@ -660,14 +752,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             s = ""
             if name not in li:
                 s += f"<p>[WARN] 用户 '{name}' 不存在, 可尝试注册<p>"
-                s += """<form method="POST" action="/register">"""
-                s += """<div class="form-group">"""
-                s += f"""<label for="name">用户名:</label><input type="text" name="username" value={repr(name)} required>"""
-                s += """<label for="passwd">密码（暂不支持注册后修改或找回）:</label><input type="password" name="passwd" required>"""
-                s += """<label for="passwd2">再次输入相同的密码确认:</label><input type="password" name="passwd2" required>"""
-                s += """</div>"""
-                s += """<button type="submit">注册</button></form>"""
-                data["meta"] = ""
+                data["meta"] = """<meta http-equiv="refresh" content="2;url=/register">"""
             elif li[name].check_passwd(passwd):
                 SYSTEM.now_user[self.client_address[0]] = li[name]
                 li[name].login_record.append(datetime.now().timestamp())
@@ -675,6 +760,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
                 s += f"""<p>{escape(name)}</p>"""
             else:
                 s += """<p>很抱歉，登录失败了，也许你的密码输错了？</p>"""
+                data["meta"] = """<meta http-equiv="refresh" content="2;url=/login">"""
             data["content"] = s
         elif parsed_path.path == '/register' and "username" in parsed_data:
             name = parsed_data.get("username")
@@ -688,9 +774,11 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             if name in li:
                 s += """<p>注册失败！</p>"""
                 s += f"<p>[WARN] 用户 '{name}' 已存在<p>"
+                data["meta"] = """<meta http-equiv="refresh" content="2;url=/register">"""
             elif passwd != passwd2:
                 s += """<p>注册失败！</p>"""
                 s += """<p>两次输入的密码不一样</p>"""
+                data["meta"] = """<meta http-equiv="refresh" content="2;url=/register">"""
             else:
                 u = User(name, passwd)
                 SYSTEM.users.append(u)
@@ -705,6 +793,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             if SYSTEM.now_user.get(self.client_address[0]):
                 SYSTEM.now_user[self.client_address[0]].note = note
                 data["content"] = """<p>修改备注成功！</p>"""
+                data["meta"] = """<meta http-equiv="refresh" content="2;url=/dashboard">"""
         elif parsed_path.path == '/send_message' and "message" in parsed_data:
             message = parsed_data.get("message")
             message = escape(str(message[0] if message else ""))
@@ -719,14 +808,16 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             for key,value in parsed_data.items():
                 data[key] = escape(value[0])
             # 生成响应页面
-        response_html = gen_html("./response_page.html", data)
+
+        response_html = SYSTEM.get_html(data, "response")
         self.wfile.write(response_html.encode())
         SYSTEM.load()
         SYSTEM.save()
 
 # 启动服务器
 def run_server(port=8000):
-    socketserver.TCPServer.allow_reuse_address = True
+    if os.name != "nt":
+        socketserver.TCPServer.allow_reuse_address = True
     for i in range(port, port+100):
         try:
             with socketserver.TCPServer(("", i), SimpleWebUI) as httpd:
@@ -912,6 +1003,14 @@ def main():
     if SYSTEM.httpd:
         SYSTEM.httpd.shutdown()
 
+def parse_arguments() -> argparse.Namespace:
+    """解释参数"""
+    parser = argparse.ArgumentParser(description='python本地(局域网)聊天室')
+    # parser.add_argument('-x', '--debug', action="store_true", help='调试')
+    args = parser.parse_args()
+    return args
+
 if __name__ == "__main__":
+    ARGS = parse_arguments()
     SYSTEM = System()
     main()
