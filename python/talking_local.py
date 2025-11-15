@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # Created:2025.10.18
-# a chat room program based on python
+# 基于python的简陋聊天室程序，向下兼容至python3.8
+# Filename: 聊天室v0.0.4.py
 
 from pathlib import Path
 from datetime import datetime
@@ -28,8 +29,6 @@ if os.name == "posix":
         import_module("readline")
     except ModuleNotFoundError:
         pass
-
-SYSTEM = {}
 
 RESCOURSES_CSS_PART = """
 body {
@@ -216,11 +215,11 @@ class User:
         self.note = note
         # self.preference = {}
         self.timestamp = datetime.now().timestamp()
-        self._id = str(uuid.uuid1())
+        self._id = str(uuid.uuid4())
         self.login_record = []
     @property
     def id(self) -> str:
-        """UUID1，用于标识用户"""
+        """UUID4，用于标识用户"""
         return self._id
     @property
     def passwd(self) -> str:
@@ -250,10 +249,10 @@ class Message:
         self.timestamp = datetime.now().timestamp()
         self.owner = user.id
         self.content = content
-        self._id = str(uuid.uuid1())
+        self._id = str(uuid.uuid4())
     @property
     def id(self) -> str:
-        """UUID1，用于标识该条聊天记录"""
+        """UUID4，用于标识该条聊天记录"""
         return self._id
     def dump_data(self) -> dict:
         "dump data for json"
@@ -269,11 +268,11 @@ class System:
     def __init__(self) -> None:
         self.users : list[User] = []
         self.messages : list[Message] = []
-        self.now_user : Union[User,None] = None
+        self.now_user : dict[str,User] = {}
         self.savefile = Path("SAVEDATA.json")
         self.st_mtime = 0.0
         self.md5_hash = []
-        self.httpd : Union[None, socketserver.TCPServer]= None
+        self.httpd : Union[None, socketserver.TCPServer] = None
 
         system = User("SYSTEM", "", "系统内置服务用用户")
         system.load_data({"_passwd":"db10fa5fb2467f50c7242356ee42ca86",
@@ -288,10 +287,10 @@ class System:
             print(f"[{u.name}] ({get_strtime(u.timestamp)})\n  -> \"{u.note}\"\n")
     def print_self(self) -> None:
         """打印登录用户自身信息"""
-        if not self.now_user:
+        if not self.now_user.get("commandline"):
             print("[WARN] 你尚未登录")
             return
-        u = self.now_user
+        u = self.now_user["commandline"]
         print(f"名字: '{u.name}'")
         print(f"注册时间: '{get_strtime(u.timestamp)}'")
         print(f"备注: '{u.note}'")
@@ -318,7 +317,7 @@ class System:
                     print("[INFO] 请重试(C-d取消)")
                 else:
                     break
-        except EOFError:
+        except (KeyboardInterrupt, EOFError):
             print("[INFO] 操作取消")
             return
         u = User(name, passwd)
@@ -327,7 +326,7 @@ class System:
             self.login(u)
     def login(self, user:Union[User,None] = None) -> None:
         """login"""
-        if self.now_user:
+        if self.now_user.get("commandline"):
             print("[WARN] 你已经登录")
             return
         if not user:
@@ -342,18 +341,18 @@ class System:
                     print("[WARN] 密码错误")
                     return
                 user = li[name]
-            except EOFError:
+            except (KeyboardInterrupt, EOFError):
                 print("[INFO] 操作取消")
                 return
-        self.now_user = user
+        self.now_user["commandline"] = user
         if user.login_record:
             print(f"[INFO] 上次登录：{get_strtime(user.login_record[-1])}")
         user.login_record.append(datetime.now().timestamp())
     def logout(self):
         """登出"""
-        if not self.now_user:
+        if not self.now_user.get("commandline"):
             print("[WARN] 你还没有登录")
-        self.now_user = None
+        self.now_user.pop("commandline")
     def save(self, readable = False) -> None:
         """保存数据"""
         if self.savefile.is_dir():
@@ -380,7 +379,6 @@ class System:
         if not self.savefile.is_file():
             print("[WARN] 数据文件不存在")
             self.syslog("[INFO] 聊天室建立")
-            threading.Thread(target=init_program,args=(self,)).start()
             self.save()
             return False
         st_mtime = self.savefile.stat().st_mtime
@@ -425,8 +423,8 @@ class System:
 
     def send_message(self, message:Union[str,None] = None, user:Union[User,None] = None) -> None:
         """发送信息"""
-        if self.now_user and not user:
-            user = self.now_user
+        if self.now_user.get("commandline") and not user:
+            user = self.now_user.get("commandline")
         if not user:
             print("[WARN] 尚未登录")
             return
@@ -436,7 +434,7 @@ class System:
                 message = input("[INPUT] 输入消息：")
                 check = input("[ASK] 确认？(Y/n)").lower() == "n"
             self.messages.append(Message(user, str(message)))
-        except EOFError:
+        except (KeyboardInterrupt, EOFError):
             print("[INFO] 取消操作")
             return
     def syslog(self, message:str) -> None:
@@ -499,7 +497,7 @@ class System:
                 if input("[ASK] 确认？(Y/n)").lower() == "n":
                     print("[INFO] 取消操作")
                     return
-        except EOFError:
+        except (KeyboardInterrupt, EOFError):
             print("[INFO] 取消操作")
             return
         if not obj_msg:
@@ -528,14 +526,14 @@ class System:
                     if str(number).lower() == "q":
                         ind = len(pages)
                     ind += 1
-        except EOFError:
+        except (KeyboardInterrupt, EOFError):
             print("[INFO] 取消操作")
             return
         
     def note_user(self, note:Union[str,None] = None, user:Union[User,None] = None) -> None:
         """修改用户自身的备注"""
-        if self.now_user and not user:
-            user = self.now_user
+        if self.now_user.get("commandline") and not user:
+            user = self.now_user.get("commandline")
         if not user:
             print("[WARN] 尚未登录")
             return
@@ -546,7 +544,7 @@ class System:
                 note = input("[INPUT] 输入备注：")
                 check = input("[ASK] 确认？(Y/n)").lower() == "n"
             user.note = str(note)
-        except EOFError:
+        except (KeyboardInterrupt, EOFError):
             print("[INFO] 取消操作")
             return
     def web_api(self, ip = "") -> dict:
@@ -574,8 +572,8 @@ class System:
             s += "</div>\n"
         data["users"] = s
         s = ""
-        if self.now_user:
-            u = self.now_user
+        if self.now_user.get(ip):
+            u = self.now_user[ip]
             s += "<div class='users'>\n"
             s += f"<p><span class='user_name'>{escape(u.name)}</span> <span class='user_time'>注册时间: {escape(get_strtime(u.timestamp))}</span></p>\n"
             s += "<p>"+ "<br/>".join(u.note.splitlines()) + "</p>\n"
@@ -606,7 +604,7 @@ class System:
             # s += "</div>\n"
         data["userdata"] = s
         s = ""
-        if self.now_user:
+        if self.now_user.get(ip):
             s += """<form method="POST" action="/send_message">"""
             s += """<div class="form-group">"""
             s += """<label for="message">填写要发送的消息:</label><textarea name="message" rows="4" required></textarea>"""
@@ -618,8 +616,6 @@ class System:
 # 自定义请求处理器
 class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        if not SYSTEM.get(self.client_address[0]):
-            SYSTEM[self.client_address[0]] = System()
         # 解析URL路径
         parsed_path = urllib.parse.urlparse(self.path)
         # print([self.path, parsed_path])
@@ -629,8 +625,8 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-type', 'text/html')
             self.end_headers()
             # 生成HTML页面(生成主页面HTML)
-            html_content = gen_html("./main_page.html", 
-                                    SYSTEM[self.client_address[0]].web_api(self.client_address[0]))
+            html_content = gen_html("./main_page.html",
+                                    SYSTEM.web_api(self.client_address[0]))
             self.wfile.write(html_content.encode())
         else:
             # # 对于其他路径，使用默认的文件服务行为
@@ -643,8 +639,6 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
     
     def do_POST(self):
         # 处理POST请求
-        if not SYSTEM.get(self.client_address[0]):
-            SYSTEM[self.client_address[0]] = System()
         content_length = int(self.headers['Content-Length'])
         post_data = self.rfile.read(content_length).decode('utf-8')
         # 解析表单数据
@@ -662,7 +656,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             name = escape(str(name[0] if name else ""))
             passwd = parsed_data.get("passwd")
             passwd = str(passwd[0] if passwd else "")
-            li = {u.name:u for u in SYSTEM[self.client_address[0]].users}
+            li = {u.name:u for u in SYSTEM.users}
             s = ""
             if name not in li:
                 s += f"<p>[WARN] 用户 '{name}' 不存在, 可尝试注册<p>"
@@ -675,7 +669,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
                 s += """<button type="submit">注册</button></form>"""
                 data["meta"] = ""
             elif li[name].check_passwd(passwd):
-                SYSTEM[self.client_address[0]].now_user = li[name]
+                SYSTEM.now_user[self.client_address[0]] = li[name]
                 li[name].login_record.append(datetime.now().timestamp())
                 s += """<p>欢迎回来！</p>"""
                 s += f"""<p>{escape(name)}</p>"""
@@ -689,7 +683,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             passwd = str(passwd[0] if passwd else "")
             passwd2 = parsed_data.get("passwd2")
             passwd2 = str(passwd2[0] if passwd2 else "")
-            li = {u.name:u for u in SYSTEM[self.client_address[0]].users}
+            li = {u.name:u for u in SYSTEM.users}
             s = ""
             if name in li:
                 s += """<p>注册失败！</p>"""
@@ -699,8 +693,8 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
                 s += """<p>两次输入的密码不一样</p>"""
             else:
                 u = User(name, passwd)
-                SYSTEM[self.client_address[0]].users.append(u)
-                SYSTEM[self.client_address[0]].now_user = u
+                SYSTEM.users.append(u)
+                SYSTEM.now_user[self.client_address[0]] = u
                 u.login_record.append(datetime.now().timestamp())
                 s += """<p>注册成功，欢迎！</p>"""
                 s += f"""<p><b>{escape(name)}</b></p>"""
@@ -708,18 +702,18 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
         elif parsed_path.path == '/renote' and "note" in parsed_data:
             note = parsed_data.get("note")
             note = escape(str(note[0] if note else ""))
-            if SYSTEM[self.client_address[0]].now_user:
-                SYSTEM[self.client_address[0]].now_user.note = note
+            if SYSTEM.now_user.get(self.client_address[0]):
+                SYSTEM.now_user[self.client_address[0]].note = note
                 data["content"] = """<p>修改备注成功！</p>"""
         elif parsed_path.path == '/send_message' and "message" in parsed_data:
             message = parsed_data.get("message")
             message = escape(str(message[0] if message else ""))
-            if SYSTEM[self.client_address[0]].now_user:
-                SYSTEM[self.client_address[0]].messages.append(Message(SYSTEM[self.client_address[0]].now_user, str(message)))
+            if SYSTEM.now_user.get(self.client_address[0]):
+                SYSTEM.messages.append(Message(SYSTEM.now_user[self.client_address[0]], str(message)))
                 data["content"] = """<p>留言成功！</p>"""
         elif parsed_path.path == '/logout':
-            if SYSTEM[self.client_address[0]].now_user:
-                SYSTEM[self.client_address[0]].now_user = None
+            if SYSTEM.now_user.get(self.client_address[0]):
+                SYSTEM.now_user.pop(self.client_address[0])
                 data["content"] = """<p>登出成功！</p>"""
         else:
             for key,value in parsed_data.items():
@@ -727,8 +721,8 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             # 生成响应页面
         response_html = gen_html("./response_page.html", data)
         self.wfile.write(response_html.encode())
-        SYSTEM[self.client_address[0]].load()
-        SYSTEM[self.client_address[0]].save()
+        SYSTEM.load()
+        SYSTEM.save()
 
 # 启动服务器
 def run_server(port=8000):
@@ -737,7 +731,7 @@ def run_server(port=8000):
         try:
             with socketserver.TCPServer(("", i), SimpleWebUI) as httpd:
                 print(f"[INFO] 服务器(WebUI)运行在 http://localhost:{i}")
-                SYSTEM["httpd"] = httpd
+                SYSTEM.httpd = httpd
                 # print("按 Ctrl+C 停止服务器")
                 try:
                     httpd.serve_forever()
@@ -746,7 +740,7 @@ def run_server(port=8000):
         except OSError:
             continue
         break
-    SYSTEM["httpd"] = None
+    SYSTEM.httpd = None
 
 def module_check(module_list:list, system = None) -> list:
     """检查并安装需要的模块"""
@@ -780,21 +774,20 @@ def module_check(module_list:list, system = None) -> list:
                 system.syslog(f"[WARN] 模块'{i}'仍不可用")
     return avaliable_list
 
-def init_program(system:System):
-    """初次启动"""
-    system.syslog("[INFO] 初始化程序中(后台进行)")
-
-    outf = Path("反极域软件.exe")
-    md5_hash = "bcbbe129e6032fdbee6e2df28fef55e3"
-    fsize = 4712960
-    has_file = outf.is_file() and outf.stat().st_size == fsize
-    has_file = has_file and hashlib.md5(outf.read_bytes()).hexdigest() == md5_hash
-    if outf.is_file() and not has_file:
-        outf.unlink()
-    if os.name == "nt" and not has_file:
+def extra_funtions():
+    """提供诸如反极域软件下载、更新等功能"""
+    system = SYSTEM
+    def download_anti_program():
+        outf = Path("反极域软件.exe")
+        md5_hash = "bcbbe129e6032fdbee6e2df28fef55e3"
+        fsize = 4712960
+        has_file = outf.is_file() and outf.stat().st_size == fsize
+        has_file = has_file and hashlib.md5(outf.read_bytes()).hexdigest() == md5_hash
+        if outf.is_file() and not has_file:
+            outf.unlink()
         req = import_module("urllib.request")
         errors = import_module("urllib.error")
-        system.syslog("[INFO] 正在尝试下载反极域软件")
+        print("[INFO] 正在尝试下载反极域软件")
         url = "github.com/imengyu/JiYuTrainer/releases/download/1.7.6/JiYuTrainer.exe"
         urls = (f"http://ghfast.top/{url}", f"http://{url}")
         for i in urls:
@@ -802,23 +795,79 @@ def init_program(system:System):
                 req.urlretrieve(i, str(outf))
                 break
             except errors.HTTPError as e:
-                system.syslog(f"[WARN] 链接不可用: {i} ({e})")
+                print(f"[WARN] 链接不可用: {i} ({e})")
             except errors.URLError as e:
-                system.syslog(f"[WARN] 域名无法访问: {i} ({e})")
+                print(f"[WARN] 域名无法访问: {i} ({e})")
         if outf.is_file():
-            system.syslog(f"[INFO] 反极域软件已保存到'{outf.resolve()}'")
-    elif os.name != "nt":
-        system.syslog("[INFO] 非windows nt环境，断定为测试环境")
-    system.syslog("[INFO] 初始化结束")
-    system.save()
+            print(f"[INFO] 反极域软件已保存到'{outf.resolve()}'")
+        return
+    def self_update():
+        req = import_module("urllib.request")
+        errors = import_module("urllib.error")
+        print("[INFO] 正在尝试更新本程序")
+        url = "raw.githubusercontent.com/youlanjie/my-test/refs/heads/main/python/talking_local.py"
+        urls = (f"http://ghfast.top/{url}", f"http://{url}")
+        ret = None
+        for i in urls:
+            try:
+                ret = req.urlopen(i)
+                if ret.getcode() == 200:
+                    break
+                ret = None
+            except errors.HTTPError as e:
+                print(f"[WARN] 链接不可用: {i} ({e})")
+            except errors.URLError as e:
+                print(f"[WARN] 域名无法访问: {i} ({e})")
+        if not ret:
+            print(f"[INFO] 下载失败 - '{url}'")
+            return
+        content = ret.read()
+        try:
+            filename = str(content.decode().splitlines()[3])
+            if not filename.startswith("# Filename: "):
+                raise EOFError
+            filename = filename[12:]
+        except (UnicodeDecodeError, IndexError, EOFError):
+            print("[INFO] 获取聊天室版本错误，使用默认名称")
+            filename = "聊天室_版本未知.py"
+        outf = Path(filename)
+        outf.write_bytes(content)
+        if outf.is_file():
+            print(f"[INFO] 新版文件已保存到'{outf.resolve()}'")
+            system.syslog(f"[INFO] 更新版本到'{outf.resolve()}'")
+        return
+    li = [lambda:None,download_anti_program, self_update]
+    print("""\
+##################################
+#          额外功能菜单          #
+##################################
+#  1. 下载反极域（反控制）软件   #
+#  2. 更新本程序                 #
+#  0. 返回命令行                 #
+##################################""")
+    num = 0
+    try:
+        num = int(input("[INPUT] 请选择(数字):"))
+        print(f"[INFO] 将运行功能 '{li[num]}'")
+        if input("[ASK] 确认？(y/N)").lower() != "y":
+            raise KeyboardInterrupt
+        print(f"[INFO] 正在运行 '{li[num]}'(后台进行)")
+        threading.Thread(target=li[num]).start()
+    except (KeyboardInterrupt, EOFError):
+        print("[INFO] 取消操作")
+    except ValueError:
+        print("[INFO] 无效值（非数字）")
+    except IndexError:
+        print("[INFO] 超出选择范围")
 
 def main():
     """主函数"""
-    system = System()
+    system = SYSTEM
     # SYSTEM["commandline"] = SYSTEM
     c = ""
     right = True
     menu : dict[str,tuple[str,Callable]] = {
+            "more":("更多可选操作（更新等）",extra_funtions),
             "save":("保存数据",system.save),
             "save2":("以人类易读形式保存数据", lambda:system.save(readable=True)),
             "load":("加载数据",system.load),
@@ -843,7 +892,7 @@ def main():
     threading.Thread(target=run_server).start()
     for i in range(100):
         time.sleep(0.01)
-        if SYSTEM.get("httpd"):
+        if SYSTEM.httpd:
             break
 
     while c.lower() != "q":
@@ -851,7 +900,7 @@ def main():
                 [">"*10+"命令分隔符"+"<"*10+"\n", ""]
         try:
             c = input(f"{color[0]}$ {color[1]}")
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, EOFError):
             c = "q"
         system.load()
         if c in menu:
@@ -860,8 +909,9 @@ def main():
         else:
             right = False
         system.save()
-    if SYSTEM.get("httpd"):
-        SYSTEM["httpd"].shutdown()
+    if SYSTEM.httpd:
+        SYSTEM.httpd.shutdown()
 
 if __name__ == "__main__":
+    SYSTEM = System()
     main()
