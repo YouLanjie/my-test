@@ -337,11 +337,11 @@ class Message:
 
 class System:
     """系统服务"""
-    def __init__(self) -> None:
+    def __init__(self, savefile = "SAVEDATA.json") -> None:
         self.users : list[User] = []
         self.messages : list[Message] = []
         self.now_user : dict[str,User] = {}
-        self.savefile = Path("SAVEDATA.json")
+        self.savefile = Path(str(savefile))
         self.st_mtime = 0.0
         self.md5_hash = []
         self.httpd : Union[None, socketserver.TCPServer] = None
@@ -512,18 +512,54 @@ class System:
     def syslog(self, message:str) -> None:
         """记录系统运行日志"""
         self.send_message(message, self.system)
-    def show_message(self) -> None:
+    def print_in_page(self, content: str, limit = 12) -> None:
+        """将传入的内容分页显示"""
+        content = str(content)
+        pages = content.splitlines()
+        all_pages = len(pages)//limit + (len(pages)%limit!=0)
+        pages = ["\n".join(pages[i*limit:(i+1)*limit]) for i in range(all_pages)]
+        try:
+            ind = 0
+            while ind < len(pages):
+                seperator = "-"*15+f" {ind+1}/{len(pages)} "+"-"*15
+                print(seperator)
+                print(pages[ind])
+                print(seperator)
+                number = input("[INPUT] 翻页器(h获取帮助):")
+                try:
+                    number = int(number)
+                    if 0 < number <= len(pages):
+                        ind = number - 1
+                except ValueError:
+                    if str(number).lower() == "q":
+                        ind = len(pages)
+                    elif str(number) == "g":
+                        ind = -1
+                    elif str(number) == "G":
+                        ind = len(pages)-1
+                    elif str(number).lower().startswith("h"):
+                        print("[INFO] g回到第一页, G跳到最后一页")
+                        print("[INFO] 输入数字页码跳转到对应页面")
+                        print("[INFO] h开头字符命令打印此信息")
+                        print("[INFO] q退出程序(均需要回车确认)")
+                        ind -= 1
+                    ind += 1
+        except (KeyboardInterrupt, EOFError):
+            print("[INFO] 取消操作")
+            return
+        return
+    def show_message(self, pager = False) -> None:
         """显示所有历史信息"""
         userlist = {u.id:u.name for u in self.users}
-        seperator = " "*30
         if self.messages:
-            print(seperator)
+            print()
         colors = ("\x1b[34m", "\x1b[0m", "\x1b[2m") if os.name == "posix" else ("", "", "")
+        s = ""
         for m in self.messages:
             name = userlist.get(m.owner)
             if name is None:
                 name = "<未知用户>"
-            print(f"{colors[0]}[{name}]在({get_strtime(m.timestamp)})说:{colors[1]}")
+            s += f"{colors[0]}[{name}]在({get_strtime(m.timestamp)})说:{colors[1]}\n"
             content = m.content
             if len(content.splitlines()) > 12:
                 content = "\n".join(content.splitlines()[:12]) +\
@@ -535,19 +571,22 @@ class System:
                         "\n"+"="*40+"\n"+\
                         "【以下内容由于字符数量超过500被系统自动截断】\n"+\
                         f"【使用show命令查看全部内容】\n【消息ID:'{m.id}'】"
-            print("\n".join(colors[2]+"> "+colors[1]+i for i in  content.splitlines()))
-            print(seperator)
+            s += "\n".join(colors[2]+"> "+colors[1]+i for i in  content.splitlines()) + "\n\n"
+        if pager and len(s.splitlines()) > 12:
+            self.print_in_page(s)
+        else:
+            print(s, end="")
     def select_message(self) -> Union[Message, None]:
         """过滤选择消息"""
         msg_list = {}
         userlist = {u.id:u.name for u in self.users}
-        for m in self.messages:
+        for n,m in enumerate(self.messages):
             name = userlist.get(m.owner)
             if name is None:
                 name = "<未知用户>"
             msg = m.content.splitlines()[:1]
             msg = msg[0][:25] if msg else ""
-            s = f"({get_strtime(m.timestamp)})[{name}]:'{msg}……'\n    ID: '{m.id}'"
+            s = f"[{n}] ({get_strtime(m.timestamp)})[{name}]:'{msg}……'"
             msg_list[s] = m
 
         obj_msg = None
@@ -555,7 +594,11 @@ class System:
         try:
             while len(msg_list) > 1:
                 print(" "*30)
-                print("\n".join(msg_list.keys()))
+                if len(msg_list) > 12:
+                    print("[INFO] 需要退出分页模式再使用关键词匹配过滤")
+                    self.print_in_page("\n".join(msg_list.keys()))
+                else:
+                    print("\n".join(msg_list.keys()) + "\n")
                 print("[INFO] 以上为待选项，通过多个关键词匹配得到对应消息")
                 key = input("[INPUT] 搜索关键词:")
                 msg_list = {k:v for k,v in msg_list.items() if key in k}
@@ -568,40 +611,20 @@ class System:
                 obj_msg = msg_list[obj_msg]
                 if input("[ASK] 确认？(Y/n)").lower() == "n":
                     print("[INFO] 取消操作")
-                    return
+                    return None
         except (KeyboardInterrupt, EOFError):
             print("[INFO] 取消操作")
-            return
+            return None
         if not obj_msg:
-            return
+            return None
         return obj_msg
     def show_sigal_message(self) -> None:
         """显示特定历史信息"""
         obj_msg = self.select_message()
         if not obj_msg:
             return
-        pages = obj_msg.content.splitlines()
-        lines = 12
-        pages = ["\n".join(pages[i*lines:(i+1)*lines]) for i in range(len(pages)//lines+(len(pages)%lines!=0))]
-        try:
-            ind = 0
-            while ind < len(pages):
-                print("v"*15+f"== {ind+1}/{len(pages)} =="+"v"*15)
-                print(pages[ind])
-                print("^"*15+f"== {ind+1}/{len(pages)} =="+"^"*15)
-                number = input("[INPUT] 输入页面跳转或回车翻页:")
-                try:
-                    number = int(number)
-                    if 0 < number <= len(pages):
-                        ind = number - 1
-                except ValueError:
-                    if str(number).lower() == "q":
-                        ind = len(pages)
-                    ind += 1
-        except (KeyboardInterrupt, EOFError):
-            print("[INFO] 取消操作")
-            return
-        
+        self.print_in_page(obj_msg.content)
+
     def note_user(self, note:Union[str,None] = None, user:Union[User,None] = None) -> None:
         """修改用户自身的备注"""
         if self.now_user.get("commandline") and not user:
@@ -951,7 +974,7 @@ def extra_funtions():
     except IndexError:
         print("[INFO] 超出选择范围")
 
-def main():
+def main(port = 8000):
     """主函数"""
     system = SYSTEM
     # SYSTEM["commandline"] = SYSTEM
@@ -972,6 +995,7 @@ def main():
             "info":("显示登录后用户的详细信息",system.print_self),
             "renote":("修改用户自身的备注",system.note_user),
             "p":("打印历史消息",system.show_message),
+            "p2":("打印历史消息(分页)", lambda: system.show_message(True)),
             "show":("打印选择的特定历史消息",system.show_sigal_message),
             "send":("发送消息",system.send_message),
             }
@@ -980,7 +1004,7 @@ def main():
     # menu["help"][1]()
     print("[INFO] 使用 help 加回车获取命令列表")
     print("[INFO] 使用命令进行操作时记得切下输入法")
-    threading.Thread(target=run_server).start()
+    threading.Thread(target=run_server, args=(port,)).start()
     for i in range(100):
         time.sleep(0.01)
         if SYSTEM.httpd:
@@ -988,7 +1012,7 @@ def main():
 
     while c.lower() != "q":
         color = [f"\x1b[{32 if right else 31}m", "\x1b[0m"] if os.name == "posix" else\
-                [">"*10+"命令分隔符"+"<"*10+"\n", ""]
+                [">"*10+"命令分隔符"+("" if right else "(上条命令不正确)")+"<"*10+"\n", ""]
         try:
             c = input(f"{color[0]}$ {color[1]}")
         except (KeyboardInterrupt, EOFError):
@@ -1006,11 +1030,13 @@ def main():
 def parse_arguments() -> argparse.Namespace:
     """解释参数"""
     parser = argparse.ArgumentParser(description='python本地(局域网)聊天室')
+    parser.add_argument('-i', '--input', default="SAVEDATA.json", help='存档文件')
+    parser.add_argument('-p', '--port', default=8000, type=int, help='端口号')
     # parser.add_argument('-x', '--debug', action="store_true", help='调试')
     args = parser.parse_args()
     return args
 
 if __name__ == "__main__":
     ARGS = parse_arguments()
-    SYSTEM = System()
-    main()
+    SYSTEM = System(ARGS.input)
+    main(ARGS.port)
