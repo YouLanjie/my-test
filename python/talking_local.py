@@ -445,7 +445,13 @@ class System:
             t = json.dumps(data, ensure_ascii=False, indent=4)
         else:
             t = json.dumps(data)
-        self.savefile.write_text(t, encoding="utf-8")
+        try:
+            self.savefile.write_text(t, encoding="utf-8")
+        except PermissionError as e:
+            print(e)
+            print(f"[ERROR] 权限错误：{self.savefile.resolve()}")
+            print("[INFO] 若是在windows下首次打开程序出现此报错")
+            print("[INFO] 可尝试重新启动本程序解决")
         # print(t)
     def load(self) -> bool:
         """读取数据"""
