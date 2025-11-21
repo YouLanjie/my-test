@@ -116,6 +116,13 @@ button:hover {
     border-radius: 4px;
 }
 
+.pager a {
+    color: #07b;
+}
+.pager a:visited {
+    color: #666;
+}
+
 .header-padding {
     padding: 1.3em;
 }
@@ -172,9 +179,9 @@ ${content}
 "msg_list":"""
 <div class="container">
   <h1>Python聊天室(Web UI)</h1>
-  <a href="#last_msg"><button type="submit">点击查看最新消息</button></a>
-  <p></p><p>以下是消息列表</p>
+${pages}
 ${messages}
+${pages}
 ${send_window}
 </div>
 """, # ==================
@@ -185,9 +192,13 @@ ${send_window}
 </div>
 <button type="submit">发送</button></form>
 """, # ==================
+"send_window2":"""
+<p>您尚未登陆，请登陆或注册后再留言</p>
+""", # ==================
 "userlist":"""
 <div class="container">
   <h1>用户列表</h1>
+  <p>Tips: 可点击对应用户名称实现快速登陆</p>
 ${users}
 </div>
 """, # ==================
@@ -231,7 +242,7 @@ ${users}
   <h1>登录</h1>
   <form method="POST" action="/login">
      <div class="form-group">
-      <label for="name">用户名:</label><input type="text" name="username" required>
+      <label for="name">用户名:</label><input type="text" name="username"${value} required>
       <label for="passwd">密码:</label><input type="password" name="passwd" required>
     </div>
     <button type="submit">登录</button>
@@ -674,31 +685,70 @@ class System:
         # RESCOURSES[]
         self.load()
         if tag == "msg_list":
+            limit = 12
+            now_page = [i[2:] for i in (data.get("page") or ["p=1"]) if i.startswith("p=")]
+            all_pages = len(self.messages)//limit + (len(self.messages)%limit!=0)
+            try:
+                now_page = int(now_page[0])
+            except IndexError:
+                now_page = 1
+            except ValueError:
+                if now_page[0] == "last_msg":
+                    now_page = all_pages
+                else:
+                    now_page = 1
+            pages = [i for i in range(now_page-3, now_page+3) if 0 < i <= all_pages]
+            pages = [f'<a href="?p={i}">{i}</a>' if i!=now_page else \
+                    f'<b><a href="?p={i}">{i}</a></b>' for i in pages]
+            if now_page-3 > 2:
+                pages = ['...'] + pages
+            if now_page+3 < all_pages-1:
+                pages = pages + ['...']
+            if now_page-3 > 1:
+                pages = ['<a href="?p=1">1</a>'] + pages
+            if now_page+3 < all_pages:
+                pages = pages + [f'<a href="?p={now_page}">{all_pages}</a>']
+            if now_page > 1:
+                pages = [f'<a href="?p={now_page-1}">上一页</a>'] + pages
+            if now_page < all_pages:
+                pages = pages + [f'<a href="?p={now_page+1}">下一页</a>']
+            pages = '<p class="pager">Pages: '+" | ".join(pages)
+            pages += f'<a href="?p={all_pages}#last_msg" style="float:right;">点击查看最新消息</a></p>'
+
             userlist = {u.id:u.name for u in self.users}
-            for m in self.messages:
+            for m in self.messages[(now_page-1)*limit:now_page*limit]:
                 name = userlist.get(m.owner)
                 if name is None:
                     name = "<未知用户>"
-                if m == self.messages[-1]:
-                    s += """<p id="last_msg">最新消息:</p>"""
-                s += "<div class='messages'>\n"
-                s += f"<p><span class='msg_name'>{escape(name)}</span> <span class='msg_time'>{escape(get_strtime(m.timestamp))}</span></p>\n"
+                is_lastest = ' id="last_msg"' if m == self.messages[-1] else ""
+                s += f"<div class='messages'{is_lastest}>\n"
+                s += f"<p><span class='msg_name'>{escape(name)}</span> "
+                s += f"<span class='msg_time'>{escape(get_strtime(m.timestamp))}</span></p>\n"
                 s += "<p>"+ "<br/>".join(m.content.splitlines()) + "</p>\n"
                 s += "</div>\n"
+
             data = {
                 "messages":s,
-                "send_window": RESCOURSES["send_window"] if self.now_user.get(ip) else ""}
+                "send_window": RESCOURSES["send_window" if self.now_user.get(ip) \
+                        else "send_window2"],
+                "pages":pages}
             title = "Python聊天室"
         elif tag == "userlist":
             for u in self.users:
-                s += "<div class='users'>\n"
-                s += f"<p><span class='user_name'>{escape(u.name)}</span> <span class='user_time'>注册时间: {escape(get_strtime(u.timestamp))}</span></p>\n"
+                s += f'<div class="users">\n'
+                s += f'<p><a href="/login?id={u.id}" class="user_name">{escape(u.name)}</a> '
+                s += f"<span class='user_time'>注册时间: {escape(get_strtime(u.timestamp))}</span></p>"
                 s += "<p>"+ "<br/>".join(u.note.splitlines()) + "</p>\n"
-                s += "</div>\n"
+                s += "</div></a>\n"
             data = {"users":s}
             title = "用户列表"
         elif tag == "login":
             title = "登录"
+            userlist = {u.id:u.name for u in self.users}
+            if data.get("id") and data.get("id") in userlist:
+                data = {"value":' value="'+escape(userlist[str(data.get("id"))])+'"'}
+            else:
+                data = {"value":""}
         elif tag == "register":
             # <p>[WARN] 用户 '{name}' 不存在, 可尝试注册<p>
             title = "注册"
@@ -724,7 +774,7 @@ class System:
         else:
             tag = "404"
             title = "404 Page Not Found"
-            meta = """<meta http-equiv="refresh" content="3;url=/">"""
+            meta = """<meta http-equiv="refresh" content="2;url=/">"""
 
         if tag and tag in RESCOURSES:
             s = Template(RESCOURSES[tag]).safe_substitute(data)
@@ -743,15 +793,21 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
         # print([self.path, parsed_path])
         # 如果访问根路径，返回主页
         if path in ('/', '/userlist', '/login', '/register', '/login', '/dashboard'):
+            ip = self.client_address[0]
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
             # 生成HTML页面(生成主页面HTML)
+            if path == "/login":
+                has_id = [i for i in parsed_path.query.split("&") if i.startswith("id=")]
+                if has_id:
+                    ip = {"ip":ip, "id":has_id[0][3:]}
             if path == "/":
                 path = "msg_list"
+                ip = {"ip":ip, "page":parsed_path.query.split("&")}
             else:
                 path = path[1:]
-            html_content = SYSTEM.get_html(self.client_address[0], path)
+            html_content = SYSTEM.get_html(ip, path)
         else:
             # # 对于其他路径，使用默认的文件服务行为
             # super().do_GET()
@@ -760,7 +816,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             html_content = SYSTEM.get_html(self.client_address[0], "404")
         self.wfile.write(html_content.encode())
-    
+
     def do_POST(self):
         # 处理POST请求
         content_length = int(self.headers['Content-Length'])
@@ -768,7 +824,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
         # 解析表单数据
         parsed_data = urllib.parse.parse_qs(post_data)
         data = {"content":"<p>???? 你似乎进入到了一个禁忌之地 ???</p>",
-                "meta":"""<meta http-equiv="refresh" content="2;url=/">""",
+                "meta":"""<meta http-equiv="refresh" content="1;url=/">""",
                 "ip":self.client_address[0],
                 "title":"中转界面"}
 
@@ -827,18 +883,19 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             if SYSTEM.now_user.get(self.client_address[0]):
                 SYSTEM.now_user[self.client_address[0]].note = note
                 data["content"] = """<p>修改备注成功！</p>"""
-                data["meta"] = """<meta http-equiv="refresh" content="2;url=/dashboard">"""
+                data["meta"] = """<meta http-equiv="refresh" content="1;url=/dashboard">"""
         elif parsed_path.path == '/send_message' and "message" in parsed_data:
             message = parsed_data.get("message")
             message = escape(str(message[0] if message else ""))
             if SYSTEM.now_user.get(self.client_address[0]):
                 SYSTEM.messages.append(Message(SYSTEM.now_user[self.client_address[0]], str(message)))
                 data["content"] = """<p>留言成功！</p>"""
-                data["meta"] = """<meta http-equiv="refresh" content="1;url=/#last_msg">"""
+                data["meta"] = """<meta http-equiv="refresh" content="1;url=/?p=last_msg#last_msg">"""
         elif parsed_path.path == '/logout':
             if SYSTEM.now_user.get(self.client_address[0]):
                 SYSTEM.now_user.pop(self.client_address[0])
                 data["content"] = """<p>登出成功！</p>"""
+                data["meta"] = """<meta http-equiv="refresh" content="1;url=/">"""
         else:
             for key,value in parsed_data.items():
                 data[key] = escape(value[0])
@@ -856,7 +913,12 @@ def run_server(port=8000):
     for i in range(port, port+100):
         try:
             with socketserver.TCPServer(("", i), SimpleWebUI) as httpd:
-                print(f"[INFO] 服务器(WebUI)运行在 http://localhost:{i}")
+                print(f"[INFO] 服务器(WebUI)运行在 http://localhost:{i}/")
+                print("[INFO] 浏览器或将自动打开")
+                try:
+                    import_module("webbrowser").open(f"http://localhost:{i}/")
+                except ModuleNotFoundError:
+                    print("[INFO] 无法自动打开浏览器")
                 SYSTEM.httpd = httpd
                 # print("按 Ctrl+C 停止服务器")
                 try:
