@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Created:2025.10.18
 # 基于python的简陋聊天室程序，向下兼容至python3.8
-# Filename: 聊天室v0.0.4.py
+# Filename: 聊天室v0.0.5.py
 
 from pathlib import Path
 from datetime import datetime
@@ -96,7 +96,7 @@ button:hover {
 }
 .msg_name, .user_name {
     font-weight: bold;
-    color: blue;
+    color: #07b;
 }
 .msg_time, .user_time {
     color: gray;
@@ -116,10 +116,10 @@ button:hover {
     border-radius: 4px;
 }
 
-.pager a {
+a {
     color: #07b;
 }
-.pager a:visited {
+a:visited {
     color: #666;
 }
 
@@ -534,19 +534,22 @@ class System:
     def syslog(self, message:str) -> None:
         """记录系统运行日志"""
         self.send_message(message, self.system)
-    def print_in_page(self, content: str, limit = 12) -> None:
+    def print_in_page(self, content: Union[str, list], limit = 12) -> None:
         """将传入的内容分页显示"""
         content = str(content)
         pages = content.splitlines()
         all_pages = len(pages)//limit + (len(pages)%limit!=0)
         pages = ["\n".join(pages[i*limit:(i+1)*limit]) for i in range(all_pages)]
+        no_print = False
         try:
             ind = 0
             while ind < len(pages):
                 seperator = "-"*15+f" {ind+1}/{len(pages)} "+"-"*15
                 print(seperator)
-                print(pages[ind])
-                print(seperator)
+                if not no_print:
+                    print(pages[ind])
+                    print(seperator)
+                no_print = False
                 number = input("[INPUT] 翻页器(h获取帮助):")
                 try:
                     number = int(number)
@@ -565,6 +568,7 @@ class System:
                         print("[INFO] h开头字符命令打印此信息")
                         print("[INFO] q退出程序(均需要回车确认)")
                         ind -= 1
+                        no_print = True
                     ind += 1
         except (KeyboardInterrupt, EOFError):
             print("[INFO] 取消操作")
@@ -722,7 +726,7 @@ class System:
                     name = "<未知用户>"
                 is_lastest = ' id="last_msg"' if m == self.messages[-1] else ""
                 s += f"<div class='messages'{is_lastest}>\n"
-                s += f"<p><span class='msg_name'>{escape(name)}</span> "
+                s += f"<p><a href='/userlist#{m.owner}' class='msg_name'>{escape(name)}</a> "
                 s += f"<span class='msg_time'>{escape(get_strtime(m.timestamp))}</span></p>\n"
                 s += "<p>"+ "<br/>".join(m.content.splitlines()) + "</p>\n"
                 s += "</div>\n"
@@ -735,7 +739,7 @@ class System:
             title = "Python聊天室"
         elif tag == "userlist":
             for u in self.users:
-                s += f'<div class="users">\n'
+                s += f'<div class="users" id="{u.id}">\n'
                 s += f'<p><a href="/login?id={u.id}" class="user_name">{escape(u.name)}</a> '
                 s += f"<span class='user_time'>注册时间: {escape(get_strtime(u.timestamp))}</span></p>"
                 s += "<p>"+ "<br/>".join(u.note.splitlines()) + "</p>\n"
