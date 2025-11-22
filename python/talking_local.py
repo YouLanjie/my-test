@@ -728,6 +728,17 @@ class System:
         self.send_message(message, self.system)
     def print_in_page(self, content: Union[str, list], limit = 12) -> None:
         """将传入的内容分页显示"""
+        if isinstance(content, list):
+            s = ""
+            count = 1
+            for i in content:
+                print([count])
+                if len((s+i+"\n").splitlines()) > count*limit:
+                    while len(s.splitlines()) % limit != 0:
+                        s += "\n"
+                s += i + "\n"
+                count = len(s.splitlines()) // limit + 1
+            content = s
         content = str(content)
         pages = content.splitlines()
         all_pages = len(pages)//limit + (len(pages)%limit!=0)
@@ -772,12 +783,12 @@ class System:
         if self.messages:
             print()
         colors = ("\x1b[34m", "\x1b[0m", "\x1b[2m") if os.name == "posix" else ("", "", "")
-        s = ""
+        li = []
         for m in self.messages:
             name = userlist.get(m.owner)
             if name is None:
                 name = "<未知用户>"
-            s += f"{colors[0]}[{name}]在({get_strtime(m.timestamp)})说:{colors[1]}\n"
+            s = f"{colors[0]}[{name}]在({get_strtime(m.timestamp)})说:{colors[1]}\n"
             content = m.content
             if len(content.splitlines()) > 12:
                 content = "\n".join(content.splitlines()[:12]) +\
@@ -790,10 +801,11 @@ class System:
                         "【以下内容由于字符数量超过500被系统自动截断】\n"+\
                         f"【使用show命令查看全部内容】\n【消息ID:'{m.id}'】"
             s += "\n".join(colors[2]+"> "+colors[1]+i for i in  content.splitlines()) + "\n\n"
-        if pager and len(s.splitlines()) > 12:
-            self.print_in_page(s)
+            li.append(s)
+        if pager and len(("\n".join(li)).splitlines()) > 12:
+            self.print_in_page(li)
         else:
-            print(s, end="")
+            print("\n".join(li), end="")
     def select_message(self) -> Union[Message, None]:
         """过滤选择消息"""
         msg_list = {}
@@ -1121,8 +1133,9 @@ def run_server(port=8000):
                 print(f"[INFO] 服务器(WebUI)运行在 http://localhost:{i}/")
                 print("[INFO] 浏览器或将自动打开")
                 try:
-                    import_module("webbrowser").open(f"http://localhost:{i}/")
-                except ModuleNotFoundError:
+                    if not ARGS.no_browser:
+                        import_module("webbrowser").open(f"http://localhost:{i}/")
+                except (ModuleNotFoundError, AttributeError):
                     print("[INFO] 无法自动打开浏览器")
                 SYSTEM.httpd = httpd
                 # print("按 Ctrl+C 停止服务器")
@@ -1182,7 +1195,9 @@ def extra_funtions():
         errors = import_module("urllib.error")
         print("[INFO] 正在尝试下载反极域软件")
         url = "github.com/imengyu/JiYuTrainer/releases/download/1.7.6/JiYuTrainer.exe"
-        urls = (f"http://ghfast.top/{url}", f"http://{url}")
+        urls = (f"http://ghfast.top/{url}",
+                "http://youlanjie.github.io/lib/python/talking_local.py",
+                f"http://{url}")
         for i in urls:
             try:
                 req.urlretrieve(i, str(outf))
@@ -1311,6 +1326,7 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='python本地(局域网)聊天室')
     parser.add_argument('-i', '--input', default="SAVEDATA.json", help='存档文件')
     parser.add_argument('-p', '--port', default=8000, type=int, help='端口号')
+    parser.add_argument('-n', '--no-browser', action="store_true", help='不自动打开浏览器')
     # parser.add_argument('-x', '--debug', action="store_true", help='调试')
     args = parser.parse_args()
     return args
