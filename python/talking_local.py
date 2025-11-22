@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Created:2025.10.18
 # 基于python的简陋聊天室程序，向下兼容至python3.8
-# Filename: 聊天室v0.0.5.py
+# Filename: 聊天室v0.0.6.py
 
 from pathlib import Path
 from datetime import datetime
@@ -34,122 +34,313 @@ if os.name == "posix":
 
 RESCOURSES = {"css":"""
 body {
-    font-family: Arial, sans-serif;
-    max-width: 800px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    max-width: 1000px;
     margin: 0 auto;
     padding: 20px;
-    background-color: #f5f5f5;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    min-height: 100vh;
+    line-height: 1.6;
 }
+
 .container {
     background-color: white;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    margin-bottom: 1em;
+    padding: 25px;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    margin-bottom: 1.5em;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
+
 h1 {
-    color: #333;
+    color: #2c3e50;
     text-align: center;
+    margin-bottom: 1.2em;
+    font-weight: 600;
+    position: relative;
 }
+
+h1:after {
+    content: '';
+    display: block;
+    width: 60px;
+    height: 4px;
+    background: linear-gradient(90deg, #3498db, #2ecc71);
+    margin: 10px auto 0;
+    border-radius: 2px;
+}
+
 .form-group {
-    margin-bottom: 20px;
+    margin-bottom: 25px;
 }
+
 label {
     display: block;
-    margin-bottom: 5px;
-    font-weight: bold;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #34495e;
 }
+
 input, textarea {
     width: 100%;
-    padding: 10px;
+    padding: 12px 15px;
     border: 1px solid #ddd;
-    border-radius: 4px;
+    border-radius: 8px;
     box-sizing: border-box;
+    font-family: inherit;
+    font-size: 16px;
+    transition: all 0.3s ease;
+    background-color: #f8f9fa;
 }
+
+input:focus, textarea:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+    background-color: white;
+}
+
 button {
-    background-color: #4CAF50;
+    background: linear-gradient(135deg, #3498db, #2980b9);
     color: white;
-    padding: 12px 20px;
+    padding: 14px 25px;
     border: none;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 16px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11), 0 1px 3px rgba(0, 0, 0, 0.08);
 }
+
 button:hover {
-    background-color: #45a049;
+    transform: translateY(-2px);
+    box-shadow: 0 7px 14px rgba(50, 50, 93, 0.1), 0 3px 6px rgba(0, 0, 0, 0.08);
 }
+
+button:active {
+    transform: translateY(1px);
+}
+
 .result {
     margin-top: 20px;
-    padding: 15px;
+    padding: 18px;
     background-color: #e7f3ff;
-    border-radius: 4px;
+    border-radius: 8px;
+    border-left: 4px solid #3498db;
 }
+
 .messages, .users {
     background-color: white;
-    padding: 5px 20px 5px 20px;
-    border-radius: 5px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    margin-bottom: 0.5em;
+    padding: 15px 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    margin-bottom: 0.8em;
     max-height: 70vh;
     overflow: auto;
     text-overflow: ellipsis;
+    transition: all 0.3s ease;
 }
+
+.messages:hover, .users:hover {
+    box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+}
+
 .msg_name, .user_name {
-    font-weight: bold;
-    color: #07b;
+    font-weight: 700;
+    color: #3498db;
+    text-decoration: none;
+    transition: color 0.2s ease;
 }
+
+.msg_name:hover, .user_name:hover {
+    color: #2980b9;
+    text-decoration: underline;
+}
+
 .msg_time, .user_time {
-    color: gray;
+    color: #7f8c8d;
     float: right;
     margin-right: 0em;
-    font-size: 60%;
+    font-size: 75%;
+    font-weight: 500;
 }
+
 .messages::-webkit-scrollbar, .users::-webkit-scrollbar {
     width: 8px;
 }
+
 .messages::-webkit-scrollbar-track, .users::-webkit-scrollbar-track {
     background: #f1f1f1;
     border-radius: 4px;
 }
+
 .messages::-webkit-scrollbar-thumb, .users::-webkit-scrollbar-thumb {
-    background: #3498db;
+    background: linear-gradient(135deg, #3498db, #2ecc71);
     border-radius: 4px;
 }
 
-a {
-    color: #07b;
+.messages::-webkit-scrollbar-thumb:hover, .users::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #2980b9, #27ae60);
 }
+
+a {
+    color: #3498db;
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
 a:visited {
-    color: #666;
+    color: #8e44ad;
+}
+
+a:hover {
+    color: #2980b9;
 }
 
 .header-padding {
     padding: 1.3em;
 }
+
 .header ul {
     list-style-type: none;
     margin: 0;
     padding: 0;
     overflow: auto;
-    background-color: #333;
+    background: linear-gradient(90deg, #2c3e50, #34495e);
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
+    z-index: 1000;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
+
 .header li {
     float: left;
 }
+
 .header li a {
     display: block;
     color: white;
     text-align: center;
-    padding: 14px 16px;
+    padding: 16px 20px;
     text-decoration: none;
+    transition: all 0.3s ease;
+    font-weight: 500;
 }
-/*鼠标移动到选项上修改背景颜色 */
+
 .header li a:hover {
-    background-color: #111;
+    background-color: rgba(255,255,255,0.1);
+}
+
+.header li:last-child {
+    float: right;
+}
+
+.pager {
+    text-align: center;
+    margin: 20px 0;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    overflow: auto;
+}
+
+.pager a {
+    display: inline-block;
+    padding: 8px 15px;
+    margin: 0 5px;
+    background-color: white;
+    border-radius: 6px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    transition: all 0.2s ease;
+}
+
+.pager a:hover {
+    background-color: #3498db;
+    color: white;
+    transform: translateY(-2px);
+}
+
+.pager b a {
+    background-color: #3498db;
+    color: white;
+}
+
+details {
+    margin: 15px 0;
+    border: 1px solid #e1e8ed;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+summary {
+    padding: 15px;
+    background-color: #f8f9fa;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background-color 0.2s ease;
+}
+
+summary:hover {
+    background-color: #e9ecef;
+}
+
+details p {
+    padding: 15px;
+    margin: 0;
+    background-color: white;
+}
+
+.back-button {
+    display: inline-block;
+    margin-top: 15px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    body {
+        padding: 10px;
+    }
+    
+    .container {
+        padding: 20px 15px;
+    }
+    
+    .header li a {
+        padding: 14px 12px;
+        font-size: 14px;
+    }
+    
+    .msg_time, .user_time {
+        float: none;
+        display: block;
+        margin-top: 5px;
+    }
+    
+    h1 {
+        font-size: 1.5em;
+    }
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.messages, .users, .container {
+    animation: fadeIn 0.5s ease;
+}
+
+/* 消息气泡样式增强 */
+.messages p:last-child {
+    margin-bottom: 0;
+    padding: 12px 15px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    border-left: 3px solid #3498db;
 }
 """, # ==================
 "template":"""
@@ -349,7 +540,7 @@ class Message:
 
 class System:
     """系统服务"""
-    def __init__(self, savefile = "SAVEDATA.json") -> None:
+    def __init__(self, savefile = "SAVEDATA.json", no_load = False) -> None:
         self.users : list[User] = []
         self.messages : list[Message] = []
         self.now_user : dict[str,User] = {}
@@ -364,7 +555,8 @@ class System:
                           "_id":"7d87fb06-64c9-45bc-8b24-397c60d6001b"})
         self.users.append(system)
         self.system = system
-        self.load()
+        if not no_load:
+            self.load()
     def print_users(self) -> None:
         """打印所有用户信息"""
         for u in self.users:
@@ -701,23 +893,32 @@ class System:
                     now_page = all_pages
                 else:
                     now_page = 1
-            pages = [i for i in range(now_page-3, now_page+3) if 0 < i <= all_pages]
+            if now_page < 1:
+                now_page = 1
+            elif now_page > all_pages:
+                now_page = all_pages
+            pages = [i for i in range(now_page-2, now_page+3) if 0 < i <= all_pages]
             pages = [f'<a href="?p={i}">{i}</a>' if i!=now_page else \
                     f'<b><a href="?p={i}">{i}</a></b>' for i in pages]
-            if now_page-3 > 2:
+            if now_page-3 == 2:
+                pages = ['<a href="?p=2">2</a>'] + pages
+            elif now_page-3 > 2:
                 pages = ['...'] + pages
-            if now_page+3 < all_pages-1:
+            if now_page+3 == all_pages-1:
+                pages = pages + [f'<a href="?p={all_pages-1}">{all_pages-1}</a>']
+            elif now_page+3 < all_pages-1:
                 pages = pages + ['...']
-            if now_page-3 > 1:
+            if now_page-3 >= 1:
                 pages = ['<a href="?p=1">1</a>'] + pages
-            if now_page+3 < all_pages:
-                pages = pages + [f'<a href="?p={now_page}">{all_pages}</a>']
+            if now_page+3 <= all_pages:
+                pages = pages + [f'<a href="?p={all_pages}">{all_pages}</a>']
             if now_page > 1:
                 pages = [f'<a href="?p={now_page-1}">上一页</a>'] + pages
             if now_page < all_pages:
                 pages = pages + [f'<a href="?p={now_page+1}">下一页</a>']
             pages = '<p class="pager">Pages: '+" | ".join(pages)
-            pages += f'<a href="?p={all_pages}#last_msg" style="float:right;">点击查看最新消息</a></p>'
+            pages += f'&nbsp;<a href="?p={all_pages}#last_msg" style="float:right;">'
+            pages += '点击查看最新消息</a></p>'
 
             userlist = {u.id:u.name for u in self.users}
             for m in self.messages[(now_page-1)*limit:now_page*limit]:
@@ -1114,6 +1315,7 @@ def parse_arguments() -> argparse.Namespace:
     args = parser.parse_args()
     return args
 
+SYSTEM = System(no_load=True)
 if __name__ == "__main__":
     ARGS = parse_arguments()
     SYSTEM = System(ARGS.input)
