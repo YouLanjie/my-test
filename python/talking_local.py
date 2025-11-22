@@ -298,6 +298,10 @@ details p {
     margin-top: 15px;
 }
 
+img {
+    max-width: 100%;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
     body {
@@ -464,7 +468,7 @@ ${users}
   <div class="container">
 ${content}
   </div>
-  <a href="/" class="back-button">
+  <a href="${url}" class="back-button">
   <button type="submit">返回主页(部分页面会自动跳转)</button>
   </a>
 </div>
@@ -799,10 +803,10 @@ class System:
                         "\n"+"="*40+"\n"+\
                         "【以下内容由于字符数量超过500被系统自动截断】\n"+\
                         f"【使用show命令查看全部内容】\n【消息ID:'{m.id}'】"
-            s += "\n".join(colors[2]+"> "+colors[1]+i for i in  content.splitlines()) + "\n\n"
+            s += "\n".join(colors[2]+"> "+colors[1]+i for i in  content.splitlines()) + "\n"
             li.append(s)
         if pager and len(("\n".join(li)).splitlines()) > 12:
-            self.print_in_page(li)
+            self.print_in_page(li, limit=18)
         else:
             print("\n".join(li), end="")
     def select_message(self) -> Union[Message, None]:
@@ -1039,8 +1043,9 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
         post_data = self.rfile.read(content_length).decode('utf-8')
         # 解析表单数据
         parsed_data = urllib.parse.parse_qs(post_data)
+        url_ref = "/"
         data = {"content":"<p>???? 你似乎进入到了一个禁忌之地 ???</p>",
-                "meta":"""<meta http-equiv="refresh" content="1;url=/">""",
+                "meta":"1",
                 "ip":self.client_address[0],
                 "title":"中转界面"}
 
@@ -1058,7 +1063,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             s = ""
             if name not in li:
                 s += f"<p>[WARN] 用户 '{name}' 不存在, 可尝试注册<p>"
-                data["meta"] = """<meta http-equiv="refresh" content="2;url=/register">"""
+                data["meta"], url_ref = "2", "/register"
             elif li[name].check_passwd(passwd):
                 SYSTEM.now_user[self.client_address[0]] = li[name]
                 li[name].login_record.append(datetime.now().timestamp())
@@ -1066,7 +1071,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
                 s += f"""<p>{escape(name)}</p>"""
             else:
                 s += """<p>很抱歉，登录失败了，也许你的密码输错了？</p>"""
-                data["meta"] = """<meta http-equiv="refresh" content="2;url=/login">"""
+                data["meta"], url_ref = "2", "/register"
             data["content"] = s
         elif parsed_path.path == '/register' and "username" in parsed_data:
             name = parsed_data.get("username")
@@ -1080,11 +1085,11 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             if name in li:
                 s += """<p>注册失败！</p>"""
                 s += f"<p>[WARN] 用户 '{name}' 已存在<p>"
-                data["meta"] = """<meta http-equiv="refresh" content="2;url=/register">"""
+                data["meta"], url_ref = "2", "/register"
             elif passwd != passwd2:
                 s += """<p>注册失败！</p>"""
                 s += """<p>两次输入的密码不一样</p>"""
-                data["meta"] = """<meta http-equiv="refresh" content="2;url=/register">"""
+                data["meta"], url_ref = "2", "/register"
             else:
                 u = User(name, passwd)
                 SYSTEM.users.append(u)
@@ -1099,24 +1104,25 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             if SYSTEM.now_user.get(self.client_address[0]):
                 SYSTEM.now_user[self.client_address[0]].note = note
                 data["content"] = """<p>修改备注成功！</p>"""
-                data["meta"] = """<meta http-equiv="refresh" content="1;url=/dashboard">"""
+                url_ref = "/dashboard"
         elif parsed_path.path == '/send_message' and "message" in parsed_data:
             message = parsed_data.get("message")
             message = escape(str(message[0] if message else ""))
             if SYSTEM.now_user.get(self.client_address[0]):
                 SYSTEM.messages.append(Message(SYSTEM.now_user[self.client_address[0]], str(message)))
                 data["content"] = """<p>留言成功！</p>"""
-                data["meta"] = """<meta http-equiv="refresh" content="1;url=/?p=last_msg#last_msg">"""
+                url_ref = "/?p=last_msg#last_msg"
         elif parsed_path.path == '/logout':
             if SYSTEM.now_user.get(self.client_address[0]):
                 SYSTEM.now_user.pop(self.client_address[0])
                 data["content"] = """<p>登出成功！</p>"""
-                data["meta"] = """<meta http-equiv="refresh" content="1;url=/">"""
         else:
             for key,value in parsed_data.items():
                 data[key] = escape(value[0])
             # 生成响应页面
 
+        data["meta"] = f'<meta http-equiv="refresh" content="{data["meta"]};url={url_ref}">'
+        data["url"] = url_ref
         response_html = SYSTEM.get_html(data, "response")
         self.wfile.write(response_html.encode())
         SYSTEM.load()
@@ -1238,6 +1244,12 @@ def extra_funtions():
             print("[INFO] 获取聊天室版本错误，使用默认名称")
             filename = "聊天室_版本未知.py"
         outf = Path(filename)
+        if outf.exists():
+            print(f"[INFO] 文件'{outf.resolve()}'已存在")
+            tsp = int(datetime.now().timestamp())
+            backupf = Path(f"{outf.stem}_bak_{tsp}{outf.suffix}")
+            print(f"[INFO] 移动原文件 '{outf.resolve()}' 到 '{backupf.resolve()}'")
+            shutil.move(outf, backupf)
         outf.write_bytes(content)
         if outf.is_file():
             print(f"[INFO] 新版文件已保存到'{outf.resolve()}'")
@@ -1326,6 +1338,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-i', '--input', default="SAVEDATA.json", help='存档文件')
     parser.add_argument('-p', '--port', default=8000, type=int, help='端口号')
     parser.add_argument('-n', '--no-browser', action="store_true", help='不自动打开浏览器')
+    parser.add_argument('-S', '--pure-http-server', action="store_true", help='纯服务器(前台运行)')
     # parser.add_argument('-x', '--debug', action="store_true", help='调试')
     args = parser.parse_args()
     return args
@@ -1334,4 +1347,7 @@ SYSTEM = System(no_load=True)
 if __name__ == "__main__":
     ARGS = parse_arguments()
     SYSTEM = System(ARGS.input)
-    main(ARGS.port)
+    if ARGS.pure_http_server:
+        run_server(ARGS.port)
+    else:
+        main(ARGS.port)
