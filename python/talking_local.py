@@ -732,7 +732,6 @@ class System:
             s = ""
             count = 1
             for i in content:
-                print([count])
                 if len((s+i+"\n").splitlines()) > count*limit:
                     while len(s.splitlines()) % limit != 0:
                         s += "\n"
