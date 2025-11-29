@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Created:2025.10.18
 # 基于python的简陋聊天室程序，向下兼容至python3.8
-# Filename: 聊天室v0.0.7.py
+# Filename: 聊天室v0.0.8.py
 
 from pathlib import Path
 from datetime import datetime
@@ -350,6 +350,168 @@ img {
     border-radius: 8px;
     border-left: 3px solid #3498db;
 }
+
+/* 暗色模式样式 */
+@media (prefers-color-scheme: dark) {
+    body {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        color: #e0e0e0;
+    }
+
+    .container {
+        background-color: #1e1e2e;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    h1 {
+        color: #bb86fc;
+    }
+
+    h1:after {
+        background: linear-gradient(90deg, #bb86fc, #03dac6);
+    }
+
+    label {
+        color: #e0e0e0;
+    }
+
+    input, textarea {
+        background-color: #2d2d3e;
+        border: 1px solid #444;
+        color: #e0e0e0;
+    }
+
+    input:focus, textarea:focus {
+        border-color: #bb86fc;
+        box-shadow: 0 0 0 3px rgba(187, 134, 252, 0.2);
+        background-color: #363648;
+    }
+
+    button {
+        background: linear-gradient(135deg, #bb86fc, #9c64f2);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+
+    button:hover {
+        box-shadow: 0 7px 14px rgba(0, 0, 0, 0.4);
+    }
+
+    .result {
+        background-color: #2a2a3e;
+        border-left: 4px solid #bb86fc;
+    }
+
+    .messages, .users {
+        background-color: #252536;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    .messages:hover, .users:hover {
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    }
+
+    .msg_name, .user_name {
+        color: #bb86fc;
+    }
+
+    .msg_name:hover, .user_name:hover {
+        color: #9c64f2;
+    }
+
+    .msg_time, .user_time {
+        color: #a0a0a0;
+    }
+
+    .messages::-webkit-scrollbar-track, .users::-webkit-scrollbar-track {
+        background: #2d2d3e;
+    }
+
+    .messages::-webkit-scrollbar-thumb, .users::-webkit-scrollbar-thumb {
+        background: linear-gradient(135deg, #bb86fc, #03dac6);
+    }
+
+    .messages::-webkit-scrollbar-thumb:hover, .users::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(135deg, #9c64f2, #00c9b7);
+    }
+
+    a {
+        color: #bb86fc;
+    }
+
+    a:visited {
+        color: #c792ea;
+    }
+
+    a:hover {
+        color: #9c64f2;
+    }
+
+    .header ul {
+        background: linear-gradient(90deg, #121212, #1e1e1e);
+    }
+
+    .header li a:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .pager {
+        background-color: #2d2d3e;
+    }
+
+    .pager a {
+        background-color: #363648;
+        color: #e0e0e0;
+    }
+
+    .pager a:hover {
+        background-color: #bb86fc;
+        color: #121212;
+    }
+
+    .pager b a {
+        background-color: #bb86fc;
+        color: #121212;
+    }
+
+    details {
+        border: 1px solid #444;
+    }
+
+    summary {
+        background-color: #2d2d3e;
+    }
+
+    summary:hover {
+        background-color: #363648;
+    }
+
+    details p {
+        background-color: #1e1e2e;
+    }
+
+    /* 消息气泡样式增强 - 暗色模式 */
+    .messages p:last-child {
+        background-color: #2d2d3e;
+        border-left: 3px solid #bb86fc;
+    }
+}
+
+/* 手动切换暗色模式的类（可选） */
+.dark-mode {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
+    color: #e0e0e0 !important;
+}
+
+.dark-mode .container {
+    background-color: #1e1e2e !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+}
+
+.dark-mode h1 {
+    color: #bb86fc !important;
+}
+
+/* 其他暗色模式样式同上，只需将@media内的样式复制到这里，并加上 !important */
 """, # ==================
 "template":"""
 <!DOCTYPE html>
@@ -359,8 +521,7 @@ img {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 ${meta}
   <title>${title}</title>
-  <style>${css}
-  </style>
+  <link rel="stylesheet" type="text/css" href="/main.css">
 </head>
 <body>
   <div class="header">
@@ -382,6 +543,14 @@ ${pages}
 ${messages}
 ${pages}
 ${send_window}
+</div>
+""", # ==================
+"msg_data":"""
+<div class='messages'${is_lastest}>
+<p><a href='/userlist#${m.owner}' class='msg_name'>${name}</a>
+<span class='msg_time'>${timestamp} | #${ind}</span></p>
+<p>${msg}
+</p>
 </div>
 """, # ==================
 "send_window":"""
@@ -952,16 +1121,18 @@ class System:
             pages += '点击查看最新消息</a></p>'
 
             userlist = {u.id:u.name for u in self.users}
-            for m in self.messages[(now_page-1)*limit:now_page*limit]:
+            for ind,m in enumerate(self.messages[(now_page-1)*limit:now_page*limit]):
                 name = userlist.get(m.owner)
                 if name is None:
                     name = "<未知用户>"
                 is_lastest = ' id="last_msg"' if m == self.messages[-1] else ""
-                s += f"<div class='messages'{is_lastest}>\n"
-                s += f"<p><a href='/userlist#{m.owner}' class='msg_name'>{escape(name)}</a> "
-                s += f"<span class='msg_time'>{escape(get_strtime(m.timestamp))}</span></p>\n"
-                s += "<p>"+ "<br/>".join(escape(m.content).splitlines()) + "</p>\n"
-                s += "</div>\n"
+                s += rescourses("msg_data", {
+                    "is_lastest":is_lastest,
+                    "name":escape(name),
+                    "timestamp":escape(get_strtime(m.timestamp)),
+                    "ind":ind+(now_page-1)*limit+1,
+                    "msg":"<br/>".join(escape(m.content).splitlines()),
+                    })
 
             data = {
                 "messages":s,
@@ -994,15 +1165,12 @@ class System:
                 data = {
                     "name":escape(u.name), "timestamp":escape(get_strtime(u.timestamp)),
                     "note":"\n".join(u.note.splitlines()),
-                    "id":escape(u.id),
-                    }
-                data = {
-                    "usercard": rescourses("user-data", data),
                     "id":escape(u.id), "passwd":escape(u.passwd),
                     "login_record":"<br/>".join(\
                             escape("> "+f"在 {escape(get_strtime(i))} 登录过") \
                             for i in u.login_record)
                     }
+                data["usercard"] = rescourses("user-data", data)
                 data = {"userdata": rescourses("dashboard-data", data)}
             else:
                 data = {"userdata":"<p>你尚未登录</p>"}
@@ -1021,7 +1189,7 @@ class System:
             if tmp != "None":
                 s = tmp
         s = rescourses("template", {
-            "content":s, "css":rescourses("css", {}),
+            "content":s,
             "meta":meta, "title":f"{title} - {ip}",
             "loginstatus":loginstatus})
         return s
@@ -1050,6 +1218,11 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             else:
                 path = path[1:]
             html_content = SYSTEM.get_html(ip, path)
+        elif path == "/main.css":
+            self.send_response(200)
+            self.send_header('Content-type', 'text/css')
+            self.end_headers()
+            html_content = rescourses("css", {})
         else:
             # # 对于其他路径，使用默认的文件服务行为
             # super().do_GET()
