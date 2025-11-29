@@ -72,15 +72,44 @@ get_pacman_pkg_size_list() {
 		awk '{if ($3 == "MiB"){printf "%15.3f %s\n",$2,$1}else{printf "%15.3f %s\n",$2/1024,$1}}'|sort -n
 }
 
+pacman_auto_update() {
+	tmpfile="/tmp/keep_pacman_run.lock"
+	touch $tmpfile
+	while [[ -f "$tmpfile" ]];do
+		echo "[INFO] Time: $(date +"%Y.%m.%d %H:%M:%S")"
+		echo "[INFO] 测试Sudo请求(输入密码)"
+		if ! sudo touch $tmpfile;then
+			echo "[WARN] Sudo请求错误(防止yes阻断密码输入)"
+			continue
+		fi
+		echo "[INFO] done."
+		if yes|sudo pacman -Su;then
+			echo "Successed"
+			break
+		fi
+		echo "[INFO] 移除 $tmpfile 以退出"
+		echo "============= 失败重试 ============"
+	done
+	rm $tmpfile
+}
+
 pacman_auto_remove() {
 	pacman -Qdtq |sudo pacman -Rsun -
 }
 
 debug_coredump() {
 	tmpfile="/tmp/corefile.uuid.`uuidgen`"
-	echo "请输入pid并回车:"
-	zstdcat `find /var/lib/systemd/coredump -name "*$(head -n 1)*"` >$tmpfile
-	echo "请输入程序名并回车:"
+	echo "文件列表："
+	ls --sort=time -r /var/lib/systemd/coredump|tail -n 5
+	echo "请输入pid(用于匹配程序)"
+	pid=$(head -n 1)
+	flist=$(find /var/lib/systemd/coredump -name "*$pid*"|head -n 1)
+	if [[ $flist == "" ]];then
+		echo "未匹配到对应文件"
+		exit
+	fi
+	zstdcat "$flist" >$tmpfile
+	echo "输入程序名"
 	gdb "$(head -n 1)" $tmpfile
 	rm $tmpfile
 }

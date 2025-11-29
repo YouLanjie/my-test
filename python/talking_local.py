@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Created:2025.10.18
 # 基于python的简陋聊天室程序，向下兼容至python3.8
-# Filename: 聊天室v0.0.6.py
+# Filename: 聊天室v0.0.7.py
 
 from pathlib import Path
 from datetime import datetime
@@ -15,6 +15,7 @@ import uuid
 import hashlib
 import json
 import os
+import sys
 import shutil
 import time
 
@@ -32,7 +33,10 @@ if os.name == "posix":
     except ModuleNotFoundError:
         pass
 
-RESCOURSES = {"css":"""
+def rescourses(key:str, data:dict) -> str:
+    """获取被模板化后的资源"""
+    return Template(str({
+"css":"""
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     max-width: 1000px;
@@ -397,6 +401,13 @@ ${send_window}
 ${users}
 </div>
 """, # ==================
+"user-data":"""
+<div class='users' id="${id}">
+  <p><a href="/login?id=${id}" class="user_name">${name}</a>
+  <span class='user_time'>注册时间: ${timestamp}</span></p>
+  <p>${note}</p>
+</div>
+""", # ==================
 "dashboard":"""
 <div class="container">
   <h1>个人仪表板</h1>
@@ -404,11 +415,7 @@ ${users}
 </div>
 """, # ==================
 "dashboard-data":"""
-<div class='users'>
-  <p><span class='user_name'>${name}</span>
-  <span class='user_time'>注册时间: ${timestamp}</span></p>
-  <p>${note}</p>
-</div>
+${usercard}
 <div class='container'>
   <p>UUID: '${id}'</p>
   <p>密码md5值: '${passwd}'</p>
@@ -472,7 +479,7 @@ ${content}
   <button type="submit">返回主页(部分页面会自动跳转)</button>
   </a>
 </div>
-"""}
+"""}.get(key))).safe_substitute(data)
 
 # 由于在py3.8时仍不支持将联合类型写成 X|Y ，心碎了
 def get_strtime(dt:Union[datetime,float] = datetime.now()) -> str:
@@ -485,6 +492,14 @@ def get_strtime(dt:Union[datetime,float] = datetime.now()) -> str:
         t += dt.strftime(" %H:%M:%S")
         return t
     return ""
+
+def print_debug_info(path:Path):
+    """打印debug信息(用于解决windows下的玄学问题)"""
+    print(f"[DEBUG] CMD: '{sys.argv[0]}'")
+    print(f"[DEBUG] Program: '{Path(sys.argv[0]).resolve()}'")
+    print(f"[DEBUG] CWD: '{os.getcwd()}'")
+    print(f"[DEBUG] .is_absolute(): {path.is_absolute()}")
+    print(f"[DEBUG] .resolve().is_absolute(): {path.resolve().is_absolute()}")
 
 class User:
     """User"""
@@ -656,10 +671,10 @@ class System:
             self.savefile.write_text(t, encoding="utf-8")
         except PermissionError as e:
             print(e)
-            print(f"[ERROR] 权限错误：{self.savefile.resolve()}")
-            print("[INFO] 若是在windows下首次打开程序出现此报错")
-            print("[INFO] 可尝试重新启动本程序解决")
-        # print(t)
+            print(f"[ERROR] 写入权限错误：{self.savefile.resolve()}")
+            if os.name == "nt":
+                print_debug_info(self.savefile)
+                print("[INFO] 若是在windows下首次打开程序出现此报错,可尝试重新启动本程序解决")
     def load(self) -> bool:
         """读取数据"""
         if not self.savefile.is_file():
@@ -676,13 +691,15 @@ class System:
             except UnicodeDecodeError:
                 data = json.loads(self.savefile.read_text(encoding="gbk"))
         except json.JSONDecodeError:
-            data = None
-        if not isinstance(data, dict):
-            print("[ERROR] 读取数据失败")
+            print("[ERROR] json解析失败")
             tsp = int(datetime.now().timestamp())
             backupf = Path(f"{self.savefile.stem}_bak_{tsp}{self.savefile.suffix}")
             print(f"[INFO] 移动原文件 '{self.savefile.resolve()}' 到 '{backupf.resolve()}'")
             shutil.move(self.savefile, backupf)
+            return False
+        except PermissionError as e:
+            print(e)
+            print(f"[ERROR] 读取权限错误：{self.savefile.resolve()}")
             return False
         self.st_mtime = st_mtime
         for u in data.get("users") or []:
@@ -727,7 +744,7 @@ class System:
         except (KeyboardInterrupt, EOFError):
             print("[INFO] 取消操作")
             return
-    def syslog(self, message:str) -> None:
+    def syslog(self, message:str, p=False) -> None:
         """记录系统运行日志"""
         self.send_message(message, self.system)
     def print_in_page(self, content: Union[str, list], limit = 12) -> None:
@@ -893,7 +910,6 @@ class System:
         meta = ""
         title = ""
         s = ""
-        # RESCOURSES[]
         self.load()
         if tag == "msg_list":
             limit = 12
@@ -944,22 +960,22 @@ class System:
                 s += f"<div class='messages'{is_lastest}>\n"
                 s += f"<p><a href='/userlist#{m.owner}' class='msg_name'>{escape(name)}</a> "
                 s += f"<span class='msg_time'>{escape(get_strtime(m.timestamp))}</span></p>\n"
-                s += "<p>"+ "<br/>".join(m.content.splitlines()) + "</p>\n"
+                s += "<p>"+ "<br/>".join(escape(m.content).splitlines()) + "</p>\n"
                 s += "</div>\n"
 
             data = {
                 "messages":s,
-                "send_window": RESCOURSES["send_window" if self.now_user.get(ip) \
-                        else "send_window2"],
+                "send_window": rescourses("send_window" if self.now_user.get(ip) \
+                        else "send_window2", {}),
                 "pages":pages}
             title = "Python聊天室"
         elif tag == "userlist":
             for u in self.users:
-                s += f'<div class="users" id="{u.id}">\n'
-                s += f'<p><a href="/login?id={u.id}" class="user_name">{escape(u.name)}</a> '
-                s += f"<span class='user_time'>注册时间: {escape(get_strtime(u.timestamp))}</span></p>"
-                s += "<p>"+ "<br/>".join(u.note.splitlines()) + "</p>\n"
-                s += "</div></a>\n"
+                s += rescourses(
+                        "user-data",
+                        {"id":u.id,"name":escape(u.name),
+                         "timestamp":escape(get_strtime(u.timestamp)),
+                         "note":"<br/>".join(u.note.splitlines())})
             data = {"users":s}
             title = "用户列表"
         elif tag == "login":
@@ -977,13 +993,17 @@ class System:
                 u = self.now_user[ip]
                 data = {
                     "name":escape(u.name), "timestamp":escape(get_strtime(u.timestamp)),
-                    "note":"<br/>".join(escape(u.note).splitlines()),
+                    "note":"\n".join(u.note.splitlines()),
+                    "id":escape(u.id),
+                    }
+                data = {
+                    "usercard": rescourses("user-data", data),
                     "id":escape(u.id), "passwd":escape(u.passwd),
                     "login_record":"<br/>".join(\
                             escape("> "+f"在 {escape(get_strtime(i))} 登录过") \
                             for i in u.login_record)
                     }
-                data = {"userdata": Template(RESCOURSES["dashboard-data"]).safe_substitute(data)}
+                data = {"userdata": rescourses("dashboard-data", data)}
             else:
                 data = {"userdata":"<p>你尚未登录</p>"}
             title = "个人仪表板"
@@ -996,10 +1016,12 @@ class System:
             title = "404 Page Not Found"
             meta = """<meta http-equiv="refresh" content="2;url=/">"""
 
-        if tag and tag in RESCOURSES:
-            s = Template(RESCOURSES[tag]).safe_substitute(data)
-        s = Template(RESCOURSES["template"]).safe_substitute({
-            "content":s, "css":RESCOURSES["css"],
+        if tag:
+            tmp = rescourses(tag, data)
+            if tmp != "None":
+                s = tmp
+        s = rescourses("template", {
+            "content":s, "css":rescourses("css", {}),
             "meta":meta, "title":f"{title} - {ip}",
             "loginstatus":loginstatus})
         return s
@@ -1071,7 +1093,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
                 s += f"""<p>{escape(name)}</p>"""
             else:
                 s += """<p>很抱歉，登录失败了，也许你的密码输错了？</p>"""
-                data["meta"], url_ref = "2", "/register"
+                data["meta"], url_ref = "2", f"/login?id={li[name].id}"
             data["content"] = s
         elif parsed_path.path == '/register' and "username" in parsed_data:
             name = parsed_data.get("username")
@@ -1200,9 +1222,7 @@ def extra_funtions():
         errors = import_module("urllib.error")
         print("[INFO] 正在尝试下载反极域软件")
         url = "github.com/imengyu/JiYuTrainer/releases/download/1.7.6/JiYuTrainer.exe"
-        urls = (f"http://ghfast.top/{url}",
-                "http://youlanjie.github.io/lib/python/talking_local.py",
-                f"http://{url}")
+        urls = (f"http://ghfast.top/{url}", f"http://{url}")
         for i in urls:
             try:
                 req.urlretrieve(i, str(outf))
@@ -1219,7 +1239,9 @@ def extra_funtions():
         errors = import_module("urllib.error")
         print("[INFO] 正在尝试更新本程序")
         url = "raw.githubusercontent.com/youlanjie/my-test/refs/heads/main/python/talking_local.py"
-        urls = (f"http://ghfast.top/{url}", f"http://{url}")
+        urls = (f"http://ghfast.top/{url}",
+                f"http://{url}",
+                "https://youlanjie.github.io/lib/python/talking_local.py",)
         ret = None
         for i in urls:
             try:
@@ -1235,25 +1257,35 @@ def extra_funtions():
             print(f"[INFO] 下载失败 - '{url}'")
             return
         content = ret.read()
+        msg = []
         try:
             filename = str(content.decode().splitlines()[3])
             if not filename.startswith("# Filename: "):
                 raise EOFError
             filename = filename[12:]
         except (UnicodeDecodeError, IndexError, EOFError):
-            print("[INFO] 获取聊天室版本错误，使用默认名称")
+            msg.append("[INFO] 获取聊天室版本错误，使用默认名称")
+            print(msg[-1])
             filename = "聊天室_版本未知.py"
         outf = Path(filename)
         if outf.exists():
-            print(f"[INFO] 文件'{outf.resolve()}'已存在")
-            tsp = int(datetime.now().timestamp())
-            backupf = Path(f"{outf.stem}_bak_{tsp}{outf.suffix}")
-            print(f"[INFO] 移动原文件 '{outf.resolve()}' 到 '{backupf.resolve()}'")
-            shutil.move(outf, backupf)
-        outf.write_bytes(content)
-        if outf.is_file():
-            print(f"[INFO] 新版文件已保存到'{outf.resolve()}'")
-            system.syslog(f"[INFO] 更新版本到'{outf.resolve()}'")
+            msg.append(f"[INFO] 文件'{outf.resolve()}'已存在")
+            print(msg[-1])
+            if outf.read_bytes() == content:
+                msg.append("[INFO] 文件内容相同，更新取消")
+                print(msg[-1])
+            else:
+                tsp = int(datetime.now().timestamp())
+                backupf = Path(f"{outf.stem}_bak_{tsp}{outf.suffix}")
+                msg.append(f"[INFO] 移动原文件 '{outf.resolve()}' 到 '{backupf.resolve()}'")
+                print(msg[-1])
+                shutil.move(outf, backupf)
+        if not outf.is_file():
+            outf.write_bytes(content)
+            if outf.is_file():
+                msg.append(f"[INFO] 新版文件已保存到'{outf.resolve()}'")
+                print(msg[-1])
+        system.syslog("\n".join(msg))
         return
     li = [lambda:None,download_anti_program, self_update]
     print("""\
@@ -1268,7 +1300,7 @@ def extra_funtions():
     try:
         num = int(input("[INPUT] 请选择(数字):"))
         print(f"[INFO] 将运行功能 '{li[num]}'")
-        if input("[ASK] 确认？(y/N)").lower() != "y":
+        if input("[ASK] 确认？(Y/n)").lower() == "n":
             raise KeyboardInterrupt
         print(f"[INFO] 正在运行 '{li[num]}'(后台进行)")
         threading.Thread(target=li[num]).start()
@@ -1339,6 +1371,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-p', '--port', default=8000, type=int, help='端口号')
     parser.add_argument('-n', '--no-browser', action="store_true", help='不自动打开浏览器')
     parser.add_argument('-S', '--pure-http-server', action="store_true", help='纯服务器(前台运行)')
+    parser.add_argument('--no-subprocess', action="store_true", help='不在windows下尝试启动子进程')
     # parser.add_argument('-x', '--debug', action="store_true", help='调试')
     args = parser.parse_args()
     return args
@@ -1346,6 +1379,11 @@ def parse_arguments() -> argparse.Namespace:
 SYSTEM = System(no_load=True)
 if __name__ == "__main__":
     ARGS = parse_arguments()
+    if not ARGS.no_subprocess and os.name == "nt" and str(Path().resolve())[1:3] != ":\\":
+        print_debug_info(Path())
+        print("[INFO] pathlib存在问题，尝试启动子进程以代替")
+        subprocess.run(["python"]+sys.argv+["--no-subprocess"])
+        sys.exit()
     SYSTEM = System(ARGS.input)
     if ARGS.pure_http_server:
         run_server(ARGS.port)
