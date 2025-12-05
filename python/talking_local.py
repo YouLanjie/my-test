@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # Created:2025.10.18
 # 基于python的简陋聊天室程序，向下兼容至python3.8
-# Filename: 聊天室v0.0.8.py
+# Filename: 聊天室v0.0.9.py
 
 from pathlib import Path
 from datetime import datetime
 from getpass import getpass
-from typing import Callable, Union
+from typing import Callable, Union, Any
 from importlib import import_module
 import argparse
 import threading
@@ -662,11 +662,22 @@ def get_strtime(dt:Union[datetime,float] = datetime.now()) -> str:
         return t
     return ""
 
+def log_in_file(msg:str, filename:str):
+    """将信息记录到文件"""
+    try:
+        if ARGS.no_logs:
+            return
+        with open(filename, "a") as f:
+            print(msg, file=f)
+    except (OSError, PermissionError, AttributeError, NameError):
+        pass
+
 def print_debug_info(path:Path):
     """打印debug信息(用于解决windows下的玄学问题)"""
     print(f"[DEBUG] CMD: '{sys.argv[0]}'")
     print(f"[DEBUG] Program: '{Path(sys.argv[0]).resolve()}'")
     print(f"[DEBUG] CWD: '{os.getcwd()}'")
+    print(f"[DEBUG] CHECK_PATH: '{path}'")
     print(f"[DEBUG] .is_absolute(): {path.is_absolute()}")
     print(f"[DEBUG] .resolve().is_absolute(): {path.resolve().is_absolute()}")
 
@@ -1295,14 +1306,14 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             data["content"] = s
         elif parsed_path.path == '/renote' and "note" in parsed_data:
             note = parsed_data.get("note")
-            note = escape(str(note[0] if note else ""))
+            note = str(note[0] if note else "")
             if SYSTEM.now_user.get(self.client_address[0]):
                 SYSTEM.now_user[self.client_address[0]].note = note
                 data["content"] = """<p>修改备注成功！</p>"""
                 url_ref = "/dashboard"
         elif parsed_path.path == '/send_message' and "message" in parsed_data:
             message = parsed_data.get("message")
-            message = escape(str(message[0] if message else ""))
+            message = str(message[0] if message else "")
             if SYSTEM.now_user.get(self.client_address[0]):
                 SYSTEM.messages.append(Message(SYSTEM.now_user[self.client_address[0]], str(message)))
                 data["content"] = """<p>留言成功！</p>"""
@@ -1322,6 +1333,10 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(response_html.encode())
         SYSTEM.load()
         SYSTEM.save()
+    def log_message(self, format: str, *args: Any) -> None:
+        s = "[%s] %s - %s" % (self.date_time_string(), self.address_string() , format % args)
+        log_in_file(s, "chat_room.log")
+        return None
 
 # 启动服务器
 def run_server(port=8000):
@@ -1545,6 +1560,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-n', '--no-browser', action="store_true", help='不自动打开浏览器')
     parser.add_argument('-S', '--pure-http-server', action="store_true", help='纯服务器(前台运行)')
     parser.add_argument('--no-subprocess', action="store_true", help='不在windows下尝试启动子进程')
+    parser.add_argument('--no-logs', action="store_true", help='不使用文件记录web服务器的日志')
     # parser.add_argument('-x', '--debug', action="store_true", help='调试')
     args = parser.parse_args()
     return args
@@ -1552,11 +1568,17 @@ def parse_arguments() -> argparse.Namespace:
 SYSTEM = System(no_load=True)
 if __name__ == "__main__":
     ARGS = parse_arguments()
-    if not ARGS.no_subprocess and os.name == "nt" and str(Path().resolve())[1:3] != ":\\":
+    # 麻烦的windows右键打开方式错误（默认工作目录不正确）
+    if not ARGS.no_subprocess and os.name == "nt" and str(Path("SAVEDATA.json").resolve())[1:3] != ":\\":
         print_debug_info(Path())
-        print("[INFO] pathlib存在问题，尝试启动子进程以代替")
-        subprocess.run(["python"]+sys.argv+["--no-subprocess"])
+        print_debug_info(Path("SAVEDATA.json"))
+        print("[INFO] 疑似手动选择打开方式导致工作目录问题")
+        print("[INFO] 尝试启动子进程以代替(设置工作目录位于程序目录)")
+        subprocess.run(["python"]+sys.argv+["--no-subprocess"],
+                       cwd = str(Path(sys.argv[0]).parent),
+                       check=False)
         sys.exit()
+
     SYSTEM = System(ARGS.input)
     if ARGS.pure_http_server:
         run_server(ARGS.port)
