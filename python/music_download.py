@@ -31,6 +31,18 @@ def download_file(url:str, file:Path) -> bool:
         return False
     return True
 
+def get_real_link(link:str) -> str:
+    """将手机复制的分享链接转含歌曲id的普通链接"""
+    match = re.match(r".*(https://163cn.tv/[a-zA-Z0-9]+)", link)
+    link = match.group(1) if match else link
+    try:
+        response = requests.head(link, timeout=5)
+        response.raise_for_status()
+        link = response.headers["Location"]
+    except requests.exceptions.RequestException as e:
+        print('请求出错:', e)
+    return link
+
 class Song:
     """歌曲类"""
     def __init__(self, data: int|str|dict) -> None:
@@ -45,6 +57,8 @@ class Song:
         try:
             int(url)
         except ValueError:
+            if "https://163cn.tv/" in url:
+                url = get_real_link(url)
             match = re.match(r".*id=(\d+)", url)
             if not match:
                 return
@@ -240,10 +254,10 @@ def main():
             link = input("请输入歌曲链接或者id：")
             inpd = Path(args.input_dir) if args.input_dir else None
             Song(link).download(Path(args.output_dir), inpd=inpd)
-    except KeyboardInterrupt:
-        print("侦测到C-c,退出")
     except EOFError:
         print("侦测到C-d,退出")
+    except KeyboardInterrupt:
+        print("侦测到C-c,退出")
 
 if __name__ == "__main__":
     main()
