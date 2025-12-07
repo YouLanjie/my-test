@@ -17,4 +17,5 @@ int main() {
     struct timeval t;
     gettimeofday(&t, NULL);
     printf("%ld.%06ld\n", time(NULL), t.tv_usec);
+    printf("%ld.%06ld\n", t.tv_sec, t.tv_usec);
 }

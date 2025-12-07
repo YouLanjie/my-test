@@ -38,6 +38,7 @@ build_file() {
 		["input.c"]="-lm"		\
 		["neuro.c"]="-lm"		\
 		["social.c"]="-lm"		\
+		["lrc.c"]="-lSDL2 -lSDL2_mixer"	\
 		["gtk.c"]="$(pkg-config --cflags --libs gtk+-3.0 2>/dev/null || echo "#")")
 	if [[ $build_arg[$(echo $1 | sed 's/^.*\///')] == "#" ]] {
 		return -1
