@@ -3,6 +3,7 @@
 
 import sys
 from pathlib import Path
+import datetime
 
 def print_err(s:str):
     """从stderr打印输出"""
@@ -87,3 +88,11 @@ def calculate_relative2(path_to:Path, path_from:Path) -> Path:
         depth -= 1
     back_relative = "../"*depth
     return Path(f"./{back_relative}/{relative}")
+
+def get_strtime(dt:datetime.datetime = datetime.datetime.now(), h=True,m=True,s=True) -> str:
+    """get formatted datetime string"""
+    t = dt.strftime("%Y-%m-%d ")
+    t += "一二三四五六日"[dt.weekday()]
+    l = [i[1] for i in ((h,"%H"),(m,"%M"),(s,"%S")) if i[0]]
+    t += dt.strftime(" "+":".join(l) if l else "")
+    return t

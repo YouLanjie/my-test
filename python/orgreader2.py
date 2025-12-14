@@ -7,26 +7,77 @@ import datetime
 import re
 import gzip
 import importlib
+from html import escape
+from abc import ABC, abstractmethod
+from string import Template
 
 try:
     from . import pytools
 except ImportError:
     import pytools
 
-def _get_strtime(dt:datetime.datetime = datetime.datetime.now(), h=True,m=True,s=True) -> str:
-    t = dt.strftime("%Y-%m-%d ")
-    t += "一二三四五六日"[dt.weekday()]
-    l = [i[1] for i in ((h,"%H"),(m,"%M"),(s,"%S")) if i[0]]
-    t += dt.strftime(" "+":".join(l) if l else "")
-    return t
-
-def _html_filter(s:str):
-    s = s.replace("&", "&amp;").replace("<","&lt;").replace(">","&gt;")
-    return s
-
 def _get_strings_pattern(s:str,blank_char=" )-,") -> re.Pattern:
     return re.compile(f"{s}([^ ].*?(?<! )){s}(?=[{blank_char}]|\n|$)",
                       re.DOTALL)
+
+class ExportVisitor(ABC):
+    @abstractmethod
+    def visit_document(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_root(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_meta(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_footnotes(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_titleoutline(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_blockcode(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_blockexport(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_blockcenter(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_blockcomment(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_blockexample(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_blockverse(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_comment(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_list(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_table(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_footnote(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_text(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_listitem(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_title(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_strings(self, node, li: list) -> str:
+        return ""
 
 class Strings:
     """行内字符串类，提供行内格式转换"""
@@ -118,7 +169,7 @@ class Strings:
         month = ([12]+list(range(1,12)))[month % 12]
         timestamp = minutes*60 + hours*(60**2)
         timestamp += datetime.datetime(year,month,1).timestamp()+day*(60**2*24)
-        s = _get_strtime(datetime.datetime.fromtimestamp(timestamp),h=enable_hm,m=enable_hm,s=False)
+        s = pytools.get_strtime(datetime.datetime.fromtimestamp(timestamp),h=enable_hm,m=enable_hm,s=False)
         chr_typ2 = "]" if chr_typ == "[" else ">"
         s = f"{chr_typ}{s}{chr_typ2}"
         li.append(["timestamp", s])
@@ -164,73 +215,6 @@ class Strings:
         if not is_sub:
             self.cache[s] = li
         return li
-    def list_to_html(self, li:list) -> str:
-        """将给定的已经分好的列表转回html"""
-        if not li:
-            return ""
-        ret = ""
-        last_stat = ""
-        i : str | list = ""
-        for i in li:
-            if isinstance(i, str):
-                i = _html_filter(i).replace("\n", "<br/>")
-                ret+=i
-                continue
-            i = [_html_filter(i) if isinstance(i, str) else i for i in i]
-            if i[0] == "link":
-                ret += f"""<a href="{i[1]}">{self.list_to_html(i[2])}</a>"""
-            elif i[0] == "img":
-                ret += "<div class=\"figure\"><p>" \
-                        if isinstance(self.upward, Text) and \
-                        not self.upward.opt.get("in_list") and len(li) == 1 else ""
-                ret += f"""\n<img src="{i[1]}" alt="{self.list_to_html(i[2])}" />\n"""
-                ret += "</p></div>\n" \
-                        if isinstance(self.upward, Text) and \
-                        not self.upward.opt.get("in_list") and len(li) == 1 else ""
-            elif i[0] == "figure":
-                self.upward.document.status["figure_count"]+=1
-                ret += f"""\n<div class="figure">\n<p><img src="{i[1]}" alt="{i[1]}" /></p>\n"""
-                ret += """<p><span class="figure-number">Figure """+\
-                        f"""{self.upward.document.status["figure_count"]}: </span>"""+\
-                        f"""{self.list_to_text(i[2])}</p></div>"""
-            elif i[0] == "fn":
-                fns : dict = self.upward.document.status["footnotes"]
-                if not fns.get(i[1]):
-                    self.log(f"引用没有定义的脚注'{i[1]}'", "ERROR")
-                    continue
-                fn : Footnote = fns[i[1]]
-                num = self.upward.document.status["footnote_count"]
-                if fn.id <= 0:
-                    self.upward.document.status["footnote_count"]+=1
-                    num+=1
-                    fn.id = num
-                    name = fn.name if fn.type == "str" else num
-                    self.upward.document.status["call_footnotes"].append(i[1])
-                else:
-                    num = fn.id
-                name = fn.name if fn.type == "str" else num
-                fn.line.to_html()
-                ret += f"""<sup><a id="fnr.{name}" class="footref" """
-                ret += f"""href="#fn.{name}" role="doc-backlink">"""
-                outline = self.upward.document.setting["footnote_style"]
-                ret += f"""{outline[0]}{num}{outline[1]}</a></sup>"""
-            elif i[0] == "timestamp":
-                ret += '<span class="timestamp-wrapper"><span class="timestamp">'
-                ret += f"{i[1]}"
-                ret += '</span></span>'
-                ret += last_stat
-                last_stat = ""
-            elif i[0] in self.rules:
-                ret += f"""{self.rules[i[0]][0]}{self.list_to_html(i[1])}{self.rules[i[0]][1]}"""
-                ret += last_stat
-                last_stat = ""
-            else:
-                last_stat = " "
-                ret += str(i)
-        if ret and ret[0] == "\n":
-            ret = ret[1:]
-        ret.replace("\\", "<span>\\</span>")
-        return ret
     def list_to_text(self, li:list) -> str:
         """将给定的已经分好的列表转回文字"""
         if not li:
@@ -292,12 +276,16 @@ class Strings:
             return re.sub("\n", " ", self.s)
         text = self.get_pre_text()
         return self.list_to_text(self.orgtext_to_list(text))
-    def to_html(self) -> str:
-        """输出行内html"""
+    def accept(self, visitor: ExportVisitor) -> str:
+        """将给定的已经分好的列表转回"""
+        method_name = f"visit_{self.__class__.__name__.lower()}"
+        if not hasattr(visitor, method_name):
+            return ""
         if not self.parse_able:
             return re.sub("\n", " ", self.s)
         text = self.get_pre_text()
-        return self.list_to_html(self.orgtext_to_list(text))
+        return getattr(visitor, method_name)(self, self.orgtext_to_list(text))
+
 
 class Root:
     """根节点/节点父类"""
@@ -394,14 +382,14 @@ class Root:
                     j+="\n"
                 text += f"{self.document.setting["indent_str"]}{j}"
         return text
-    def to_html(self) -> str:
-        """输出成html"""
-        if not self.opt["printable"]:
-            return ""
-        text = self.line.to_html() + "\n"
-        for i in self.child:
-            text += i.to_html()
-        return text
+    def accept(self, visitor: ExportVisitor) -> str:
+        """return str get from visitor"""
+        # 根据节点类型自动匹配访问者方法
+        method_name = f"visit_{self.__class__.__name__.lower()}"
+        if hasattr(visitor, method_name):
+            return getattr(visitor, method_name)(self)
+        # 默认返回空字符串（适配未实现的节点类型）
+        return ""
 
 class TextBase(Root):
     """文本基类"""
@@ -416,18 +404,6 @@ class Text(TextBase):
         if not self.opt["printable"]:
             return ""
         return self.line.to_text()
-    def to_html(self) -> str:
-        if not self.opt["printable"]:
-            return ""
-        text = self.line.to_html()
-        if not text:
-            return text
-        need_ptag = self.line.orgtext_to_list(self.line.get_pre_text())
-        if len(need_ptag) > 1 or \
-                (need_ptag and isinstance(need_ptag[0], str)) or \
-                (need_ptag and need_ptag[0][0] not in ("img","figure")):
-            text = f"<p>{text}</p>"
-        return text
 
 class Comment(Root):
     """注释行"""
@@ -546,8 +522,6 @@ class Meta(Root):
             self.log(f"错误的OPTIONS: {keys}", "ERROR")
     def to_text(self) -> str:
         return ""
-    def to_html(self) -> str:
-        return ""
 
 class TitleBase(Root):
     """标题基类"""
@@ -639,61 +613,6 @@ class Title(TitleBase):
             for j in i.to_text().splitlines():
                 text+=f"{self.document.setting["indent_str"]}{j}\n"
         return text
-    def to_html(self) -> str:
-        if self.comment or not self.opt["printable"]:
-            return ""
-        title = self.line.to_html()
-        ids = self.id[self.document.status["lowest_title"]-1:-1]
-        lv = ".".join([str(i) for i in ids])
-
-        text = ""
-        if self.level <= self.document.meta["options"]["h"]:
-            text += f"""<div id="outline-container-{re.sub(r"\.","-",lv)}" class=\"outline-{self.level+1}\">\n"""
-            text += f"""<h{self.level+2-self.document.status["lowest_title"]} """+\
-                f"""id="org-title-{re.sub(r"\.","-",lv)}">"""
-            headline_num = self.document.meta["options"]["num"]
-            if (isinstance(headline_num,bool) and headline_num) or len(ids) <= headline_num:
-                text += """<span class="section-number-"""+\
-                        f"""{self.level+2-self.document.status["lowest_title"]}">{lv}.</span>"""
-        else:
-            text += f"""<li>\n<a id="org-title-{re.sub(r"\.","-",lv)}"></a>"""
-
-        if self.todo:
-            text+=f" <span class=\"{self.todo[0]} {self.todo[1]}\">{self.todo[1]}</span>"
-        text += f" {title}"
-        if self.tag.s:
-            text += f"""{"&nbsp;"*3}<span class="tag">"""
-            tags = self.tag.s.split(":")
-            li = []
-            for i in tags:
-                li.append(f"""<span class="{i}">{i}</span>""")
-            text += "&nbsp;".join(li)
-            text += """</span>"""
-
-        if self.level <= self.document.meta["options"]["h"]:
-            text += f"</h{self.level+2-self.document.status["lowest_title"]}>\n"
-        else:
-            text += "<br/>\n"
-
-        has_text_outline = False
-        if self.child and not isinstance(self.child[0], Title):
-            text += f"""<div class="outline-text-{self.level+1}" """+\
-                    f"""id="text-{re.sub(r"\.","-",lv)}">"""
-            has_text_outline = True
-
-        for i in self.child:
-            if has_text_outline and isinstance(i, TitleOutline):
-                text += "</div>"
-                has_text_outline = False
-            text += i.to_html()
-        if has_text_outline:
-            text += "</div>"
-
-        if self.level <= self.document.meta["options"]["h"]:
-            text += "</div>"
-        else:
-            text += "</li>\n"
-        return text
 
 class TitleOutline(TitleBase):
     """标题（多项集合）"""
@@ -726,20 +645,6 @@ class TitleOutline(TitleBase):
         for i in self.child:
             text += i.to_text()
         return text
-    def to_html(self) -> str:
-        text = ""
-        for i in self.child:
-            if text and text[-1] != "\n":
-                text += "\n"
-            # 每个列表组的每个项目
-            text += f"{i.to_html()}"
-        if self.level > self.document.meta["options"]["h"] and text != "":
-            headline_num = self.document.meta["options"]["num"]
-            li_type = "ul"
-            if (isinstance(headline_num,bool) and headline_num) or self.level <= headline_num:
-                li_type = "ol"
-            text = f"""<{li_type} class="org-ol">{text}</{li_type}>\n"""
-        return text
 
 class Footnotes(TitleBase):
     """脚注(大标题)"""
@@ -771,14 +676,10 @@ class Footnote(Root):
             pytools.print_err(f"!: {self.document.lines[self.document.current_line]}")
             # import pdb; pdb.set_trace()
         return False
-    def to_html(self, printable=False) -> str:
-        if not printable:
-            return ""
-        return super().to_html()
     def to_text(self, printable=False) -> str:
         if not printable:
             return ""
-        return super().to_html()
+        return super().to_text()
 
 class ListItem(Root):
     """列表(单项)"""
@@ -826,24 +727,6 @@ class ListItem(Root):
                 if j and j[-1] != "\n":
                     j+="\n"
                 text += f"{indent_str}{j}"
-        return text
-    def to_html(self) -> str:
-        text = ""
-        flag = True
-        for i in self.child[1:]:
-            if not isinstance(i, (Comment, List)):
-                flag = False
-                break
-        if isinstance(self.child[0], Text) and flag:
-            text += f"{self.child[0].line.to_html()}\n"
-        else:
-            text += f"{self.child[0].to_html()}\n"
-        for i in self.child[1:]:
-            # 下一级的东西
-            j = i.to_html()
-            if j and j[-1] != '\n':
-                j += "\n"
-            text +=  j
         return text
 
 class List(Root):
@@ -902,15 +785,6 @@ class List(Root):
             # 每个列表组的每个项目
             level = f"{self.level}" if self.type == "ul" else f"{self.level}[{index}]"
             text += f"-L{level} {i.to_text()}"
-        return text
-    def to_html(self) -> str:
-        text = f"<{self.type} class=\"org-{self.type}\">\n"
-        for i in self.child:
-            if text and text[-1] != "\n":
-                text += "\n"
-            # 每个列表组的每个项目
-            text += f"<li>{i.to_html()}</li>"
-        text += f"</{self.type}>\n"
         return text
 
 class Block(Root):
@@ -973,38 +847,6 @@ class BlockCode(Block):
             ret += f"| {i}\n"
         ret += "`----"
         return ret
-    def to_html(self) -> str:
-        if not isinstance(self.line, Strings) or not self.opt["printable"]:
-            return ""
-        ret = "<div class=\"org-src-container\">"
-        ret += f"<pre class=\"src src-{self.lang.lower() if self.lang else "nil"}\">"
-        try:
-            pygments = importlib.import_module("pygments")
-            get_lexer_by_name = importlib.import_module("pygments.lexers").get_lexer_by_name
-            fmt = importlib.import_module("pygments.formatters").get_formatter_by_name("html", style="monokai", nowrap=True)
-            try:
-                lang = self.lang
-                if not isinstance(lang, str):
-                    lang = ""
-                if lang.lower().startswith("conf"):
-                    lang = "cfg"
-                elif lang.lower() == "vimrc":
-                    lang = "vim"
-                compiled = pygments.highlight(
-                        self.line.s,
-                        get_lexer_by_name(lang),
-                        fmt)
-            except pygments.util.ClassNotFound:
-                compiled = pygments.highlight(
-                        self.line.s,
-                        get_lexer_by_name("text"),
-                        fmt)
-        except ModuleNotFoundError:
-            self.log("模块pygments不可用，使用基础fallback")
-            compiled = _html_filter(self.line.s)
-        ret += compiled
-        ret += "</pre></div>"
-        return ret
 
 class BlockExport(BlockCode):
     """对应语言导出块"""
@@ -1016,12 +858,6 @@ class BlockExport(BlockCode):
             ret += f"| {i}\n"
         ret += "`^^^^"
         return ret
-    def to_html(self) -> str:
-        if not isinstance(self.line, Strings) or not self.opt["printable"]:
-            return ""
-        if self.lang == "html":
-            return self.line.s
-        return ""
 
 class BlockComment(BlockCode):
     """注释块"""
@@ -1039,13 +875,6 @@ class BlockExample(BlockCode):
             ret += f"| {i}\n"
         ret += "`----"
         return ret
-    def to_html(self) -> str:
-        if not isinstance(self.line, Strings) or not self.opt["printable"]:
-            return ""
-        ret = "<pre class=\"example\">"
-        ret += self.line.s
-        ret += "</pre>"
-        return ret
 
 class BlockVerse(BlockCode):
     """参照原样输出(不合并行)"""
@@ -1062,14 +891,6 @@ class BlockVerse(BlockCode):
         ret = ",==== (VERSE)\n"
         ret += "\n".join(f"| {i}" for i in self.line.to_text().splitlines())
         ret += "`===="
-        return ret
-    def to_html(self) -> str:
-        if not isinstance(self.line, Strings):
-            return ""
-        ret = "<p class=\"verse\">"
-        for i in self.line.s.splitlines():
-            ret += f"{Strings(i, self).to_html()}<br/>"
-        ret += "</p>"
         return ret
 
 class BlockQuote(Block):
@@ -1100,14 +921,6 @@ class BlockQuote(Block):
                 text+=f"{self.document.setting["indent_str"]}{j}\n"
         text += "`========"
         return text
-    def to_html(self) -> str:
-        if not self.opt["printable"]:
-            return ""
-        text = "<blockquote>\n"
-        for i in self.child:
-            text += i.to_html()
-        text += "</blockquote>"
-        return text
 
 class BlockCenter(BlockQuote):
     """居中块"""
@@ -1126,12 +939,6 @@ class BlockCenter(BlockQuote):
             for j in ret.splitlines():
                 text+=f"{self.document.setting["indent_str"]}{pytools.get_str_in_width(j, 60)}\n"
         text += "`>>>>>>>>"
-        return text
-    def to_html(self) -> str:
-        text = "<div class=\"org-center\">\n"
-        for i in self.child:
-            text += i.to_html()
-        text += "</div>"
         return text
 
 class Table(TextBase):
@@ -1239,104 +1046,6 @@ class Table(TextBase):
             index+=1
         text+=f"{pytools.get_str_in_width("",total_width,"`")}\n"
         return f"{text}"
-    def to_html(self) -> str:
-        self.check_control_line()
-        skip_list = [i[0] for i in self.control_line if i[1] == "align"]
-        split_list = [i[0] for i in self.control_line if i[1] == "split"]
-        text = """\n<table border="2" cellspacing="0" cellpadding="6" """+\
-                """rules="groups" frame="hsides">"""
-        if len(self.lines) - len(self.control_line) <= 0:
-            text += "</table>"
-            return text
-        rule = {"<l>":"left", "<c>":"center", "<r>":"right"}
-        text += "<colgroup>"
-        text += "\n".join([f"""<col class="org-{rule[i]}" />""" for i in self.align])
-        text += "</colgroup>"
-
-        # 一线分头尾
-        if split_list:
-            text += "<thead>"
-        else:
-            text += "<tbody>"
-        index = 0
-        for line in self.lines:
-            if index in skip_list:
-                index+=1
-                continue
-            if isinstance(line, str):
-                if index == split_list[0]:
-                    text += "\n</thead><tbody>\n"
-                else:
-                    text += "\n</tbody><tbody>\n"
-                index+=1
-                continue
-            text += "<tr>"
-            for col,align in zip(line, self.align):
-                if split_list and index < split_list[0]:
-                    text+=f"<th scope=\"col\" class=\"org-{rule[align]}\">{col.to_html()}</th>"
-                else:
-                    text+=f"<td class=\"org-{rule[align]}\">"+\
-                            f"{col.to_html() if col.to_html() else "&nbsp;"}</td>"
-            index+=1
-            text += "</tr>"
-        text += "</table>"
-        return text
-
-#^ *#\+begin_([^ \n]+)(?:[ ]+(.*?))?\n(.*?)^ *#\+end_\1\n?
-RULES = {
-    "Meta":         {"match":re.compile(r"^[ ]*#\+([^: ]*)(?! ):[ ]*(.*)", re.I), "class":Meta},
-    "Footnotes":    {"match":re.compile(
-                        r"^([*]+) +(Footnotes *.*)(?: +:(.*):)?"),
-                     "class":Footnotes,
-                     "end":re.compile(r"^([*]+) +(.*)", re.I)},
-    "TitleOutline": {"match":re.compile(
-                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
-                     "class":TitleOutline,
-                     "end":re.compile(
-                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
-    "BlockCode":    {"match":re.compile(r"^ *#\+begin_src(?:[ ]+(.*))?", re.I),
-                     "class":BlockCode,
-                     "end":re.compile(r"^ *#\+end_src", re.I)},
-    "BlockExport":  {"match":re.compile(r"^ *#\+begin_export(?:[ ]+(.*))?", re.I),
-                      "class":BlockExport,
-                      "end":re.compile(r"^ *#\+end_export", re.I)},
-    "BlockQuote":   {"match":re.compile(r"^ *#\+begin_quote", re.I),
-                     "class":BlockQuote,
-                     "end":re.compile(r"^ *#\+end_quote", re.I)},
-    "BlockCenter":  {"match":re.compile(r"^ *#\+begin_center", re.I),
-                     "class":BlockCenter,
-                     "end":re.compile(r"^ *#\+end_center", re.I)},
-    "BlockComment": {"match":re.compile(r"^ *#\+begin_comment(?:[ ]+(.*))?", re.I),
-                     "class":BlockComment,
-                     "end":re.compile(r"^ *#\+end_comment", re.I)},
-    "BlockExample": {"match":re.compile(r"^ *#\+begin_example(?:[ ]+(.*))?", re.I),
-                     "class":BlockExample,
-                     "end":re.compile(r"^ *#\+end_example", re.I)},
-    "BlockVerse":   {"match":re.compile(r"^ *#\+begin_verse(?:[ ]+(.*))?", re.I),
-                     "class":BlockVerse,
-                     "end":re.compile(r"^ *#\+end_verse", re.I)},
-    "Comment":      {"match":re.compile(r"^[ ]*#[ ]+(.*)", re.I),"class":Comment},
-    "List":         {"match":re.compile(r"^( *)(-|\+|(?<!^)\*|[0-9]+(?:\)|\.))( +(?:.*)|$)", re.I),
-                     "class":List,
-                     "end":re.compile(r"^( *)(.*)", re.I)},
-    "Table":        {"match":re.compile(r"^ *\|", re.I), "class":Table},
-    "Footnote":     {"match":re.compile(r"^\[fn:([^]]*)\](.*)"),
-                     "class":Footnote,
-                     "end":re.compile(r"(?:^\[fn:([^]]*)\](.*))|(?:^([*]+) +[^ ]+.*)")},
-    "Text":         {"match":re.compile(""), "class":Text},
-    "Root":         {"match":re.compile(""),
-                     "class":Comment,
-                     "end":re.compile(r"^([*]+) +(.*)", re.I)},
-                     # "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)", re.I)},
-    "ListItem":     {"match":re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.))( +(?:.*)|$)", re.I),
-                     "class":List,
-                     "end":re.compile(r"^( *)(.*)", re.I)},
-    "Title":        {"match":re.compile(
-                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
-                     "class":Title,
-                     "end":re.compile(
-                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
-    }
 
 class Document:
     """文档类，操作基本单位"""
@@ -1529,82 +1238,518 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
         self.status["figure_count"] = 0
         self.status["footnote_count"] = 0
         return self.root.to_text()
-    def to_html(self) -> str:
-        """转成html"""
-        self.status["figure_count"] = 0
-        self.status["footnote_count"] = 0
-        self.status["call_footnotes"] = []
-        meta = f"""\n{"\n".join(\
-                [f"""<meta name="{i}" content="{" ".join(self.meta[i])}" />"""\
-                for i in ("author", "description") if self.meta[i]])}"""
-        html_head = f"{"\n".join(self.meta["html_head"])}" if self.meta["html_head"] else ""
-        title = f"\n<h1 class=\"title\">{" ".join(self.meta["title"])}</h1>" \
-                if self.meta["title"] else ""
-        html = f"""\
+    def accept(self, visitor: ExportVisitor) -> str:
+        """return str get from visitor"""
+        # 根据节点类型自动匹配访问者方法
+        method_name = f"visit_{self.__class__.__name__.lower()}"
+        if hasattr(visitor, method_name):
+            return getattr(visitor, method_name)(self)
+        # 默认返回空字符串（适配未实现的节点类型）
+        return ""
+
+#^ *#\+begin_([^ \n]+)(?:[ ]+(.*?))?\n(.*?)^ *#\+end_\1\n?
+RULES = {
+    "Meta":         {"match":re.compile(r"^[ ]*#\+([^: ]*)(?! ):[ ]*(.*)", re.I), "class":Meta},
+    "Footnotes":    {"match":re.compile(
+                        r"^([*]+) +(Footnotes *.*)(?: +:(.*):)?"),
+                     "class":Footnotes,
+                     "end":re.compile(r"^([*]+) +(.*)", re.I)},
+    "TitleOutline": {"match":re.compile(
+                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
+                     "class":TitleOutline,
+                     "end":re.compile(
+                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
+    "BlockCode":    {"match":re.compile(r"^ *#\+begin_src(?:[ ]+(.*))?", re.I),
+                     "class":BlockCode,
+                     "end":re.compile(r"^ *#\+end_src", re.I)},
+    "BlockExport":  {"match":re.compile(r"^ *#\+begin_export(?:[ ]+(.*))?", re.I),
+                      "class":BlockExport,
+                      "end":re.compile(r"^ *#\+end_export", re.I)},
+    "BlockQuote":   {"match":re.compile(r"^ *#\+begin_quote", re.I),
+                     "class":BlockQuote,
+                     "end":re.compile(r"^ *#\+end_quote", re.I)},
+    "BlockCenter":  {"match":re.compile(r"^ *#\+begin_center", re.I),
+                     "class":BlockCenter,
+                     "end":re.compile(r"^ *#\+end_center", re.I)},
+    "BlockComment": {"match":re.compile(r"^ *#\+begin_comment(?:[ ]+(.*))?", re.I),
+                     "class":BlockComment,
+                     "end":re.compile(r"^ *#\+end_comment", re.I)},
+    "BlockExample": {"match":re.compile(r"^ *#\+begin_example(?:[ ]+(.*))?", re.I),
+                     "class":BlockExample,
+                     "end":re.compile(r"^ *#\+end_example", re.I)},
+    "BlockVerse":   {"match":re.compile(r"^ *#\+begin_verse(?:[ ]+(.*))?", re.I),
+                     "class":BlockVerse,
+                     "end":re.compile(r"^ *#\+end_verse", re.I)},
+    "Comment":      {"match":re.compile(r"^[ ]*#[ ]+(.*)", re.I),"class":Comment},
+    "List":         {"match":re.compile(r"^( *)(-|\+|(?<!^)\*|[0-9]+(?:\)|\.))( +(?:.*)|$)", re.I),
+                     "class":List,
+                     "end":re.compile(r"^( *)(.*)", re.I)},
+    "Table":        {"match":re.compile(r"^ *\|", re.I), "class":Table},
+    "Footnote":     {"match":re.compile(r"^\[fn:([^]]*)\](.*)"),
+                     "class":Footnote,
+                     "end":re.compile(r"(?:^\[fn:([^]]*)\](.*))|(?:^([*]+) +[^ ]+.*)")},
+    "Text":         {"match":re.compile(""), "class":Text},
+    "Root":         {"match":re.compile(""),
+                     "class":Comment,
+                     "end":re.compile(r"^([*]+) +(.*)", re.I)},
+                     # "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)", re.I)},
+    "ListItem":     {"match":re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.))( +(?:.*)|$)", re.I),
+                     "class":List,
+                     "end":re.compile(r"^( *)(.*)", re.I)},
+    "Title":        {"match":re.compile(
+                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
+                     "class":Title,
+                     "end":re.compile(
+                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
+    }
+
+class HtmlExportVisitor(ExportVisitor):
+    """输出成html"""
+    def visit_document(self, node: Document) -> str:
+        node.status["figure_count"] = 0
+        node.status["footnote_count"] = 0
+        node.status["call_footnotes"] = []
+        def toc_to_html() -> str:
+            """获取目录并转成html"""
+            options :dict = node.meta["options"]
+            if not node.status["table_of_content"] or not options["toc"]:
+                return ""
+            ret = """\n<div id="table-of-contents" role="doc-toc">\n<h2>Table of Contents</h2>\n"""
+            ret += """<div id="text-table-of-contents" role="doc-toc">\n"""
+            last = node.status["lowest_title"]-1
+            for i in node.status["table_of_content"]:
+                if not isinstance(options["toc"],bool) and len(i[:-1]) > options["toc"]:
+                    continue
+                if not isinstance(options["h"],bool) and len(i[:-1]) > options["h"]:
+                    continue
+                level = ".".join(str(j) for j in i[node.status["lowest_title"]-1:-1])+"."
+                if not isinstance(options["num"],bool) and len(i[:-1]) > options["num"]:
+                    text = ""
+                else:
+                    text = f"{level} "
+                if i[-1]["todo"]:
+                    text+=f"<span class=\"todo {i[-1]["todo"][0]}\">{i[-1]["todo"][1]}</span> "
+                text+=f"{i[-1]["title"].to_text()}"
+                if i[-1]["tag"]:
+                    text+=f"""{"&nbsp;"*3}<span class="tag">"""
+                    tags = i[-1]["tag"].split(":")
+                    li = []
+                    for j in tags:
+                        li.append(f"""<span class="{j}">{j}</span>""")
+                    text += "&nbsp;".join(li)
+                    text += """</span>"""
+
+                if len(i[:-1]) > last:
+                    ret+="<ul><li>"*(len(i[:-1])-last)
+                elif len(i[:-1]) == last:
+                    ret+="</li><li>"
+                else:
+                    ret+="</li></ul>"*(last-len(i[:-1]))
+                    ret+="</li>\n<li>"
+                ret+=f"""<a href="#org-title-{re.sub(r"\.","-",level[:-1])}">{text}</a>"""
+                last = len(i[:-1])
+
+            ret+="</li></ul>"*(last)
+            ret += "</div></div>"
+            return ret
+
+        template = {"body": Template("""\
 <!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />{meta}
+<meta name="viewport" content="width=device-width, initial-scale=1" />${meta}
 <meta name="generator" content="Org Mode (third party program by python)" />
-<title>{" ".join(self.meta["title"])}</title>
-"""
-        for i in (f"<style>\n{self.setting["css_in_html"]}\n</style>"
-                  if self.setting["css_in_html"] else "",
-                  html_head,
-                  self.setting["js_in_html"]):
-            if not i:
-                continue
-            html += f"{i}\n"
-        html += "</head>\n<body>\n"
-        if self.meta["html_link_home"] or self.meta["html_link_up"]:
-            href_up = self.meta["html_link_up"] or "#"
-            href_home = self.meta["html_link_home"] or "#"
-            html += f"""\
-<div id="org-div-home-and-up">
- <a accesskey="h" href="{href_up}"> UP </a>
- |
- <a accesskey="H" href="{href_home}"> HOME </a>
+<title>${metatitle}</title>${html_head}
+</head>
+<body>${home_and_up}
+<div id="content" class="content">${bodytitle}${toc}\
+${body}${footnotes}\
 </div>
-"""
-        html += f"""<div id="content" class="content">{title}{self.table_of_content_to_html()}"""
-        line = self.root.line.s
-        self.root.line.s = ""
-        html += self.root.to_html()
-        self.root.line.s = line
-        if self.status["footnotes"]:
-            html += """\
+${postamble}
+</body>
+</html>
+"""),
+                    "home_and_up": Template("""
+<div id="org-div-home-and-up">
+ <a accesskey="h" href="${up}"> UP </a>
+ |
+ <a accesskey="H" href="${home}"> HOME </a>
+</div>"""),
+                    "footnotes": Template("""\
 <div id="footnotes">
 <h2 class="footnotes">Footnotes: </h2>
 <div id="text-footnotes">
-"""
-            for i in sorted([self.status["footnotes"][i] for i in self.status["call_footnotes"]],
-                            key=lambda x:x.id):
-                href_id = i.name if i.type == "str" else i.id
-                html += f"""\
+${footnotes}</div></div>"""),
+                    "footnote": Template("""\
 <div class="footdef">
 <sup>\
-<a id="fn.{href_id}" class="footnum" href="#fnr.{href_id}" role="doc-backlink">\
-{self.setting["footnote_style"][0]}{i.id}{self.setting["footnote_style"][1]}\
-</a>\
+<a id="fn.${href_id}" class="footnum" href="#fnr.${href_id}" role="doc-backlink">${s}${id}${e}</a>\
 </sup>
-<div class="footpara" role="doc-footnote">\
-{i.to_html(True).replace("<p>","<p class=\"footpara\">")}</div>
-</div>"""
-            html += "</div></div>"
-        html += "</div>\n"
-
-        html += f"""\
+<div class="footpara" role="doc-footnote">${content}</div>
+</div>"""),
+                    "postamble" : f"""\
 <div id="postamble" class="status">\
-{f"<p class=\"date\">时间: {" ".join(self.meta["date"])}</p>\n" if self.meta["date"] else ""}\
-{f"<p class=\"author\">作者: {" ".join(self.meta["author"])}</p>\n" if self.meta["author"] else ""}\
-{f"<p class=\"description\">描述: {" ".join(self.meta["description"])}</p>\n" \
-if self.meta["description"] else ""}\
-<p class="date">生成于: {_get_strtime()}</p>
-</div>
-"""
-        html += "</body>\n</html>"
+{f"\n<p class=\"date\">时间: {" ".join(node.meta["date"])}</p>\n"
+  if node.meta["date"] else ""}\
+{f"<p class=\"author\">作者: {" ".join(node.meta["author"])}</p>\n"
+  if node.meta["author"] else ""}\
+{f"<p class=\"description\">描述: {" ".join(node.meta["description"])}</p>\n"
+  if node.meta["description"] else ""}\
+<p class="date">生成于: {pytools.get_strtime()}</p>
+</div>"""
+                    }
+        line, node.root.line.s = node.root.line.s, ""
+        data = {
+                "meta":"\n".join([f"""<meta name="{i}" content="{" ".join(node.meta[i])}" />"""
+                                  for i in ("author", "description") if node.meta[i]]),
+                "metatitle":" ".join(node.meta["title"]),
+                "html_head":"\n".join([i for i in [
+                    f"<style>\n{node.setting["css_in_html"]}\n</style>" \
+                            if node.setting["css_in_html"] else "",
+                    "\n".join(node.meta["html_head"]) if node.meta["html_head"] else "",
+                    node.setting["js_in_html"],
+                    ] if i]),
+                "home_and_up" : template["home_and_up"].safe_substitute(
+                    up = node.meta["html_link_up"] or "#",
+                    home = node.meta["html_link_home"] or "#",
+                    ) if node.meta["html_link_home"] or node.meta["html_link_up"] else "",
+                "bodytitle": f"\n<h1 class=\"title\">{" ".join(node.meta["title"])}</h1>" \
+                        if node.meta["title"] else "",
+                "toc": toc_to_html(),
+                "body": node.root.accept(self),
+                "footnotes" : "",
+                "postamble" : template["postamble"],
+                }
+        node.root.line.s = line
+        del line
+        for i in ("meta", "html_head"):
+            if data[i]:
+                data[i] = "\n" + data[i]
+
+        if node.status["footnotes"]:
+            li = sorted([node.status["footnotes"][i] for i in node.status["call_footnotes"]],
+                        key=lambda x:x.id)
+            footnotes = []
+            for i in li:
+                href_id = i.name if i.type == "str" else i.id
+                footnotes.append(template["footnote"].safe_substitute(
+                    href_id = href_id,
+                    s = node.setting["footnote_style"][0],
+                    id = i.id,
+                    e = node.setting["footnote_style"][1],
+                    content = self.visit_footnote(i, printable=True).\
+                            replace("<p>","<p class=\"footpara\">"),
+                        ))
+            data["footnotes"] = template["footnotes"].safe_substitute(
+                    footnotes = "".join(footnotes),
+                    )
+
+        html = template["body"].safe_substitute(data)
         return html
+    def visit_root(self, node: Root) -> str:
+        if not node.opt["printable"]:
+            return ""
+        text = node.line.accept(self) + "\n"
+        for i in node.child:
+            text += i.accept(self)
+        return text
+    def visit_meta(self, node) -> str:
+        return ""
+    def visit_footnotes(self, node) -> str:
+        return ""
+    def visit_titleoutline(self, node) -> str:
+        text = ""
+        for i in node.child:
+            if text and text[-1] != "\n":
+                text += "\n"
+            # 每个列表组的每个项目
+            text += f"{i.accept(self)}"
+        if node.level > node.document.meta["options"]["h"] and text != "":
+            headline_num = node.document.meta["options"]["num"]
+            li_type = "ul"
+            if (isinstance(headline_num,bool) and headline_num) or node.level <= headline_num:
+                li_type = "ol"
+            text = f"""<{li_type} class="org-ol">{text}</{li_type}>\n"""
+        return text
+    def visit_blockcode(self, node) -> str:
+        if not isinstance(node.line, Strings) or not node.opt["printable"]:
+            return ""
+        ret = "<div class=\"org-src-container\">"
+        ret += f"<pre class=\"src src-{node.lang.lower() if node.lang else "nil"}\">"
+        try:
+            pygments = importlib.import_module("pygments")
+            get_lexer_by_name = importlib.import_module("pygments.lexers").get_lexer_by_name
+            fmt = importlib.import_module("pygments.formatters").get_formatter_by_name("html", style="monokai", nowrap=True)
+            try:
+                lang = node.lang
+                if not isinstance(lang, str):
+                    lang = ""
+                if lang.lower().startswith("conf"):
+                    lang = "cfg"
+                elif lang.lower() == "vimrc":
+                    lang = "vim"
+                compiled = pygments.highlight(
+                        node.line.s,
+                        get_lexer_by_name(lang),
+                        fmt)
+            except pygments.util.ClassNotFound:
+                compiled = pygments.highlight(
+                        node.line.s,
+                        get_lexer_by_name("text"),
+                        fmt)
+        except ModuleNotFoundError:
+            node.log("模块pygments不可用，使用基础fallback")
+            compiled = escape(node.line.s)
+        ret += compiled
+        ret += "</pre></div>"
+        return ret
+    def visit_blockquote(self, node) -> str:
+        if not node.opt["printable"]:
+            return ""
+        text = "<blockquote>\n"
+        for i in node.child:
+            text += i.accept(self)
+        text += "</blockquote>"
+        return text
+    def visit_blockexport(self, node) -> str:
+        if not isinstance(node.line, Strings) or not node.opt["printable"]:
+            return ""
+        if node.lang == "html":
+            return node.line.s
+        return ""
+    def visit_blockcenter(self, node) -> str:
+        text = "<div class=\"org-center\">\n"
+        for i in node.child:
+            text += i.accept(self)
+        text += "</div>"
+        return text
+    def visit_blockcomment(self, node) -> str:
+        return ""
+    def visit_blockexample(self, node) -> str:
+        if not isinstance(node.line, Strings) or not node.opt["printable"]:
+            return ""
+        ret = "<pre class=\"example\">"
+        ret += node.line.s
+        ret += "</pre>"
+        return ret
+    def visit_blockverse(self, node) -> str:
+        if not isinstance(node.line, Strings):
+            return ""
+        ret = "<p class=\"verse\">"
+        for i in node.line.s.splitlines():
+            ret += f"{Strings(i, node).accept(self)}<br/>"
+        ret += "</p>"
+        return ret
+    def visit_comment(self, node) -> str:
+        return ""
+    def visit_list(self, node) -> str:
+        text = f"<{node.type} class=\"org-{node.type}\">\n"
+        for i in node.child:
+            if text and text[-1] != "\n":
+                text += "\n"
+            # 每个列表组的每个项目
+            text += f"<li>{i.accept(self)}</li>"
+        text += f"</{node.type}>\n"
+        return text
+    def visit_table(self, node:Table) -> str:
+        node.check_control_line()
+        skip_list = [i[0] for i in node.control_line if i[1] == "align"]
+        split_list = [i[0] for i in node.control_line if i[1] == "split"]
+        text = """\n<table border="2" cellspacing="0" cellpadding="6" """+\
+                """rules="groups" frame="hsides">"""
+        if len(node.lines) - len(node.control_line) <= 0:
+            text += "</table>"
+            return text
+        rule = {"<l>":"left", "<c>":"center", "<r>":"right"}
+        text += "<colgroup>"
+        text += "\n".join([f"""<col class="org-{rule[i]}" />""" for i in node.align])
+        text += "</colgroup>"
+
+        # 一线分头尾
+        if split_list:
+            text += "<thead>"
+        else:
+            text += "<tbody>"
+        index = 0
+        for line in node.lines:
+            if index in skip_list:
+                index+=1
+                continue
+            if isinstance(line, str):
+                if index == split_list[0]:
+                    text += "\n</thead><tbody>\n"
+                else:
+                    text += "\n</tbody><tbody>\n"
+                index+=1
+                continue
+            text += "<tr>"
+            for col,align in zip(line, node.align):
+                if split_list and index < split_list[0]:
+                    text+=f"<th scope=\"col\" class=\"org-{rule[align]}\">{col.accept(self)}</th>"
+                else:
+                    text+=f"<td class=\"org-{rule[align]}\">"+\
+                            f"{col.accept(self) if col.accept(self) else "&nbsp;"}</td>"
+            index+=1
+            text += "</tr>"
+        text += "</table>"
+        return text
+    def visit_footnote(self, node: Footnote, printable=False) -> str:
+        if not printable:
+            return ""
+        return self.visit_root(node)
+    def visit_text(self, node: Text) -> str:
+        if not node.opt["printable"]:
+            return ""
+        text = node.line.accept(self)
+        if not text:
+            return text
+        need_ptag = node.line.orgtext_to_list(node.line.get_pre_text())
+        if len(need_ptag) > 1 or \
+                (need_ptag and isinstance(need_ptag[0], str)) or \
+                (need_ptag and need_ptag[0][0] not in ("img","figure")):
+            text = f"<p>{text}</p>"
+        return text
+    def visit_listitem(self, node: ListItem) -> str:
+        text = ""
+        flag = True
+        for i in node.child[1:]:
+            if not isinstance(i, (Comment, List)):
+                flag = False
+                break
+        if isinstance(node.child[0], Text) and flag:
+            text += f"{node.child[0].line.accept(self)}\n"
+        else:
+            text += f"{node.child[0].accept(self)}\n"
+        for i in node.child[1:]:
+            # 下一级的东西
+            j = i.accept(self)
+            if j and j[-1] != '\n':
+                j += "\n"
+            text +=  j
+        return text
+    def visit_title(self, node) -> str:
+        if node.comment or not node.opt["printable"]:
+            return ""
+        title = node.line.accept(self)
+        ids = node.id[node.document.status["lowest_title"]-1:-1]
+        lv = ".".join([str(i) for i in ids])
+
+        text = ""
+        if node.level <= node.document.meta["options"]["h"]:
+            text += f"""<div id="outline-container-{re.sub(r"\.","-",lv)}" class=\"outline-{node.level+1}\">\n"""
+            text += f"""<h{node.level+2-node.document.status["lowest_title"]} """+\
+                f"""id="org-title-{re.sub(r"\.","-",lv)}">"""
+            headline_num = node.document.meta["options"]["num"]
+            if (isinstance(headline_num,bool) and headline_num) or len(ids) <= headline_num:
+                text += """<span class="section-number-"""+\
+                        f"""{node.level+2-node.document.status["lowest_title"]}">{lv}.</span>"""
+        else:
+            text += f"""<li>\n<a id="org-title-{re.sub(r"\.","-",lv)}"></a>"""
+
+        if node.todo:
+            text+=f" <span class=\"{node.todo[0]} {node.todo[1]}\">{node.todo[1]}</span>"
+        text += f" {title}"
+        if node.tag.s:
+            text += f"""{"&nbsp;"*3}<span class="tag">"""
+            tags = node.tag.s.split(":")
+            li = []
+            for i in tags:
+                li.append(f"""<span class="{i}">{i}</span>""")
+            text += "&nbsp;".join(li)
+            text += """</span>"""
+
+        if node.level <= node.document.meta["options"]["h"]:
+            text += f"</h{node.level+2-node.document.status["lowest_title"]}>\n"
+        else:
+            text += "<br/>\n"
+
+        has_text_outline = False
+        if node.child and not isinstance(node.child[0], Title):
+            text += f"""<div class="outline-text-{node.level+1}" """+\
+                    f"""id="text-{re.sub(r"\.","-",lv)}">"""
+            has_text_outline = True
+
+        for i in node.child:
+            if has_text_outline and isinstance(i, TitleOutline):
+                text += "</div>"
+                has_text_outline = False
+            text += i.accept(self)
+        if has_text_outline:
+            text += "</div>"
+
+        if node.level <= node.document.meta["options"]["h"]:
+            text += "</div>"
+        else:
+            text += "</li>\n"
+        return text
+    def visit_strings(self, node, li: list) -> str:
+        """输出行内html"""
+        if not li:
+            return ""
+        ret = ""
+        last_stat = ""
+        i : str | list = ""
+        for i in li:
+            if isinstance(i, str):
+                i = escape(i).replace("\n", "<br/>")
+                ret+=i
+                continue
+            i = [escape(i) if isinstance(i, str) else i for i in i]
+            if i[0] == "link":
+                ret += f"""<a href="{i[1]}">{self.visit_strings(node, i[2])}</a>"""
+            elif i[0] == "img":
+                ret += "<div class=\"figure\"><p>" \
+                        if isinstance(node.upward, Text) and \
+                        not node.upward.opt.get("in_list") and len(li) == 1 else ""
+                ret += f"""\n<img src="{i[1]}" alt="{self.visit_strings(node, i[2])}" />\n"""
+                ret += "</p></div>\n" \
+                        if isinstance(node.upward, Text) and \
+                        not node.upward.opt.get("in_list") and len(li) == 1 else ""
+            elif i[0] == "figure":
+                node.upward.document.status["figure_count"]+=1
+                ret += f"""\n<div class="figure">\n<p><img src="{i[1]}" alt="{i[1]}" /></p>\n"""
+                ret += """<p><span class="figure-number">Figure """+\
+                        f"""{node.upward.document.status["figure_count"]}: </span>"""+\
+                        f"""{node.list_to_text(i[2])}</p></div>"""
+            elif i[0] == "fn":
+                fns : dict = node.upward.document.status["footnotes"]
+                if not fns.get(i[1]):
+                    node.log(f"引用没有定义的脚注'{i[1]}'", "ERROR")
+                    continue
+                fn : Footnote = fns[i[1]]
+                num = node.upward.document.status["footnote_count"]
+                if fn.id <= 0:
+                    node.upward.document.status["footnote_count"]+=1
+                    num+=1
+                    fn.id = num
+                    name = fn.name if fn.type == "str" else num
+                    node.upward.document.status["call_footnotes"].append(i[1])
+                else:
+                    num = fn.id
+                name = fn.name if fn.type == "str" else num
+                fn.line.accept(self)
+                ret += f"""<sup><a id="fnr.{name}" class="footref" """
+                ret += f"""href="#fn.{name}" role="doc-backlink">"""
+                outline = node.upward.document.setting["footnote_style"]
+                ret += f"""{outline[0]}{num}{outline[1]}</a></sup>"""
+            elif i[0] == "timestamp":
+                ret += '<span class="timestamp-wrapper"><span class="timestamp">'
+                ret += f"{i[1]}"
+                ret += '</span></span>'
+                ret += last_stat
+                last_stat = ""
+            elif i[0] in node.rules:
+                ret += f"""{node.rules[i[0]][0]}{self.visit_strings(node, i[1])}{node.rules[i[0]][1]}"""
+                ret += last_stat
+                last_stat = ""
+            else:
+                last_stat = " "
+                ret += str(i)
+        if ret and ret[0] == "\n":
+            ret = ret[1:]
+        ret.replace("\\", "<span>\\</span>")
+        return ret
 
 def _set_css(args, doc:Document):
     if not args.pygments_css:
@@ -1686,9 +1831,9 @@ def run_main() -> Document|str|None:
     else:
         if args.auto_output:
             Path(f"{inp_fname.replace(".org",".html")}").write_text(
-                    ret.to_html(),encoding="utf8")
+                    ret.accept(HtmlExportVisitor()),encoding="utf8")
         else:
-            print(ret.to_html())
+            print(ret.accept(HtmlExportVisitor()))
     return ret
 
 def parse_arguments():
