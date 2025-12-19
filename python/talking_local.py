@@ -18,11 +18,14 @@ import os
 import sys
 import shutil
 import time
+import re
 
 # web ui
 import http.server
 import socketserver
 import urllib.parse
+import urllib.request
+import urllib.error
 from html import escape
 from string import Template
 
@@ -53,7 +56,6 @@ body {
     border-radius: 12px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.08);
     margin-bottom: 1.5em;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 h1 {
@@ -253,8 +255,8 @@ a:hover {
 
 .pager a {
     display: inline-block;
-    padding: 8px 15px;
-    margin: 0 5px;
+    padding: 8px 10px;
+    margin: 3px 0;
     background-color: white;
     border-radius: 6px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
@@ -330,16 +332,6 @@ img {
     h1 {
         font-size: 1.5em;
     }
-}
-
-/* 动画效果 */
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-.messages, .users, .container {
-    animation: fadeIn 0.5s ease;
 }
 
 /* 消息气泡样式增强 */
@@ -528,7 +520,8 @@ ${meta}
     <ul>
       <li><a href="/">消息列表</a></li>
       <li><a href="/userlist">用户列表</a></li>
-      <li><a href="/about">About</a></li>
+      <li><a href="/search?cap=on">搜索</a></li>
+      <li><a href="/about">关于或帮助</a></li>
       ${loginstatus}
     </ul>
   </div>
@@ -546,9 +539,26 @@ ${pages}
 ${send_window}
 </div>
 """, # ==================
+"search":"""
+<div class="container">
+  <h1>搜索页面</h1>
+  <form method="GET" action="/search">
+     <div class="form-group">
+      <label for="msg">搜索内容(均支持<a href="/about#re">正则表达式</a>):</label><input type="text" name="msg" value="${msg}">
+      <label for="user">搜索用户:</label><input type="text" name="user" value="${user}">
+      <label for="page_limit">每页展示的消息数:</label><input type="number" name="page_limit" value="${page_limit}">
+      <label for="cap">不区分大小写:</label><input style="width:auto;" type="checkbox" name="cap"${cap}>
+    </div>
+    <button type="submit">更新搜索</button>
+  </form>
+${pages}
+${messages}
+${pages}
+</div>
+""", # ==================
 "msg_data":"""
-<div class='messages'${is_lastest}>
-<p><a href='/userlist#${m.owner}' class='msg_name'>${name}</a>
+<div class='messages'${id}>
+<p><a href='/userlist#${owner}' class='msg_name'>${name}</a>
 <span class='msg_time'>${timestamp} | #${ind}</span></p>
 <p>${msg}
 </p>
@@ -626,7 +636,7 @@ ${usercard}
   <h1>注册</h1>
   <form method="POST" action="/register">
     <div class="form-group">
-      <label for="name">用户名:</label><input type="text" name="username" required>
+      <label for="name">用户名（暂不支持修改）:</label><input type="text" name="username" required>
       <label for="passwd">密码（暂不支持注册后修改或找回）:</label><input type="password" name="passwd" required>
       <label for="passwd2">再次输入相同的密码确认:</label><input type="password" name="passwd2" required>
     </div>
@@ -653,13 +663,23 @@ ${content}
 "about":"""
 <div class="container">
   <h1>About 关于</h1>
-  <p>相关链接:</p>
+  <h2>Web ui使用</h2>
+  <p>右上角注册用户或者登录已注册用户，图省事可以去用户列表点击对应的用户名进入预先填写好用户名的登录界面，密码不支持找回所以请自己记好。</p>
+  <p>在每一页的消息列表下方有消息发送栏，默认没有字数限制但请不要做坏事。暂时不支持任何标记性语言如markdown或者是html</p>
+  <p>在登录后右上角可以点进自己的用户状态，可以在里面修改类似于用户签名之类的东西（虽然平时用户列表看不见就是了），勇者可以尝试实名上网</p>
+  <p>搜索页面选择每页只显示一则消息的话消息就会完全展开。阅读体验可能会好点</p>
+  <p>最下面会列一些相关链接，那个【自动更新按钮】点击后会让后台启动一个线程更新程序，如果要应用修改需要关掉后台（cmd）在文件管理器里重新启动程序（我有点担心会被搞乱，但是既然能访问这个聊天室那素质应该还是有的吧？）</p>
+  <h2 id="re">正则表达式使用</h2>
+  <p>使用'.*'匹配任意字符：'.'意思是匹配任意字符,'*'意思是匹配任意次数前面的字符</p>
+  <p>使用'[0-9]'或者'\\d'匹配数字，结合上述'\\d*'就是匹配任意位数数字的意思</p>
+  <p>算了，写起来好累，自己去<a href="https://www.runoob.com/regexp/regexp-syntax.html">这个链接</a>里看教程如果感兴趣的话</p>
+  <h2>相关链接:</h2>
   <ul>
-    <li><a href="/self_update">自动更新按钮</a></li>
+    <li><a href="/self_update">【自动更新按钮】(请勿滥用)</a></li>
     <li><a href="http://${url_self_1}">本程序链接(github)</a></li>
     <li><a href="${url_self_2}">本程序链接(github.io)</a></li>
     <li><a href="http://${url_anti_jiyu}">反极域程序链接(github)</a></li>
-    <li><a href="http://ghfast.top/${url_anti_jiyu}">反极域程序链接(github 加速)</a></li>
+    <li><a href="http://ghfast.top/${url_anti_jiyu}">反极域程序链接(github代理加速链接)</a></li>
   </ul>
 </div>
 """, # ==================
@@ -1099,10 +1119,47 @@ class System:
             return
     def get_html(self, ip:Union[dict,str] = "", tag = "") -> str:
         """生成html相应页面"""
+        def generate_pager(now_page:int, all_pages:int, req:Union[dict,str]="", lst=True) -> str:
+            if all_pages == 0:
+                return ""
+            if isinstance(req, dict):
+                req = "&".join([f"{i}={req[i]}" for i in req if i != "p"])
+                if req:
+                    req += "&"
+            else:
+                req = ""
+            pages = [i for i in range(now_page-2, now_page+3) if 0 < i <= all_pages]
+            pages = [f'<a href="?{req}p={i}">{i}</a>' if i!=now_page else \
+                    f'<b><a href="?{req}p={i}">{i}</a></b>' for i in pages]
+            if now_page-3 == 2:
+                pages = ['<a href="?{req}p=2">2</a>'] + pages
+            elif now_page-3 > 2:
+                pages = ['...'] + pages
+            if now_page+3 == all_pages-1:
+                pages = pages + [f'<a href="?{req}p={all_pages-1}">{all_pages-1}</a>']
+            elif now_page+3 < all_pages-1:
+                pages = pages + ['...']
+            if now_page-3 >= 1:
+                pages = [f'<a href="?{req}p=1">1</a>'] + pages
+            if now_page+3 <= all_pages:
+                pages = pages + [f'<a href="?{req}p={all_pages}">{all_pages}</a>']
+            if now_page > 1:
+                pages = [f'<a href="?{req}p={now_page-1}">上一页</a>'] + pages
+            if now_page < all_pages:
+                pages = pages + [f'<a href="?{req}p={now_page+1}">下一页</a>']
+            pages = '<p class="pager">Pages: '+" | ".join(pages)
+            if lst:
+                pages += f'&nbsp;<a href="?{req}p={all_pages}#last_msg" style="float:right;">'
+                pages += '点击查看最新消息</a>'
+            pages += '</p>'
+            return pages
+
         data = {}
         if isinstance(ip, dict):
             data = ip
             ip = str(ip.get("ip"))
+        querys = {i.split("=",1)[0]:i.split("=",1)[1]
+                  for i in (data.get("query") or "").split("&") if "=" in i}
         s = []
         if self.now_user.get(ip):
             u = self.now_user[ip]
@@ -1117,13 +1174,14 @@ class System:
         s = ""
         self.load()
         if tag == "msg_list":
-            limit = 12
-            now_page = [i[2:] for i in (data.get("page") or ["p=1"]) if i.startswith("p=")]
-            all_pages = len(self.messages)//limit + (len(self.messages)%limit!=0)
             try:
-                now_page = int(now_page[0])
-            except IndexError:
-                now_page = 1
+                limit = int(str(querys.get("page_limit")))
+            except ValueError:
+                limit = 12
+            all_pages = len(self.messages)//limit + (len(self.messages)%limit!=0)
+            now_page = querys.get("p") or "1"
+            try:
+                now_page = int(now_page)
             except ValueError:
                 if now_page[0] == "last_msg":
                     now_page = all_pages
@@ -1133,40 +1191,22 @@ class System:
                 now_page = 1
             elif now_page > all_pages:
                 now_page = all_pages
-            pages = [i for i in range(now_page-2, now_page+3) if 0 < i <= all_pages]
-            pages = [f'<a href="?p={i}">{i}</a>' if i!=now_page else \
-                    f'<b><a href="?p={i}">{i}</a></b>' for i in pages]
-            if now_page-3 == 2:
-                pages = ['<a href="?p=2">2</a>'] + pages
-            elif now_page-3 > 2:
-                pages = ['...'] + pages
-            if now_page+3 == all_pages-1:
-                pages = pages + [f'<a href="?p={all_pages-1}">{all_pages-1}</a>']
-            elif now_page+3 < all_pages-1:
-                pages = pages + ['...']
-            if now_page-3 >= 1:
-                pages = ['<a href="?p=1">1</a>'] + pages
-            if now_page+3 <= all_pages:
-                pages = pages + [f'<a href="?p={all_pages}">{all_pages}</a>']
-            if now_page > 1:
-                pages = [f'<a href="?p={now_page-1}">上一页</a>'] + pages
-            if now_page < all_pages:
-                pages = pages + [f'<a href="?p={now_page+1}">下一页</a>']
-            pages = '<p class="pager">Pages: '+" | ".join(pages)
-            pages += f'&nbsp;<a href="?p={all_pages}#last_msg" style="float:right;">'
-            pages += '点击查看最新消息</a></p>'
+            pages = generate_pager(now_page, all_pages)
 
             userlist = {u.id:u.name for u in self.users}
-            for ind,m in enumerate(self.messages[(now_page-1)*limit:now_page*limit]):
+            for m in self.messages[(now_page-1)*limit:now_page*limit]:
                 name = userlist.get(m.owner)
                 if name is None:
                     name = "<未知用户>"
-                is_lastest = ' id="last_msg"' if m == self.messages[-1] else ""
+                msg_id = f' id="{m.id} last_msg"' \
+                        if m == self.messages[-1] else \
+                        f'id="{m.id}"'
                 s += rescourses("msg_data", {
-                    "is_lastest":is_lastest,
+                    "id":msg_id,
                     "name":escape(name),
+                    "owner":escape(m.owner),
                     "timestamp":escape(get_strtime(m.timestamp)),
-                    "ind":ind+(now_page-1)*limit+1,
+                    "ind":self.messages.index(m)+1,
                     "msg":"<br/>".join(escape(m.content).splitlines()),
                     })
 
@@ -1176,6 +1216,79 @@ class System:
                         else "send_window2", {}),
                 "pages":pages}
             title = "Python聊天室"
+        elif tag == "search":
+            userlist = {u.id:u.name for u in self.users}
+            messages = self.messages
+            flags = re.DOTALL
+            if querys.get("cap"):
+                flags += re.I
+            if not querys.get("msg"):
+                messages = []
+            if querys.get("user"):
+                re_str = urllib.parse.unquote(querys["user"])
+                try:
+                    messages = [i for i in messages if
+                                re.search(re_str, str(userlist.get(i.owner)), flags)]
+                except re.error as e:
+                    log_in_file(f"re.search: '{e}' - '{re_str}'", "[WARN]")
+            if querys.get("msg"):
+                re_str = urllib.parse.unquote(querys["msg"])
+                try:
+                    messages = [i for i in messages if
+                                re.search(re_str, i.content, flags)]
+                except re.error as e:
+                    log_in_file(f"re.search: '{e}' - '{re_str}'", "[WARN]")
+
+            try:
+                limit = int(str(querys.get("page_limit")))
+            except ValueError:
+                limit = 12
+            all_pages = len(messages)//limit + (len(messages)%limit!=0)
+            now_page = querys.get("p") or "1"
+            try:
+                now_page = int(now_page)
+            except ValueError:
+                if now_page[0] == "last_msg":
+                    now_page = all_pages
+                else:
+                    now_page = 1
+            if now_page < 1:
+                now_page = 1
+            elif now_page > all_pages:
+                now_page = all_pages
+            pages = generate_pager(now_page, all_pages, querys, False)
+
+            for m in messages[(now_page-1)*limit:now_page*limit]:
+                name = userlist.get(m.owner)
+                if name is None:
+                    name = "<未知用户>"
+                msg_id = f' id="{m.id} last_msg"' \
+                        if m == self.messages[-1] else \
+                        f'id="{m.id}"'
+                if limit == 1:
+                    msg_id += ' style="max-height:100%;"'
+                s += rescourses("msg_data", {
+                    "id":msg_id,
+                    "name":escape(name),
+                    "owner":escape(m.owner),
+                    "timestamp":escape(get_strtime(m.timestamp)),
+                    "ind":self.messages.index(m)+1,
+                    "msg":"<br/>".join(escape(m.content).splitlines()),
+                    })
+
+            data = {
+                "messages":s or "<p>无搜索结果</p>",
+                "send_window": rescourses("send_window" if self.now_user.get(ip) \
+                        else "send_window2", {}),
+                "pages":pages,
+                "user": urllib.parse.unquote(querys.get("user") or ".*"),
+                "msg": urllib.parse.unquote(querys.get("msg") or ".*"),
+                "cap": " checked" if querys.get("cap") else "",
+                "page_limit": limit}
+            if not querys.get("user") is None:
+                title = "搜索结果"
+            else:
+                title = "搜索界面"
         elif tag == "userlist":
             for u in self.users:
                 s += rescourses(
@@ -1188,8 +1301,8 @@ class System:
         elif tag == "login":
             title = "登录"
             userlist = {u.id:u.name for u in self.users}
-            if data.get("id") and data.get("id") in userlist:
-                data = {"value":' value="'+escape(userlist[str(data.get("id"))])+'"'}
+            if querys.get("id") and querys.get("id") in userlist:
+                data = {"value":' value="'+escape(userlist[str(querys.get("id"))])+'"'}
             else:
                 data = {"value":""}
         elif tag == "register":
@@ -1251,20 +1364,17 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
         # print([self.path, parsed_path])
         # 如果访问根路径，返回主页
         if path in ('/', '/userlist', '/login', '/register',
-                    '/login', '/dashboard', '/about',
+                    '/login', '/dashboard', '/about', '/search',
                     '/self_update'):
             ip = self.client_address[0]
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
             # 生成HTML页面(生成主页面HTML)
-            if path == "/login":
-                has_id = [i for i in parsed_path.query.split("&") if i.startswith("id=")]
-                if has_id:
-                    ip = {"ip":ip, "id":has_id[0][3:]}
+            if path in ("/", "/search", "/login"):
+                ip = {"ip":ip, "query":parsed_path.query}
             if path == "/":
                 path = "msg_list"
-                ip = {"ip":ip, "page":parsed_path.query.split("&")}
             else:
                 path = path[1:]
             html_content = SYSTEM.get_html(ip, path)
@@ -1435,8 +1545,8 @@ def module_check(module_list:list, system = None) -> list:
     return avaliable_list
 
 def download_file(urls:list, savefile) -> bytes:
-    req = import_module("urllib.request")
-    errors = import_module("urllib.error")
+    req = urllib.request
+    errors = urllib.error
     ret = None
     url = ""
     for url in urls:
