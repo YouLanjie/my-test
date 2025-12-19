@@ -10,3 +10,5 @@
 
 #+LATEX_COMPILER: xelatex
 #+LATEX_HEADER: \usepackage[UTF8]{ctex}
+
+#+setupfile: ./setup.setup

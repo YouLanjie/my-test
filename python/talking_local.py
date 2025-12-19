@@ -558,7 +558,7 @@ ${pages}
 """, # ==================
 "msg_data":"""
 <div class='messages'${id}>
-<p><a href='/userlist#${owner}' class='msg_name'>${name}</a>
+<p><a href='/userlist#uid_${owner}' class='msg_name'>${name}</a>
 <span class='msg_time'>${timestamp} | #${ind}</span></p>
 <p>${msg}
 </p>
@@ -582,7 +582,7 @@ ${users}
 </div>
 """, # ==================
 "user-data":"""
-<div class='users' id="${id}">
+<div class='users' id="uid_${id}">
   <p><a href="/login?id=${id}" class="user_name">${name}</a>
   <span class='user_time'>注册时间: ${timestamp}</span></p>
   <p>${note}</p>
@@ -1183,7 +1183,7 @@ class System:
             try:
                 now_page = int(now_page)
             except ValueError:
-                if now_page[0] == "last_msg":
+                if now_page == "last_msg":
                     now_page = all_pages
                 else:
                     now_page = 1
@@ -1198,9 +1198,7 @@ class System:
                 name = userlist.get(m.owner)
                 if name is None:
                     name = "<未知用户>"
-                msg_id = f' id="{m.id} last_msg"' \
-                        if m == self.messages[-1] else \
-                        f'id="{m.id}"'
+                msg_id = ' id="last_msg"' if m == self.messages[-1] else f''
                 s += rescourses("msg_data", {
                     "id":msg_id,
                     "name":escape(name),
@@ -1248,7 +1246,7 @@ class System:
             try:
                 now_page = int(now_page)
             except ValueError:
-                if now_page[0] == "last_msg":
+                if now_page == "last_msg":
                     now_page = all_pages
                 else:
                     now_page = 1
@@ -1262,9 +1260,7 @@ class System:
                 name = userlist.get(m.owner)
                 if name is None:
                     name = "<未知用户>"
-                msg_id = f' id="{m.id} last_msg"' \
-                        if m == self.messages[-1] else \
-                        f'id="{m.id}"'
+                msg_id = f' id="last_msg"' if m == self.messages[-1] else f''
                 if limit == 1:
                     msg_id += ' style="max-height:100%;"'
                 s += rescourses("msg_data", {

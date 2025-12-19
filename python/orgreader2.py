@@ -4,9 +4,12 @@
 # 标准库
 from pathlib import Path
 import datetime
+import os
+import time
 import re
 import gzip
 import importlib
+import threading
 from html import escape
 from abc import ABC, abstractmethod
 from string import Template
@@ -16,25 +19,39 @@ try:
 except ImportError:
     import pytools
 
-def _get_strings_pattern(s:str,blank_char=" )-,") -> re.Pattern:
-    return re.compile(f"{s}([^ ].*?(?<! )){s}(?=[{blank_char}]|\n|$)",
-                      re.DOTALL)
-
 class ExportVisitor(ABC):
     @abstractmethod
-    def visit_document(self, node) -> str:
+    def visit_strings(self, node, li: list) -> str:
         return ""
     @abstractmethod
     def visit_root(self, node) -> str:
         return ""
     @abstractmethod
+    def visit_text(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_blockcomment(self, node) -> str:
+        return ""
+    @abstractmethod
     def visit_meta(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_title(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_titleoutline(self, node) -> str:
         return ""
     @abstractmethod
     def visit_footnotes(self, node) -> str:
         return ""
     @abstractmethod
-    def visit_titleoutline(self, node) -> str:
+    def visit_footnote(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_listitem(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_list(self, node) -> str:
         return ""
     @abstractmethod
     def visit_blockcode(self, node) -> str:
@@ -43,10 +60,7 @@ class ExportVisitor(ABC):
     def visit_blockexport(self, node) -> str:
         return ""
     @abstractmethod
-    def visit_blockcenter(self, node) -> str:
-        return ""
-    @abstractmethod
-    def visit_blockcomment(self, node) -> str:
+    def visit_comment(self, node) -> str:
         return ""
     @abstractmethod
     def visit_blockexample(self, node) -> str:
@@ -55,29 +69,21 @@ class ExportVisitor(ABC):
     def visit_blockverse(self, node) -> str:
         return ""
     @abstractmethod
-    def visit_comment(self, node) -> str:
+    def visit_blockquote(self, node) -> str:
         return ""
     @abstractmethod
-    def visit_list(self, node) -> str:
+    def visit_blockcenter(self, node) -> str:
         return ""
     @abstractmethod
     def visit_table(self, node) -> str:
         return ""
     @abstractmethod
-    def visit_footnote(self, node) -> str:
+    def visit_document(self, node) -> str:
         return ""
-    @abstractmethod
-    def visit_text(self, node) -> str:
-        return ""
-    @abstractmethod
-    def visit_listitem(self, node) -> str:
-        return ""
-    @abstractmethod
-    def visit_title(self, node) -> str:
-        return ""
-    @abstractmethod
-    def visit_strings(self, node, li: list) -> str:
-        return ""
+
+def _get_strings_pattern(s:str,blank_char=" )-,") -> re.Pattern:
+    return re.compile(f"{s}([^ ].*?(?<! )){s}(?=[{blank_char}]|\n|$)",
+                      re.DOTALL)
 
 class Strings:
     """行内字符串类，提供行内格式转换"""
@@ -270,12 +276,6 @@ class Strings:
     def log(self, info = "", lv="WARN"):
         """打印日志"""
         self.upward.log(info, lv)
-    def to_text(self) -> str:
-        """输出行内文本"""
-        if not self.parse_able:
-            return re.sub("\n", " ", self.s)
-        text = self.get_pre_text()
-        return self.list_to_text(self.orgtext_to_list(text))
     def accept(self, visitor: ExportVisitor) -> str:
         """将给定的已经分好的列表转回"""
         method_name = f"visit_{self.__class__.__name__.lower()}"
@@ -371,22 +371,12 @@ class Root:
         if not isinstance(self.current, TitleBase):
             return True
         return False
-    def to_text(self) -> str:
-        """输出成文本"""
-        if not self.opt["printable"]:
-            return ""
-        text = self.line.to_text() + "\n"
-        for i in self.child:
-            for j in i.to_text().splitlines():
-                if len(j) > 0 and j[-1] != "\n":
-                    j+="\n"
-                text += f"{self.document.setting["indent_str"]}{j}"
-        return text
     def accept(self, visitor: ExportVisitor) -> str:
         """return str get from visitor"""
         # 根据节点类型自动匹配访问者方法
         method_name = f"visit_{self.__class__.__name__.lower()}"
         if hasattr(visitor, method_name):
+            self.document.current_line = self.start
             return getattr(visitor, method_name)(self)
         # 默认返回空字符串（适配未实现的节点类型）
         return ""
@@ -400,10 +390,6 @@ class TextBase(Root):
 
 class Text(TextBase):
     """文本类"""
-    def to_text(self) -> str:
-        if not self.opt["printable"]:
-            return ""
-        return self.line.to_text()
 
 class Comment(Root):
     """注释行"""
@@ -520,8 +506,6 @@ class Meta(Root):
                 is_error = False
         if is_error:
             self.log(f"错误的OPTIONS: {keys}", "ERROR")
-    def to_text(self) -> str:
-        return ""
 
 class TitleBase(Root):
     """标题基类"""
@@ -598,21 +582,6 @@ class Title(TitleBase):
         self.id = li
         if not self.comment:
             self.document.status["table_of_content"].append(li)
-    def to_text(self) -> str:
-        if self.comment or not self.opt["printable"]:
-            return ""
-        title = self.line.to_text()
-        lv = ".".join([str(i) for i in self.id[self.document.status["lowest_title"]-1:-1]])
-        text = f"{lv}: {title}"
-        if self.tag.s:
-            text = text[:-1]
-            text += f"\t\t<:{self.tag.s}:>\n"
-        for i in self.child:
-            if text and text[-1] != "\n":
-                text+="\n"
-            for j in i.to_text().splitlines():
-                text+=f"{self.document.setting["indent_str"]}{j}\n"
-        return text
 
 class TitleOutline(TitleBase):
     """标题（多项集合）"""
@@ -640,11 +609,6 @@ class TitleOutline(TitleBase):
         if isinstance(self.current, Block):
             return True
         return False
-    def to_text(self) -> str:
-        text = ""
-        for i in self.child:
-            text += i.to_text()
-        return text
 
 class Footnotes(TitleBase):
     """脚注(大标题)"""
@@ -676,10 +640,6 @@ class Footnote(Root):
             pytools.print_err(f"!: {self.document.lines[self.document.current_line]}")
             # import pdb; pdb.set_trace()
         return False
-    def to_text(self, printable=False) -> str:
-        if not printable:
-            return ""
-        return super().to_text()
 
 class ListItem(Root):
     """列表(单项)"""
@@ -716,18 +676,6 @@ class ListItem(Root):
             # start和current_line在i同侧(非block)
             return True
         return False
-    def to_text(self) -> str:
-        text = ""
-        indent_str = self.document.setting["indent_str"]
-        ret = f"\n{indent_str}".join(self.child[0].to_text().splitlines())
-        text += f"{ret}\n"
-        for i in self.child[1:]:
-            # 下一级的东西
-            for j in i.to_text().splitlines():
-                if j and j[-1] != "\n":
-                    j+="\n"
-                text += f"{indent_str}{j}"
-        return text
 
 class List(Root):
     """列表(多项集合)"""
@@ -775,17 +723,6 @@ class List(Root):
     @property
     def _summary(self):
         return f"(lv:{self.level}, t:{self.type})"
-    def to_text(self) -> str:
-        text = ""
-        index = 0
-        for i in self.child:
-            index+=1
-            if text and text[-1] != "\n":
-                text += "\n"
-            # 每个列表组的每个项目
-            level = f"{self.level}" if self.type == "ul" else f"{self.level}[{index}]"
-            text += f"-L{level} {i.to_text()}"
-        return text
 
 class Block(Root):
     """Block共同空类"""
@@ -839,25 +776,9 @@ class BlockCode(Block):
             self.line += f"{i}\n"
         self.line = Strings(self.line, self)
         return True
-    def to_text(self) -> str:
-        if not isinstance(self.line, Strings) or not self.opt["printable"]:
-            return ""
-        ret = f",----{f" Lang:{self.lang}" if self.lang else ""}\n"
-        for i in self.line.s.splitlines():
-            ret += f"| {i}\n"
-        ret += "`----"
-        return ret
 
 class BlockExport(BlockCode):
     """对应语言导出块"""
-    def to_text(self) -> str:
-        if not isinstance(self.line, Strings) or not self.opt["printable"]:
-            return ""
-        ret = f",vvvv{f" Lang:{self.lang}" if self.lang else ""}\n"
-        for i in self.line.s.splitlines():
-            ret += f"| {i}\n"
-        ret += "`^^^^"
-        return ret
 
 class BlockComment(BlockCode):
     """注释块"""
@@ -867,14 +788,6 @@ class BlockComment(BlockCode):
 
 class BlockExample(BlockCode):
     """代码块"""
-    def to_text(self) -> str:
-        if not isinstance(self.line, Strings) or not self.opt["printable"]:
-            return ""
-        ret = f",----{f" Lang:{self.lang}" if self.lang else ""} (EXAMPLE)\n"
-        for i in self.line.s.splitlines():
-            ret += f"| {i}\n"
-        ret += "`----"
-        return ret
 
 class BlockVerse(BlockCode):
     """参照原样输出(不合并行)"""
@@ -885,13 +798,6 @@ class BlockVerse(BlockCode):
             text.line.s = ""
             self.add(text, False)
             self.number-=1
-    def to_text(self) -> str:
-        if not isinstance(self.line, Strings) or not self.opt["printable"]:
-            return ""
-        ret = ",==== (VERSE)\n"
-        ret += "\n".join(f"| {i}" for i in self.line.to_text().splitlines())
-        ret += "`===="
-        return ret
 
 class BlockQuote(Block):
     """引用块"""
@@ -910,36 +816,9 @@ class BlockQuote(Block):
         if match is None:
             return False
         return True
-    def to_text(self) -> str:
-        if not self.opt["printable"]:
-            return ""
-        text = ",========\n"
-        for i in self.child:
-            if text and text[-1] != "\n":
-                text+="\n"
-            for j in i.to_text().splitlines():
-                text+=f"{self.document.setting["indent_str"]}{j}\n"
-        text += "`========"
-        return text
 
 class BlockCenter(BlockQuote):
     """居中块"""
-    def to_text(self) -> str:
-        text = ",>>>>>>>>\n"
-        for i in self.child:
-            if text and text[-1] != "\n":
-                text+="\n"
-            ret = i.to_text()
-            rets = ret.splitlines()
-            max_width = 0
-            if rets:
-                max_width = max(pytools.get_str_width(j) for j in rets)
-            max_width += max_width%2
-            ret = "\n".join([pytools.get_str_in_width(j, max_width, align="<l>") for j in rets])
-            for j in ret.splitlines():
-                text+=f"{self.document.setting["indent_str"]}{pytools.get_str_in_width(j, 60)}\n"
-        text += "`>>>>>>>>"
-        return text
 
 class Table(TextBase):
     """表格"""
@@ -947,7 +826,6 @@ class Table(TextBase):
         super().__init__(document)
         self.col = 0
         self.lines : list[list[Strings]|str] = []
-        self.width = []
         self.control_line = []
         self.align = []
 
@@ -963,7 +841,6 @@ class Table(TextBase):
         self.col = len(match)
         self.lines : list[list[Strings]|str] = \
                 [[Strings(re.sub(r"^ *(.*?) *$", r"\1", i), self) for i in match]]
-        self.reset_width()
         self.check_control_line()
     def check_control_line(self):
         """检查控制行(分割线、对齐行)"""
@@ -995,14 +872,6 @@ class Table(TextBase):
                 if col.s != "":
                     self.align[index] = col.s
                 index+=1
-    def reset_width(self):
-        """重设每列的最大宽度"""
-        for i in self.lines:
-            if not isinstance(i, list):
-                continue
-            self.width = [self.width[i] if i < len(self.width) else 0 for i in range(len(i))]
-            for index,item in enumerate(i):
-                self.width[index] = max(pytools.get_str_width(item.to_text()), self.width[index])
     def add_line(self, obj):
         """添加表格的一行"""
         if type(obj).__name__ != "Table":
@@ -1025,27 +894,6 @@ class Table(TextBase):
             line += t
         li.append(line)
         self.lines = li
-    def to_text(self) -> str:
-        self.check_control_line()
-        self.reset_width()
-        skip_list = [i[0] for i in self.control_line if i[1] == "align"]
-        total_width = self.col+1
-        for i in self.width:
-            total_width+=i
-        text=f"{pytools.get_str_in_width("",total_width,".")}\n"
-        index = 0
-        for line in self.lines:
-            if index in skip_list:
-                index+=1
-                continue
-            if isinstance(line, str):
-                line = [Strings("-"*max(self.width+[0]), self)]*self.col
-            for col,width,align in zip(line, self.width, self.align):
-                text+=f"|{pytools.get_str_in_width(col.to_text(), width, align=align)}"
-            text+="|\n"
-            index+=1
-        text+=f"{pytools.get_str_in_width("",total_width,"`")}\n"
-        return f"{text}"
 
 class Document:
     """文档类，操作基本单位"""
@@ -1053,11 +901,13 @@ class Document:
                  setting:dict|None=None) -> None:
         self.lines = lines.splitlines() if isinstance(lines, str) else lines
         self.current_line = 0
-        self.setting = {"file_name":file_name, "indent_str":"|   ", "footnote_style":("", ""),
-                        "css_in_html":"", "js_in_html":""}
-        self.status = {"figure_count":0, "footnote_count":0, "lowest_title":50, "clean_up":False,
-                       "is_in_src":[], "table_of_content":[], "footnotes":{},
-                       "call_footnotes":[],
+        self.setting = {"file_name":file_name, "indent_str":"|   ",
+                        "footnote_style":("", ""),
+                        "css_in_html":"", "js_in_html":"",
+                        "pygments_css":True,"mathjax_script":True,
+                        "progress":False}
+        self.status = {"lowest_title":50, "clean_up":False, "is_in_src":[],
+                       "table_of_content":[], "footnotes":{},
                        "setupfiles":setupfiles or []}
         self.meta={
             "title":[],
@@ -1075,17 +925,23 @@ class Document:
             # num:最大显示数字标号的标题等级
             "options":{"h":3, "toc":True, "num":True},
         }
+        if isinstance(setting,dict):
+            self.setting.update({i:setting[i] for i in setting if i in self.setting})
 
+        pth = None
+        if self.setting.get("progress"):
+            pth = threading.Thread(target=self.print_progress, args=["READING"])
+            pth.start()
         self.root = Root(self)
         self.root.line.s = self.setting["file_name"] if self.setting["file_name"]\
                 else "<DOCUMENT IN STRINGS>"
         self.build_tree()
         self.merge_text(self.root)
+        self.status["clean_up"] = True
+        if pth:
+            pth.join()
 
-        settings = {"pygments_css":True,"mathjax_script":True}
-        if isinstance(setting,dict):
-            settings.update(setting)
-        if settings.get("pygments_css"):
+        if self.setting.get("pygments_css"):
             try:
                 get_formatter = importlib.import_module("pygments.formatters").get_formatter_by_name
                 css_style = get_formatter("html", style="monokai", nowrap=True).get_style_defs()
@@ -1093,7 +949,7 @@ class Document:
                 css_style = ""
                 self.root.log("模块pygments不可用，无法获取对应css")
             self.setting["css_in_html"] += css_style
-        if settings.get("mathjax_script"):
+        if self.setting.get("mathjax_script"):
             self.setting["js_in_html"] += """\
 <script>
 window.MathJax = { tex: { ams: { multlineWidth: '85%' }, tags: 'ams', tagSide: 'right', tagIndent: '.8em' },
@@ -1102,6 +958,35 @@ svg: { scale: 1.0, displayAlign: 'center', displayIndent: '0em' },
 output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
 </script>
 <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>"""
+    def print_progress(self, typ = "PROGRESS", offset = 0):
+        """打印进"""
+        if self.status.get("clean_up") is None:
+            return
+        total_line = len(self.lines)
+        try:
+            width = os.get_terminal_size().columns
+            if width > 40 + len(str(typ)):
+                width -= 40 + len(str(typ))
+        except OSError:
+            width = 40
+        try:
+            # import tqdm
+            tqdm = importlib.import_module("tqdm")
+            self.root.log(f"NOW: {typ}", lv="INFO")
+            progress = tqdm.tqdm(typ, total=total_line)
+            last = 0
+            while not self.status["clean_up"]:
+                progress.update(self.current_line-last)
+                last = self.current_line
+                time.sleep(1/20)
+            progress.close()
+        except ModuleNotFoundError:
+            while not self.status["clean_up"]:
+                progress = self.current_line / total_line
+                s = "#"*int(progress*width)+" "*(width-int(progress*width))
+                print(f"{typ} [{s}] {progress*100:6.2f}% {self.current_line:10}", end="\r")
+                time.sleep(1/20)
+            print("")
     def build_tree(self):
         """构建节点树"""
         last = -1
@@ -1161,91 +1046,24 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
             node.remove(i)
         for i in insert_list:
             i[0].insert(i[0].index(i[1])+i[2], i[3])
-    def table_of_content_to_text(self) -> str:
-        """获取目录并转成文本"""
-        options :dict = self.meta["options"]
-        if not self.status["table_of_content"] or not options["toc"]:
-            return ""
-        ret = ""
-        for i in self.status["table_of_content"]:
-            i = i[self.status["lowest_title"]-1:]
-            count = 0
-            lastest = 0
-            j = ""
-            for j in i:
-                if isinstance(j, int):
-                    lastest = j
-                    count+=1
-                else:
-                    break
-            if not isinstance(options["toc"],bool) and count > options["toc"]:
-                continue
-            if not isinstance(options["h"],bool) and count > options["h"]:
-                continue
-            if isinstance(j, dict):
-                ret1 = f"{"."*((count-1)*3-1)}{" " if count>1 else ""}{lastest}. "
-                ret1+=f"{f"{j["todo"][1]} " if j["todo"] else ""}{j["title"].to_text()}"
-                if j["tag"]:
-                    ret1=pytools.get_str_in_width(f"{ret1}", 40, align="<l>")
-                    ret1+=f":{j["tag"]}:"
-                ret+=ret1 + "\n"
-        return ret
-    def table_of_content_to_html(self) -> str:
-        """获取目录并转成html"""
-        options :dict = self.meta["options"]
-        if not self.status["table_of_content"] or not options["toc"]:
-            return ""
-        ret = """\n<div id="table-of-contents" role="doc-toc">\n<h2>Table of Contents</h2>\n"""
-        ret += """<div id="text-table-of-contents" role="doc-toc">\n"""
-        last = self.status["lowest_title"]-1
-        for i in self.status["table_of_content"]:
-            if not isinstance(options["toc"],bool) and len(i[:-1]) > options["toc"]:
-                continue
-            if not isinstance(options["h"],bool) and len(i[:-1]) > options["h"]:
-                continue
-            level = ".".join(str(j) for j in i[self.status["lowest_title"]-1:-1])+"."
-            if not isinstance(options["num"],bool) and len(i[:-1]) > options["num"]:
-                text = ""
-            else:
-                text = f"{level} "
-            if i[-1]["todo"]:
-                text+=f"<span class=\"todo {i[-1]["todo"][0]}\">{i[-1]["todo"][1]}</span> "
-            text+=f"{i[-1]["title"].to_text()}"
-            if i[-1]["tag"]:
-                text+=f"""{"&nbsp;"*3}<span class="tag">"""
-                tags = i[-1]["tag"].split(":")
-                li = []
-                for j in tags:
-                    li.append(f"""<span class="{j}">{j}</span>""")
-                text += "&nbsp;".join(li)
-                text += """</span>"""
-
-            if len(i[:-1]) > last:
-                ret+="<ul><li>"*(len(i[:-1])-last)
-            elif len(i[:-1]) == last:
-                ret+="</li><li>"
-            else:
-                ret+="</li></ul>"*(last-len(i[:-1]))
-                ret+="</li>\n<li>"
-            ret+=f"""<a href="#org-title-{re.sub(r"\.","-",level[:-1])}">{text}</a>"""
-            last = len(i[:-1])
-
-        ret+="</li></ul>"*(last)
-        ret += "</div></div>"
-        return ret
-    def to_text(self) -> str:
-        """转成纯文本"""
-        self.status["figure_count"] = 0
-        self.status["footnote_count"] = 0
-        return self.root.to_text()
     def accept(self, visitor: ExportVisitor) -> str:
         """return str get from visitor"""
         # 根据节点类型自动匹配访问者方法
         method_name = f"visit_{self.__class__.__name__.lower()}"
-        if hasattr(visitor, method_name):
-            return getattr(visitor, method_name)(self)
-        # 默认返回空字符串（适配未实现的节点类型）
-        return ""
+        if not hasattr(visitor, method_name):
+            # 默认返回空字符串（适配未实现的节点类型）
+            return ""
+        self.status["clean_up"] = False
+        self.current_line = 0
+        pth = None
+        if self.setting.get("progress"):
+            pth = threading.Thread(target=self.print_progress, args=["PROCESSING"])
+            pth.start()
+        s = getattr(visitor, method_name)(self)
+        self.status["clean_up"] = True
+        if pth:
+            pth.join()
+        return s
 
 #^ *#\+begin_([^ \n]+)(?:[ ]+(.*?))?\n(.*?)^ *#\+end_\1\n?
 RULES = {
@@ -1303,12 +1121,219 @@ RULES = {
                             r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
     }
 
+class TextExportVisitor(ExportVisitor):
+    """转成纯文本"""
+    def visit_document(self, node: Document) -> str:
+        def toc_to_text() -> str:
+            """获取目录并转成文本"""
+            options :dict = node.meta["options"]
+            if not node.status["table_of_content"] or not options["toc"]:
+                return ""
+            ret = ""
+            for i in node.status["table_of_content"]:
+                i = i[node.status["lowest_title"]-1:]
+                count = 0
+                lastest = 0
+                j = ""
+                for j in i:
+                    if isinstance(j, int):
+                        lastest = j
+                        count+=1
+                    else:
+                        break
+                if not isinstance(options["toc"],bool) and count > options["toc"]:
+                    continue
+                if not isinstance(options["h"],bool) and count > options["h"]:
+                    continue
+                if isinstance(j, dict):
+                    ret1 = f"{"."*((count-1)*3-1)}{" " if count>1 else ""}{lastest}. "
+                    ret1+=f"{f"{j["todo"][1]} " if j["todo"] else ""}{j["title"].accept(self)}"
+                    if j["tag"]:
+                        ret1=pytools.get_str_in_width(f"{ret1}", 40, align="<l>")
+                        ret1+=f":{j["tag"]}:"
+                    ret+=ret1 + "\n"
+            return ret
+        s = " Table of Contents\n"
+        s += "===================\n"
+        s += toc_to_text()
+        s += "\n"
+        s += node.root.accept(self)
+        return s
+    def visit_root(self, node) -> str:
+        """输出成文本"""
+        if not node.opt["printable"]:
+            return ""
+        text = node.line.accept(self) + "\n"
+        for i in node.child:
+            for j in i.accept(self).splitlines():
+                if len(j) > 0 and j[-1] != "\n":
+                    j+="\n"
+                text += f"{node.document.setting["indent_str"]}{j}"
+        return text
+    def visit_meta(self, node) -> str:
+        return ""
+    def visit_footnotes(self, node) -> str:
+        return ""
+    def visit_titleoutline(self, node) -> str:
+        text = ""
+        for i in node.child:
+            text += i.accept(self)
+        return text
+    def visit_blockcode(self, node) -> str:
+        if not isinstance(node.line, Strings) or not node.opt["printable"]:
+            return ""
+        ret = f",----{f" Lang:{node.lang}" if node.lang else ""}\n"
+        for i in node.line.s.splitlines():
+            ret += f"| {i}\n"
+        ret += "`----"
+        return ret
+    def visit_blockexport(self, node) -> str:
+        if not isinstance(node.line, Strings) or not node.opt["printable"]:
+            return ""
+        ret = f",vvvv{f" Lang:{node.lang}" if node.lang else ""}\n"
+        for i in node.line.s.splitlines():
+            ret += f"| {i}\n"
+        ret += "`^^^^"
+        return ret
+    def visit_blockcenter(self, node) -> str:
+        text = ",>>>>>>>>\n"
+        for i in node.child:
+            if text and text[-1] != "\n":
+                text+="\n"
+            ret = i.accept(self)
+            rets = ret.splitlines()
+            max_width = 0
+            if rets:
+                max_width = max(pytools.get_str_width(j) for j in rets)
+            max_width += max_width%2
+            ret = "\n".join([pytools.get_str_in_width(j, max_width, align="<l>") for j in rets])
+            for j in ret.splitlines():
+                text+=f"{node.document.setting["indent_str"]}{pytools.get_str_in_width(j, 60)}\n"
+        text += "`>>>>>>>>"
+        return text
+    def visit_blockcomment(self, node) -> str:
+        return ""
+    def visit_blockquote(self, node) -> str:
+        if not node.opt["printable"]:
+            return ""
+        text = ",========\n"
+        for i in node.child:
+            if text and text[-1] != "\n":
+                text+="\n"
+            for j in i.accept(self).splitlines():
+                text+=f"{node.document.setting["indent_str"]}{j}\n"
+        text += "`========"
+        return text
+    def visit_blockexample(self, node) -> str:
+        if not isinstance(node.line, Strings) or not node.opt["printable"]:
+            return ""
+        ret = f",----{f" Lang:{node.lang}" if node.lang else ""} (EXAMPLE)\n"
+        for i in node.line.s.splitlines():
+            ret += f"| {i}\n"
+        ret += "`----"
+        return ret
+    def visit_blockverse(self, node) -> str:
+        if not isinstance(node.line, Strings) or not node.opt["printable"]:
+            return ""
+        ret = ",==== (VERSE)\n"
+        ret += "\n".join(f"| {i}" for i in node.line.accept(self).splitlines())
+        ret += "`===="
+        return ret
+    def visit_comment(self, node) -> str:
+        return ""
+    def visit_list(self, node) -> str:
+        text = ""
+        index = 0
+        for i in node.child:
+            index+=1
+            if text and text[-1] != "\n":
+                text += "\n"
+            # 每个列表组的每个项目
+            level = f"{node.level}" if node.type == "ul" else f"{node.level}[{index}]"
+            text += f"-L{level} {i.accept(self)}"
+        return text
+    def visit_table(self, node) -> str:
+        width = []
+        for i in node.lines:
+            if not isinstance(i, list):
+                continue
+            width = [width[i] if i < len(width) else 0 for i in range(len(i))]
+            for index,item in enumerate(i):
+                width[index] = max(pytools.get_str_width(item.accept(self)), width[index])
+
+        node.check_control_line()
+        skip_list = [i[0] for i in node.control_line if i[1] == "align"]
+        total_width = node.col+1
+        for i in width:
+            total_width+=i
+        text=f"{pytools.get_str_in_width("",total_width,".")}\n"
+        index = 0
+        for line in node.lines:
+            if index in skip_list:
+                index+=1
+                continue
+            if isinstance(line, str):
+                line = [Strings("-"*max(width+[0]), node)]*node.col
+            for col,w,align in zip(line, width, node.align):
+                text+=f"|{pytools.get_str_in_width(col.accept(self), w, align=align)}"
+            text+="|\n"
+            index+=1
+        text+=f"{pytools.get_str_in_width("",total_width,"`")}\n"
+        return f"{text}"
+    def visit_footnote(self, node, printable=False) -> str:
+        if not printable:
+            return ""
+        return self.visit_root(node)
+    def visit_text(self, node) -> str:
+        if not node.opt["printable"]:
+            return ""
+        return node.line.accept(self)
+    def visit_listitem(self, node) -> str:
+        text = ""
+        indent_str = node.document.setting["indent_str"]
+        ret = f"\n{indent_str}".join(node.child[0].accept(self).splitlines())
+        text += f"{ret}\n"
+        for i in node.child[1:]:
+            # 下一级的东西
+            for j in i.accept(self).splitlines():
+                if j and j[-1] != "\n":
+                    j+="\n"
+                text += f"{indent_str}{j}"
+        return text
+    def visit_title(self, node) -> str:
+        if node.comment or not node.opt["printable"]:
+            return ""
+        title = node.line.accept(self)
+        lv = ".".join([str(i) for i in node.id[node.document.status["lowest_title"]-1:-1]])
+        text = f"{lv}: {title}"
+        if node.tag.s:
+            text = text[:-1]
+            text += f"\t\t<:{node.tag.s}:>\n"
+        for i in node.child:
+            if text and text[-1] != "\n":
+                text+="\n"
+            for j in i.accept(self).splitlines():
+                text+=f"{node.document.setting["indent_str"]}{j}\n"
+        return text
+    def visit_strings(self, node, li: list) -> str:
+        """输出行内文本"""
+        if not node.parse_able:
+            return re.sub("\n", " ", node.s)
+        text = node.get_pre_text()
+        return node.list_to_text(node.orgtext_to_list(text))
+
 class HtmlExportVisitor(ExportVisitor):
     """输出成html"""
+    def __init__(self) -> None:
+        super().__init__()
+        self.text_backend = TextExportVisitor()
+        self.figure_count = 0
+        self.footnote_count = 0
+        self.call_footnotes = []
     def visit_document(self, node: Document) -> str:
-        node.status["figure_count"] = 0
-        node.status["footnote_count"] = 0
-        node.status["call_footnotes"] = []
+        self.figure_count = 0
+        self.footnote_count = 0
+        self.call_footnotes = []
         def toc_to_html() -> str:
             """获取目录并转成html"""
             options :dict = node.meta["options"]
@@ -1329,7 +1354,7 @@ class HtmlExportVisitor(ExportVisitor):
                     text = f"{level} "
                 if i[-1]["todo"]:
                     text+=f"<span class=\"todo {i[-1]["todo"][0]}\">{i[-1]["todo"][1]}</span> "
-                text+=f"{i[-1]["title"].to_text()}"
+                text+=f"{i[-1]["title"].accept(self.text_backend)}"
                 if i[-1]["tag"]:
                     text+=f"""{"&nbsp;"*3}<span class="tag">"""
                     tags = i[-1]["tag"].split(":")
@@ -1428,7 +1453,7 @@ ${footnotes}</div></div>"""),
                 data[i] = "\n" + data[i]
 
         if node.status["footnotes"]:
-            li = sorted([node.status["footnotes"][i] for i in node.status["call_footnotes"]],
+            li = sorted([node.status["footnotes"][i] for i in self.call_footnotes],
                         key=lambda x:x.id)
             footnotes = []
             for i in li:
@@ -1707,10 +1732,10 @@ ${footnotes}</div></div>"""),
                         if isinstance(node.upward, Text) and \
                         not node.upward.opt.get("in_list") and len(li) == 1 else ""
             elif i[0] == "figure":
-                node.upward.document.status["figure_count"]+=1
+                self.figure_count += 1
                 ret += f"""\n<div class="figure">\n<p><img src="{i[1]}" alt="{i[1]}" /></p>\n"""
                 ret += """<p><span class="figure-number">Figure """+\
-                        f"""{node.upward.document.status["figure_count"]}: </span>"""+\
+                        f"""{self.figure_count}: </span>"""+\
                         f"""{node.list_to_text(i[2])}</p></div>"""
             elif i[0] == "fn":
                 fns : dict = node.upward.document.status["footnotes"]
@@ -1718,13 +1743,13 @@ ${footnotes}</div></div>"""),
                     node.log(f"引用没有定义的脚注'{i[1]}'", "ERROR")
                     continue
                 fn : Footnote = fns[i[1]]
-                num = node.upward.document.status["footnote_count"]
+                num = self .footnote_count
                 if fn.id <= 0:
-                    node.upward.document.status["footnote_count"]+=1
+                    self .footnote_count += 1
                     num+=1
                     fn.id = num
                     name = fn.name if fn.type == "str" else num
-                    node.upward.document.status["call_footnotes"].append(i[1])
+                    self.call_footnotes.append(i[1])
                 else:
                     num = fn.id
                 name = fn.name if fn.type == "str" else num
@@ -1817,15 +1842,13 @@ def run_main() -> Document|str|None:
         inp = inpf[-1].read_text(encoding="utf8")
 
     ret = Document(inp.splitlines(), file_name=inp_fname,
-                   setting={"pygments_css":args.pygments_css})
+                   setting={"pygments_css":args.pygments_css,
+                            "progress":args.auto_output and args.progress})
     _set_css(args, ret)
     if args.debug:
         print(ret.root.to_node_tree())
     elif args.text_mode:
-        print(" Table of Contents")
-        print("===================")
-        print(ret.table_of_content_to_text())
-        print(ret.to_text())
+        print(ret.accept(TextExportVisitor()))
         # for i in ret.status["table_of_content"]:
             # pytools.print_err(i)
     else:
@@ -1834,6 +1857,8 @@ def run_main() -> Document|str|None:
                     ret.accept(HtmlExportVisitor()),encoding="utf8")
         else:
             print(ret.accept(HtmlExportVisitor()))
+            # ret.accept(HtmlExportVisitor())
+            # __import__('pprint').pprint(ret.status)
     return ret
 
 def parse_arguments():
@@ -1845,6 +1870,7 @@ def parse_arguments():
     parser.add_argument('-x', '--debug', action="store_true", help='调试输出')
     parser.add_argument('-E', '--emacs-css', action="store_true", help='从安装好的emacs获取内置css文件')
     parser.add_argument('-O', '--auto-output', action="store_true", help='自动输出到同名的.org文件')
+    parser.add_argument('-p', '--progress', action="store_true", help='display progress')
     parser.add_argument('--pygments-css', action="store_true", help='内置pygments生产的css文件')
     parser.add_argument('--feature-info', action="store_true", help='查看特性信息')
     try:
