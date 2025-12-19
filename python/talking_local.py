@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Created:2025.10.18
 # 基于python的简陋聊天室程序，向下兼容至python3.8
-# Filename: 聊天室v0.0.9.py
+# Filename: 聊天室v0.0.10.py
 
 from pathlib import Path
 from datetime import datetime
@@ -528,6 +528,7 @@ ${meta}
     <ul>
       <li><a href="/">消息列表</a></li>
       <li><a href="/userlist">用户列表</a></li>
+      <li><a href="/about">About</a></li>
       ${loginstatus}
     </ul>
   </div>
@@ -648,7 +649,31 @@ ${content}
   <button type="submit">返回主页(部分页面会自动跳转)</button>
   </a>
 </div>
-"""}.get(key))).safe_substitute(data)
+""", # ==================
+"about":"""
+<div class="container">
+  <h1>About 关于</h1>
+  <p>相关链接:</p>
+  <ul>
+    <li><a href="/self_update">自动更新按钮</a></li>
+    <li><a href="http://${url_self_1}">本程序链接(github)</a></li>
+    <li><a href="${url_self_2}">本程序链接(github.io)</a></li>
+    <li><a href="http://${url_anti_jiyu}">反极域程序链接(github)</a></li>
+    <li><a href="http://ghfast.top/${url_anti_jiyu}">反极域程序链接(github 加速)</a></li>
+  </ul>
+</div>
+""", # ==================
+"self_update":"""
+<div class="container">
+  <h1>自动更新启动页</h1>
+  <p>自动更新已经启动,结果会在稍后以一条系统消息显示</p>
+  <p>页面将在2秒钟后自动跳转到<a href="/">主页</a></p>
+</div>
+""", # ==================
+"url_self_1":"raw.githubusercontent.com/youlanjie/my-test/refs/heads/main/python/talking_local.py",
+"url_self_2":"https://youlanjie.github.io/lib/python/talking_local.py",
+"url_anti_jiyu":"https://youlanjie.github.io/lib/python/talking_local.py",
+}.get(key))).safe_substitute(data)
 
 # 由于在py3.8时仍不支持将联合类型写成 X|Y ，心碎了
 def get_strtime(dt:Union[datetime,float] = datetime.now()) -> str:
@@ -662,13 +687,13 @@ def get_strtime(dt:Union[datetime,float] = datetime.now()) -> str:
         return t
     return ""
 
-def log_in_file(msg:str, filename:str):
+def log_in_file(msg:str, loglevel = "INFO", filename:str = "chat_room.log"):
     """将信息记录到文件"""
     try:
         if ARGS.no_logs:
             return
         with open(filename, "a") as f:
-            print(msg, file=f)
+            print(f"[{loglevel}] [{get_strtime()}] {msg}", file=f)
     except (OSError, PermissionError, AttributeError, NameError):
         pass
 
@@ -1190,6 +1215,18 @@ class System:
             title = str(data.get("title"))
             meta = str(data.get("meta"))
             s = str(data.get("content"))
+        elif tag == "about":
+            title = "About 关于 | 帮助"
+            data = {i:rescourses(i, {}) for i in [
+                "url_self_1",
+                "url_self_2",
+                "url_anti_jiyu",
+                ]}
+        elif tag == "self_update":
+            title = "自动更新启动页"
+            meta = """<meta http-equiv="refresh" content="2;url=/?p=last_msg#last_msg">"""
+            s = rescourses("self_update", {})
+            threading.Thread(target=self_update).start()
         else:
             tag = "404"
             title = "404 Page Not Found"
@@ -1213,7 +1250,9 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
         path = parsed_path.path
         # print([self.path, parsed_path])
         # 如果访问根路径，返回主页
-        if path in ('/', '/userlist', '/login', '/register', '/login', '/dashboard'):
+        if path in ('/', '/userlist', '/login', '/register',
+                    '/login', '/dashboard', '/about',
+                    '/self_update'):
             ip = self.client_address[0]
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
@@ -1334,8 +1373,8 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
         SYSTEM.load()
         SYSTEM.save()
     def log_message(self, format: str, *args: Any) -> None:
-        s = "[%s] %s - %s" % (self.date_time_string(), self.address_string() , format % args)
-        log_in_file(s, "chat_room.log")
+        s = "%s - %s" % (self.address_string() , format % args)
+        log_in_file(s, loglevel="SERVER")
         return None
 
 # 启动服务器
@@ -1395,86 +1434,90 @@ def module_check(module_list:list, system = None) -> list:
                 system.syslog(f"[WARN] 模块'{i}'仍不可用")
     return avaliable_list
 
+def download_file(urls:list, savefile) -> bytes:
+    req = import_module("urllib.request")
+    errors = import_module("urllib.error")
+    ret = None
+    url = ""
+    for url in urls:
+        try:
+            ret = req.urlopen(url)
+            if ret.getcode() == 200:
+                break
+            ret = None
+        except errors.HTTPError as e:
+            print(f"[WARN] 链接不可用: {url} ({e})")
+        except errors.URLError as e:
+            print(f"[WARN] 域名无法访问: {url} ({e})")
+    if not ret:
+        print(f"[INFO] 下载失败 - '{url}'")
+        return b""
+    content = ret.read()
+    if savefile:
+        try:
+            Path(savefile).write_bytes(content)
+        except (OSError, PermissionError) as e:
+            print(f"[ERROR] Saving '{savefile}': {e}")
+    return content
+
+def download_anti_program():
+    outf = Path("反极域软件.exe")
+    md5_hash = "bcbbe129e6032fdbee6e2df28fef55e3"
+    fsize = 4712960
+    has_file = outf.is_file() and outf.stat().st_size == fsize
+    has_file = has_file and hashlib.md5(outf.read_bytes()).hexdigest() == md5_hash
+    if outf.is_file() and not has_file:
+        outf.unlink()
+    print("[INFO] 正在尝试下载反极域软件")
+    url = rescourses("url_anti_jiyu", {})
+    urls = [f"http://ghfast.top/{url}", f"http://{url}"]
+    download_file(urls, outf)
+    if outf.is_file():
+        print(f"[INFO] 反极域软件已保存到'{outf.resolve()}'")
+    return
+
+def self_update():
+    print("[INFO] 正在尝试更新本程序")
+    url = rescourses("url_self_1", {})
+    urls = [f"http://ghfast.top/{url}",
+            f"http://{url}",
+            rescourses("url_self_2", {}),]
+    content = download_file(urls, "")
+    msg = []
+    try:
+        filename = str(content.decode().splitlines()[3])
+        if not filename.startswith("# Filename: "):
+            raise EOFError
+        filename = filename[12:]
+    except (UnicodeDecodeError, IndexError, EOFError):
+        msg.append("[INFO] 获取聊天室版本错误，使用默认名称")
+        print(msg[-1])
+        filename = "聊天室_版本未知.py"
+    outf = Path(filename)
+    if outf.exists():
+        msg.append(f"[INFO] 文件'{outf.resolve()}'已存在")
+        print(msg[-1])
+        if outf.read_bytes() == content:
+            msg.append("[INFO] 文件内容相同，更新取消")
+            print(msg[-1])
+        else:
+            tsp = int(datetime.now().timestamp())
+            backupf = Path(f"{outf.stem}_bak_{tsp}{outf.suffix}")
+            msg.append(f"[INFO] 移动原文件 '{outf.resolve()}' 到 '{backupf.resolve()}'")
+            print(msg[-1])
+            shutil.move(outf, backupf)
+    result = False
+    if not outf.is_file():
+        outf.write_bytes(content)
+        if outf.is_file():
+            msg.append(f"[INFO] 新版文件已保存到'{outf.resolve()}'")
+            print(msg[-1])
+            result = True
+    SYSTEM.syslog("\n".join(msg))
+    return result
+
 def extra_funtions():
     """提供诸如反极域软件下载、更新等功能"""
-    system = SYSTEM
-    def download_anti_program():
-        outf = Path("反极域软件.exe")
-        md5_hash = "bcbbe129e6032fdbee6e2df28fef55e3"
-        fsize = 4712960
-        has_file = outf.is_file() and outf.stat().st_size == fsize
-        has_file = has_file and hashlib.md5(outf.read_bytes()).hexdigest() == md5_hash
-        if outf.is_file() and not has_file:
-            outf.unlink()
-        req = import_module("urllib.request")
-        errors = import_module("urllib.error")
-        print("[INFO] 正在尝试下载反极域软件")
-        url = "github.com/imengyu/JiYuTrainer/releases/download/1.7.6/JiYuTrainer.exe"
-        urls = (f"http://ghfast.top/{url}", f"http://{url}")
-        for i in urls:
-            try:
-                req.urlretrieve(i, str(outf))
-                break
-            except errors.HTTPError as e:
-                print(f"[WARN] 链接不可用: {i} ({e})")
-            except errors.URLError as e:
-                print(f"[WARN] 域名无法访问: {i} ({e})")
-        if outf.is_file():
-            print(f"[INFO] 反极域软件已保存到'{outf.resolve()}'")
-        return
-    def self_update():
-        req = import_module("urllib.request")
-        errors = import_module("urllib.error")
-        print("[INFO] 正在尝试更新本程序")
-        url = "raw.githubusercontent.com/youlanjie/my-test/refs/heads/main/python/talking_local.py"
-        urls = (f"http://ghfast.top/{url}",
-                f"http://{url}",
-                "https://youlanjie.github.io/lib/python/talking_local.py",)
-        ret = None
-        for i in urls:
-            try:
-                ret = req.urlopen(i)
-                if ret.getcode() == 200:
-                    break
-                ret = None
-            except errors.HTTPError as e:
-                print(f"[WARN] 链接不可用: {i} ({e})")
-            except errors.URLError as e:
-                print(f"[WARN] 域名无法访问: {i} ({e})")
-        if not ret:
-            print(f"[INFO] 下载失败 - '{url}'")
-            return
-        content = ret.read()
-        msg = []
-        try:
-            filename = str(content.decode().splitlines()[3])
-            if not filename.startswith("# Filename: "):
-                raise EOFError
-            filename = filename[12:]
-        except (UnicodeDecodeError, IndexError, EOFError):
-            msg.append("[INFO] 获取聊天室版本错误，使用默认名称")
-            print(msg[-1])
-            filename = "聊天室_版本未知.py"
-        outf = Path(filename)
-        if outf.exists():
-            msg.append(f"[INFO] 文件'{outf.resolve()}'已存在")
-            print(msg[-1])
-            if outf.read_bytes() == content:
-                msg.append("[INFO] 文件内容相同，更新取消")
-                print(msg[-1])
-            else:
-                tsp = int(datetime.now().timestamp())
-                backupf = Path(f"{outf.stem}_bak_{tsp}{outf.suffix}")
-                msg.append(f"[INFO] 移动原文件 '{outf.resolve()}' 到 '{backupf.resolve()}'")
-                print(msg[-1])
-                shutil.move(outf, backupf)
-        if not outf.is_file():
-            outf.write_bytes(content)
-            if outf.is_file():
-                msg.append(f"[INFO] 新版文件已保存到'{outf.resolve()}'")
-                print(msg[-1])
-        system.syslog("\n".join(msg))
-        return
     li = [lambda:None,download_anti_program, self_update]
     print("""\
 ##################################
@@ -1540,6 +1583,7 @@ def main(port = 8000):
                 [">"*10+"命令分隔符"+("" if right else "(上条命令不正确)")+"<"*10+"\n", ""]
         try:
             c = input(f"{color[0]}$ {color[1]}")
+            log_in_file(f"Run Command: '{c}'")
         except (KeyboardInterrupt, EOFError):
             c = "q"
         system.load()
@@ -1580,7 +1624,9 @@ if __name__ == "__main__":
         sys.exit()
 
     SYSTEM = System(ARGS.input)
+    log_in_file(f"Run Program")
     if ARGS.pure_http_server:
         run_server(ARGS.port)
     else:
         main(ARGS.port)
+    log_in_file(f"Quit Program")
