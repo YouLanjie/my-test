@@ -20,6 +20,7 @@ except ImportError:
     import pytools
 
 class ExportVisitor(ABC):
+    """导出基类"""
     @abstractmethod
     def visit_strings(self, node, li: list) -> str:
         return ""
@@ -221,38 +222,6 @@ class Strings:
         if not is_sub:
             self.cache[s] = li
         return li
-    def list_to_text(self, li:list) -> str:
-        """将给定的已经分好的列表转回文字"""
-        if not li:
-            return ""
-        ret = ""
-        last_stat = ""
-        for i in li:
-            if isinstance(i, str):
-                ret+=i
-                continue
-            if i[0] == "link":
-                ret += f"""[{self.list_to_text(i[2])}]({i[1]})"""
-            elif i[0] == "img":
-                ret += f"""![{self.list_to_text(i[2])}]({i[1]})"""
-            elif i[0] == "figure":
-                ret += f"""![{self.list_to_text(i[2])}]({i[1]})"""
-            elif i[0] == "timestamp":
-                ret += '<span class="timestamp-wrapper"><span class="timestamp">'
-                ret += f"{i[1]}"
-                ret += '</span></span>'
-                ret += last_stat
-                last_stat = ""
-            elif i[0] in self.rules:
-                ret += f"""{self.rules[i[0]][0]}{self.list_to_text(i[1])}{self.rules[i[0]][1]} """
-                ret += last_stat
-                last_stat = ""
-            else:
-                last_stat = " "
-                ret += str(i)
-        if ret and ret[0] == "\n":
-            ret = ret[1:]
-        return ret
     def get_separator_between(self, ch1:str, ch2:str) -> str:
         """获取合并两行字符串的分隔符(空格是否)"""
         if not ch1:
@@ -918,23 +887,26 @@ class Document:
             "html_link_home":"",
             "html_link_up":"",
             "caption":{},
+            "name":[],
             "html_head":[],
             "seq_todo":{"todo":["TODO"], "done":["DONE"]},
             # H:最大视为标题等级
             # toc:目录显示的标题等级(num/t/nil)
             # num:最大显示数字标号的标题等级
             "options":{"h":3, "toc":True, "num":True},
+            "latex_header":[],
+            "latex_compiler":"",
         }
         if isinstance(setting,dict):
             self.setting.update({i:setting[i] for i in setting if i in self.setting})
 
+        self.root = Root(self)
+        self.root.line.s = self.setting["file_name"] if self.setting["file_name"]\
+                else "<DOCUMENT IN STRINGS>"
         pth = None
         if self.setting.get("progress"):
             pth = threading.Thread(target=self.print_progress, args=["READING"])
             pth.start()
-        self.root = Root(self)
-        self.root.line.s = self.setting["file_name"] if self.setting["file_name"]\
-                else "<DOCUMENT IN STRINGS>"
         self.build_tree()
         self.merge_text(self.root)
         self.status["clean_up"] = True
@@ -958,8 +930,8 @@ svg: { scale: 1.0, displayAlign: 'center', displayIndent: '0em' },
 output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
 </script>
 <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>"""
-    def print_progress(self, typ = "PROGRESS", offset = 0):
-        """打印进"""
+    def print_progress(self, typ = "PROGRESS"):
+        """打印进度条"""
         if self.status.get("clean_up") is None:
             return
         total_line = len(self.lines)
@@ -972,8 +944,7 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
         try:
             # import tqdm
             tqdm = importlib.import_module("tqdm")
-            self.root.log(f"NOW: {typ}", lv="INFO")
-            progress = tqdm.tqdm(typ, total=total_line)
+            progress = tqdm.tqdm(total=total_line, desc=typ)
             last = 0
             while not self.status["clean_up"]:
                 progress.update(self.current_line-last)
@@ -1315,12 +1286,160 @@ class TextExportVisitor(ExportVisitor):
             for j in i.accept(self).splitlines():
                 text+=f"{node.document.setting["indent_str"]}{j}\n"
         return text
+    def visit_strings(self, node: Strings, li: list) -> str:
+        """输出行内文本(Text)"""
+        if not li:
+            return ""
+        ret = ""
+        last_stat = ""
+        for i in li:
+            if isinstance(i, str):
+                ret+=i
+                continue
+            if i[0] == "link":
+                ret += f"""[{self.visit_strings(node, i[2])}]({i[1]})"""
+            elif i[0] == "img":
+                ret += f"""![{self.visit_strings(node, i[2])}]({i[1]})"""
+            elif i[0] == "figure":
+                ret += f"""![{self.visit_strings(node, i[2])}]({i[1]})"""
+            elif i[0] == "timestamp":
+                ret += '<span class="timestamp-wrapper"><span class="timestamp">'
+                ret += f"{i[1]}"
+                ret += '</span></span>'
+                ret += last_stat
+                last_stat = ""
+            elif i[0] in node.rules:
+                ret += f"""{node.rules[i[0]][0]}{self.visit_strings(node, i[1])}{node.rules[i[0]][1]} """
+                ret += last_stat
+                last_stat = ""
+            else:
+                last_stat = " "
+                ret += str(i)
+        if ret and ret[0] == "\n":
+            ret = ret[1:]
+        return ret
+
+class TexExportVisitor(ExportVisitor):
+    """导出为tex格式"""
     def visit_strings(self, node, li: list) -> str:
-        """输出行内文本"""
-        if not node.parse_able:
-            return re.sub("\n", " ", node.s)
-        text = node.get_pre_text()
-        return node.list_to_text(node.orgtext_to_list(text))
+        """输出行内文本(LaTex)"""
+        if not li:
+            return ""
+        ret = ""
+        last_stat = ""
+        for i in li:
+            if isinstance(i, str):
+                ret+=i
+                continue
+            if i[0] == "link":
+                ret += f"""[{self.visit_strings(node, i[2])}]({i[1]})"""
+            elif i[0] == "img":
+                ret += f"""![{self.visit_strings(node, i[2])}]({i[1]})"""
+            elif i[0] == "figure":
+                ret += f"""![{self.visit_strings(node, i[2])}]({i[1]})"""
+            elif i[0] == "timestamp":
+                ret += '<span class="timestamp-wrapper"><span class="timestamp">'
+                ret += f"{i[1]}"
+                ret += '</span></span>'
+                ret += last_stat
+                last_stat = ""
+            elif i[0] in node.rules:
+                ret += f"""{node.rules[i[0]][0]}{self.visit_strings(node, i[1])}{node.rules[i[0]][1]} """
+                ret += last_stat
+                last_stat = ""
+            else:
+                last_stat = " "
+                ret += str(i)
+        if ret and ret[0] == "\n":
+            ret = ret[1:]
+        return ret
+    def visit_root(self, node:Root) -> str:
+        return "\n".join([i.accept(self) for i in node.child])
+    def visit_text(self, node) -> str:
+        return "\n".join([i.accept(self) for i in node.child])
+    def visit_blockcomment(self, node) -> str:
+        return ""
+    def visit_meta(self, node) -> str:
+        return ""
+    def visit_title(self, node:Title) -> str:
+        level = node.level-node.document.status["lowest_title"]
+        if level < 3:
+            tag = "sub"*level+"section"
+        else:
+            tag = "item"
+        title = r"\%s{%s【%s,%s】 }" % (tag, node.line.accept(self), node.level, node.document.status["lowest_title"])
+        return title+"\n".join([i.accept(self) for i in node.child])
+    def visit_titleoutline(self, node) -> str:
+        return "\n".join([i.accept(self) for i in node.child])
+    def visit_footnotes(self, node) -> str:
+        return ""
+    def visit_footnote(self, node) -> str:
+        return ""
+    def visit_listitem(self, node) -> str:
+        return ""
+    def visit_list(self, node) -> str:
+        return ""
+    def visit_blockcode(self, node) -> str:
+        return ""
+    def visit_blockexport(self, node) -> str:
+        return ""
+    def visit_comment(self, node) -> str:
+        return ""
+    def visit_blockexample(self, node) -> str:
+        return ""
+    def visit_blockverse(self, node) -> str:
+        return ""
+    def visit_blockquote(self, node) -> str:
+        return ""
+    def visit_blockcenter(self, node) -> str:
+        return ""
+    def visit_table(self, node) -> str:
+        return ""
+    def visit_document(self, node:Document) -> str:
+        template = r"""% 创建于 ${created_time}
+% 预期latex编译器: ${latex_compiler}
+\documentclass[11pt]{article}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{capt-of}
+\usepackage{hyperref}${latex_header}${author}${date}${title}
+\hypersetup{
+ pdfauthor={${pdf_author}},
+ pdftitle={${pdf_author}},
+ pdfkeywords={},
+ pdfsubject={},
+ pdfcreator={第三方org解释器}, 
+ pdflang={Chinese Simplified}}
+\begin{document}
+${maketitle}${toc}
+${body}
+\end{document}
+"""
+        data = {"latex_compiler":node.meta["latex_compiler"],
+                "latex_header":"\n"+"\n".join(node.meta["latex_header"])\
+                        if node.meta["latex_header"] else "",
+                "created_time":pytools.get_strtime(),
+                "maketitle":"", "toc":"",
+                "body":node.root.accept(self)
+                }
+        for i in ("title","author","date",):
+            s = " ".join(node.meta[i]) if node.meta.get(i) else ""
+            if not s and i == "date":
+                s = r"\today"
+            if not s and i != "title":
+                data[i] = ""
+                data["pdf_"+i] = ""
+                continue
+            data[i] = "\n\\%s{%s}" % (i, s)
+            data["pdf_"+i] = s
+        if data["title"]:
+            data["maketitle"] = "\n\\maketitle"
+        if node.meta["options"]["toc"]:
+            data["toc"] = "\n\\tableofcontents\n"
+        return Template(template).safe_substitute(data)
 
 class HtmlExportVisitor(ExportVisitor):
     """输出成html"""
@@ -1736,7 +1855,7 @@ ${footnotes}</div></div>"""),
                 ret += f"""\n<div class="figure">\n<p><img src="{i[1]}" alt="{i[1]}" /></p>\n"""
                 ret += """<p><span class="figure-number">Figure """+\
                         f"""{self.figure_count}: </span>"""+\
-                        f"""{node.list_to_text(i[2])}</p></div>"""
+                        f"""{self.text_backend.visit_strings(node, i[2])}</p></div>"""
             elif i[0] == "fn":
                 fns : dict = node.upward.document.status["footnotes"]
                 if not fns.get(i[1]):
@@ -1845,20 +1964,18 @@ def run_main() -> Document|str|None:
                    setting={"pygments_css":args.pygments_css,
                             "progress":args.auto_output and args.progress})
     _set_css(args, ret)
-    if args.debug:
-        print(ret.root.to_node_tree())
-    elif args.text_mode:
-        print(ret.accept(TextExportVisitor()))
-        # for i in ret.status["table_of_content"]:
-            # pytools.print_err(i)
-    else:
+    configs = {
+            "html":["html", lambda:ret.accept(HtmlExportVisitor())],
+            "text":["txt", lambda:ret.accept(TextExportVisitor())],
+            "latex":["tex", lambda:ret.accept(TexExportVisitor())],
+            "nodetree":["nodetree.txt", ret.root.to_node_tree],
+            }
+    if args.mode in configs:
         if args.auto_output:
-            Path(f"{inp_fname.replace(".org",".html")}").write_text(
-                    ret.accept(HtmlExportVisitor()),encoding="utf8")
+            Path(Path(inp_fname).stem+"."+configs[args.mode][0]).write_text(
+                    configs[args.mode][1](), encoding="utf8")
         else:
-            print(ret.accept(HtmlExportVisitor()))
-            # ret.accept(HtmlExportVisitor())
-            # __import__('pprint').pprint(ret.status)
+            print(configs[args.mode][1]())
     return ret
 
 def parse_arguments():
@@ -1866,8 +1983,8 @@ def parse_arguments():
     argparse=importlib.import_module("argparse")
     parser = argparse.ArgumentParser(description='解析org文件')
     parser.add_argument('-i', '--input', default=None, help='指定输入文件')
-    parser.add_argument('-t', '--text-mode', action="store_true", help='以text形式输出')
-    parser.add_argument('-x', '--debug', action="store_true", help='调试输出')
+    parser.add_argument('-m', '--mode', default="html", help='指定输出模式',
+                        choices=["html", "text", "latex", "nodetree"])
     parser.add_argument('-E', '--emacs-css', action="store_true", help='从安装好的emacs获取内置css文件')
     parser.add_argument('-O', '--auto-output', action="store_true", help='自动输出到同名的.org文件')
     parser.add_argument('-p', '--progress', action="store_true", help='display progress')
