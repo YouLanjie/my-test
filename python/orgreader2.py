@@ -395,7 +395,7 @@ class Meta(Root):
         elif self.key == "options":
             self._process_options()
             return
-        elif self.key == "caption":
+        elif self.key in ("caption", "name"):
             self.document.meta[self.key][self.start] = self.value
     def _load_sub_setupfile(self):
         content = ""
@@ -887,15 +887,15 @@ class Document:
             "html_link_home":"",
             "html_link_up":"",
             "caption":{},
-            "name":[],
+            "name":{},
             "html_head":[],
             "seq_todo":{"todo":["TODO"], "done":["DONE"]},
             # H:最大视为标题等级
             # toc:目录显示的标题等级(num/t/nil)
             # num:最大显示数字标号的标题等级
             "options":{"h":3, "toc":True, "num":True},
+            "latex_compiler":"xelatex",
             "latex_header":[],
-            "latex_compiler":"",
         }
         if isinstance(setting,dict):
             self.setting.update({i:setting[i] for i in setting if i in self.setting})
@@ -1970,12 +1970,14 @@ def run_main() -> Document|str|None:
             "latex":["tex", lambda:ret.accept(TexExportVisitor())],
             "nodetree":["nodetree.txt", ret.root.to_node_tree],
             }
-    if args.mode in configs:
-        if args.auto_output:
-            Path(Path(inp_fname).stem+"."+configs[args.mode][0]).write_text(
-                    configs[args.mode][1](), encoding="utf8")
-        else:
-            print(configs[args.mode][1]())
+    if args.mode not in configs:
+        return ret
+    if args.auto_output:
+        output_f = Path(Path(inp_fname).stem+"."+configs[args.mode][0])
+        print(f"INFO output file: '{output_f}'")
+        output_f.write_text(configs[args.mode][1](), encoding="utf8")
+    else:
+        print(configs[args.mode][1]())
     return ret
 
 def parse_arguments():
@@ -1987,7 +1989,7 @@ def parse_arguments():
                         choices=["html", "text", "latex", "nodetree"])
     parser.add_argument('-E', '--emacs-css', action="store_true", help='从安装好的emacs获取内置css文件')
     parser.add_argument('-O', '--auto-output', action="store_true", help='自动输出到同名的.org文件')
-    parser.add_argument('-p', '--progress', action="store_true", help='display progress')
+    parser.add_argument('-p', '--progress', action="store_true", help='显示进度条')
     parser.add_argument('--pygments-css', action="store_true", help='内置pygments生产的css文件')
     parser.add_argument('--feature-info', action="store_true", help='查看特性信息')
     try:

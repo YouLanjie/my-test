@@ -723,6 +723,7 @@ def print_debug_info(path:Path):
     print(f"[DEBUG] Program: '{Path(sys.argv[0]).resolve()}'")
     print(f"[DEBUG] CWD: '{os.getcwd()}'")
     print(f"[DEBUG] CHECK_PATH: '{path}'")
+    print(f"[DEBUG] resolved: '{path.resolve()}'")
     print(f"[DEBUG] .is_absolute(): {path.is_absolute()}")
     print(f"[DEBUG] .resolve().is_absolute(): {path.resolve().is_absolute()}")
 
@@ -910,21 +911,30 @@ class System:
         st_mtime = self.savefile.stat().st_mtime
         if st_mtime <= self.st_mtime:
             return False
+        s = b""
         try:
-            try:
-                data = json.loads(self.savefile.read_text(encoding="utf-8"))
-            except UnicodeDecodeError:
-                data = json.loads(self.savefile.read_text(encoding="gbk"))
+            s = self.savefile.read_bytes()
+        except PermissionError as e:
+            print(e)
+            print(f"[ERROR] 读取权限错误：{self.savefile.resolve()}")
+            return False
+
+        try:
+            s = s.decode(encoding="utf-8")
+        except UnicodeDecodeError:
+            s = s.decode(encoding="gbk")
+
+        try:
+            if s:
+                data = json.loads(s)
+            else:
+                data = {}
         except json.JSONDecodeError:
             print("[ERROR] json解析失败")
             tsp = int(datetime.now().timestamp())
             backupf = Path(f"{self.savefile.stem}_bak_{tsp}{self.savefile.suffix}")
             print(f"[INFO] 移动原文件 '{self.savefile.resolve()}' 到 '{backupf.resolve()}'")
             shutil.move(self.savefile, backupf)
-            return False
-        except PermissionError as e:
-            print(e)
-            print(f"[ERROR] 读取权限错误：{self.savefile.resolve()}")
             return False
         self.st_mtime = st_mtime
         for u in data.get("users") or []:
@@ -1719,15 +1729,18 @@ SYSTEM = System(no_load=True)
 if __name__ == "__main__":
     ARGS = parse_arguments()
     # 麻烦的windows右键打开方式错误（默认工作目录不正确）
-    if not ARGS.no_subprocess and os.name == "nt" and str(Path("SAVEDATA.json").resolve())[1:3] != ":\\":
-        print_debug_info(Path())
-        print_debug_info(Path("SAVEDATA.json"))
-        print("[INFO] 疑似手动选择打开方式导致工作目录问题")
-        print("[INFO] 尝试启动子进程以代替(设置工作目录位于程序目录)")
-        subprocess.run(["python"]+sys.argv+["--no-subprocess"],
-                       cwd = str(Path(sys.argv[0]).parent),
-                       check=False)
-        sys.exit()
+    if not ARGS.no_subprocess and os.name == "nt" and not SYSTEM.savefile.is_file():
+        try:
+            SYSTEM.savefile.touch()
+        except PermissionError:
+            print_debug_info(Path())
+            print_debug_info(Path("SAVEDATA.json"))
+            print("[INFO] 疑似手动选择打开方式导致工作目录问题")
+            print("[INFO] 尝试启动子进程以代替(设置工作目录位于程序目录)")
+            subprocess.run(["python"]+sys.argv+["--no-subprocess"],
+                           cwd = str(Path(sys.argv[0]).parent),
+                           check=False)
+            sys.exit()
 
     SYSTEM = System(ARGS.input)
     log_in_file(f"Run Program")
