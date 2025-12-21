@@ -338,8 +338,12 @@ def get_video_dimensions(file_path:Path) -> tuple[int, int]:
 
 def cmd_genal(li, mode) -> str:
     """生成shell命令用于保存或执行"""
-    has_subprocess = subprocess.run("which biliass",check=False,
-            shell=True ,capture_output=True).returncode == 0
+    has_subprocess = subprocess.run(["biliass","-v"],check=False,
+            capture_output=True).returncode == 0
+    if CONFIG["cover"] and Path(CONFIG["cover"]).is_file():
+        cover_f = Path(CONFIG["cover"])
+    else:
+        cover_f = None
     t = ""
     if not isinstance(li[0], list):
         li = [li]
@@ -351,6 +355,8 @@ def cmd_genal(li, mode) -> str:
             t+=f"# 视频AV号: AV{i[0].avid}\n"
             t+="# "+">"*25+"\n\n"
         for j in i:
+            if not isinstance(j, Video):
+                continue
             danmaku : Path = j.danmaku
             # 替换vfat系统不允许出现的字符（包括部分正常文件系统特殊字符）
             output = j.title
@@ -359,7 +365,7 @@ def cmd_genal(li, mode) -> str:
                 replacement = ["\\/:*?\"<>", "＼／∶＊？＂〈〉｜"]
             for k,l in zip(list(replacement[0]), list(replacement[1])):
                 output=output.replace(k, l)
-            output = CONFIG["outputd"]+output
+            output = CONFIG["outputd"]+CONFIG["prefix"]+output
             if output[0] == "-":
                 output = "./"+output
             base_output = output
@@ -399,10 +405,18 @@ def cmd_genal(li, mode) -> str:
                         f'{CONFIG["player"]} "{repr(str(aud))}"\n'
                 continue
             else:
-                t+=f'{ffmpeg} -hide_banner -i {repr(str(aud))} '
+                t+=f'{ffmpeg} -i {repr(str(aud))} '
+                if cover_f:
+                    t+=f'-i {repr(str(cover_f))} '
+                    t+='-map 0:0 -map 1:0 -id3v2_version 3 '
+                    t+='-metadata:s:v title="Album cover" -metadata:s:v comment="Cover (Front)" '
+                t+=f'-metadata album={repr(CONFIG["album"])} '
+                if j.owner != "None":
+                    t+=f'-metadata artist={repr(j.owner)} '
+                t+=f'-metadata title={repr(j.title)} '
                 output+=".mp3"
             t+=f'{repr(str(output))}\n'
-            if not CONFIG["noass"] and has_subprocess and mode not in ("play", "play_mp4"):
+            if CONFIG["genass"] and has_subprocess and mode not in ("play", "play_mp4"):
                 width, height = get_video_dimensions(vid)
                 t+=f'biliass {repr(str(danmaku))} -s {width}x{height} -o '\
                     f'{repr(str(base_output)+".ass")}\n'
@@ -423,7 +437,7 @@ def run_main():
     parser = argparse.ArgumentParser(description="导出B站手机端缓存")
     parser.add_argument('-l', '--list', action="store_true", help='列出视频')
     parser.add_argument('-n', '--no-vfat-name', action="store_true", help='不替换特殊字符')
-    parser.add_argument('-N', '--no-ass', action="store_true", help='不生成弹幕(加快脚本生成速度)')
+    parser.add_argument('-A', '--gen-ass', action="store_true", help='生成弹幕(会拖慢脚本生成速度)')
     parser.add_argument('-i', '--input-dir', action="append", help='设置输入文件夹')
     parser.add_argument('-o', '--output-dir', default="", help='设置输出文件夹')
     parser.add_argument('-O', '--output-file', default=None, help='设置输出文件')
@@ -433,6 +447,10 @@ def run_main():
     parser.add_argument('-s', '--sort', default="auto", choices=["cf_time", "uf_time", "f_time", "owner"],
                         help='设置排序方式')
     parser.add_argument('-H', '--help-key', action="store_true", help='内部按键帮助')
+    parser.add_argument('--album', default="b站", help='设置专辑')
+    parser.add_argument('--cover', default="", help='设置封面')
+    parser.add_argument('--title', action="store_true", help='是否设置标题')
+    parser.add_argument('--prefix', default="V_", help='输出文件prefix')
     try:
         __import__("argcomplete").autocomplete(parser)
     except ModuleNotFoundError:
@@ -446,8 +464,11 @@ def run_main():
     outputf = args.output_file
     CONFIG["vfat_name"] = not args.no_vfat_name
     CONFIG["player"] = args.player
-    CONFIG["noass"] = args.no_ass
+    CONFIG["genass"] = args.gen_ass
     CONFIG["sort_type"] = args.sort
+    CONFIG["album"] = args.album
+    CONFIG["cover"] = args.cover
+    CONFIG["prefix"] = args.prefix
     if args.input_dir:
         inputd=args.input_dir
 
@@ -494,9 +515,10 @@ def mhelp(ret=0, msg=""):
     sys.exit(ret)
 
 CONFIG = {"player":"mpv", "outputd":"", "vfat_name":True,
-          "noass":False, "sort_type":"cf_time",
+          "genass":False, "sort_type":"cf_time",
           "sort_reverse":True,
-          "name_format":"auto"}
+          "name_format":"auto",
+          "album":"", "cover":"", "prefix":""}
 if __name__ == "__main__":
     video_list = run_main()
     curses.wrapper(lambda stdscr: Ui(stdscr, video_list).main())
