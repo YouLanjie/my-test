@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 # Created:2025.10.18
-# 基于python的简陋聊天室程序，向下兼容至python3.8
-# Filename: 聊天室v0.0.10.py
+"""基于python的简陋聊天室程序，向下兼容至python3.8"""
+# Filename: 聊天室v0.0.11.py
 
 from pathlib import Path
 from datetime import datetime
 from getpass import getpass
 from typing import Callable, Union, Any
 from importlib import import_module
+from functools import lru_cache
 import argparse
 import threading
 import subprocess
@@ -36,9 +37,8 @@ if os.name == "posix":
     except ModuleNotFoundError:
         pass
 
-def rescourses(key:str, data:dict) -> str:
-    """获取被模板化后的资源"""
-    return Template(str({
+class Rescourses:
+    template = {
 "css":"""
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -335,9 +335,9 @@ img {
 }
 
 /* 消息气泡样式增强 */
-.messages p:last-child {
+.msgcont {
     margin-bottom: 0;
-    padding: 12px 15px;
+    padding: 1px 15px;
     background-color: #f8f9fa;
     border-radius: 8px;
     border-left: 3px solid #3498db;
@@ -482,7 +482,7 @@ img {
     }
 
     /* 消息气泡样式增强 - 暗色模式 */
-    .messages p:last-child {
+    .msgcont {
         background-color: #2d2d3e;
         border-left: 3px solid #bb86fc;
     }
@@ -559,9 +559,9 @@ ${pages}
 "msg_data":"""
 <div class='messages'${id}>
 <p><a href='/userlist#uid_${owner}' class='msg_name'>${name}</a>
-<span class='msg_time'>${timestamp} | #${ind}</span></p>
-<p>${msg}
-</p>
+<a href='/search?id=${msgid}'><span class='msg_time'>${timestamp} | #${ind}</span></a></p>
+<div class='msgcont'>${msg}
+</div>
 </div>
 """, # ==================
 "send_window":"""
@@ -618,6 +618,19 @@ ${usercard}
 <form method="POST" action="/logout">
   <button type="submit" style="background-color:red;">退出登录</button>
 </form>
+""", # ==================
+"edit":"""
+<div class="container">
+  <h1>消息重编辑页面</h1>
+  <form method="POST" action="/edit">
+    <div class="form-group">
+    <input type="text" name="keyid" value="${keyid}" style="display:none;">
+    <label for="message">在下面修改消息:</label>
+    <textarea name="message" rows="10" required>${content}</textarea>
+    </div>
+    <button type="submit">提交修改</button>
+  </form>
+</div>
 """, # ==================
 "login":"""
 <div class="container">
@@ -693,7 +706,15 @@ ${content}
 "url_self_1":"raw.githubusercontent.com/youlanjie/my-test/refs/heads/main/python/talking_local.py",
 "url_self_2":"https://youlanjie.github.io/lib/python/talking_local.py",
 "url_anti_jiyu":"https://youlanjie.github.io/lib/python/talking_local.py",
-}.get(key))).safe_substitute(data)
+}
+    @classmethod
+    def get2(cls, key:str) -> str:
+        """获取被模板"""
+        return str(cls.template.get(key) or "")
+    @classmethod
+    def get(cls, key:str, data:dict) -> str:
+        """获取被模板化后的资源"""
+        return Template(cls.get2(key)).safe_substitute(data)
 
 # 由于在py3.8时仍不支持将联合类型写成 X|Y ，心碎了
 def get_strtime(dt:Union[datetime,float] = datetime.now()) -> str:
@@ -770,6 +791,7 @@ class Message:
         self.owner = user.id
         self.content = content
         self._id = str(uuid.uuid4())
+        self.edit_history = []
     @property
     def id(self) -> str:
         """UUID4，用于标识该条聊天记录"""
@@ -802,6 +824,11 @@ class System:
         self.system = system
         if not no_load:
             self.load()
+
+        try:
+            self.orgreader = import_module("orgreader2")
+        except ModuleNotFoundError:
+            self.orgreader = None
     def print_users(self) -> None:
         """打印所有用户信息"""
         for u in self.users:
@@ -1127,8 +1154,33 @@ class System:
         except (KeyboardInterrupt, EOFError):
             print("[INFO] 取消操作")
             return
+    @lru_cache
+    def render_html(self, content:str, msgid:str) -> str:
+        """生成html"""
+        try:
+            if not self.orgreader:
+                raise ModuleNotFoundError
+            doc = self.orgreader.Document(content,
+                                          file_name=msgid+".org",
+                                          setting={"progress":True,
+                                                   "id_prefix":"org_"+msgid+"_"})
+            doc.root.line.s = ""
+            visitor = self.orgreader.HtmlExportVisitor()
+            msg = visitor.toc_to_html(doc) + doc.root.accept(visitor)
+            if doc.status["footnotes"]:
+                msg += visitor.fns_to_html(doc)
+            return msg
+        except Exception:
+            return "<br/>".join(escape(content).splitlines())
     def get_html(self, ip:Union[dict,str] = "", tag = "") -> str:
         """生成html相应页面"""
+        data = {}
+        if isinstance(ip, dict):
+            data = ip
+            ip = str(ip.get("ip"))
+        querys = {i.split("=",1)[0]:i.split("=",1)[1]
+                  for i in (data.get("query") or "").split("&") if "=" in i}
+
         def generate_pager(now_page:int, all_pages:int, req:Union[dict,str]="", lst=True) -> str:
             if all_pages == 0:
                 return ""
@@ -1163,90 +1215,7 @@ class System:
                 pages += '点击查看最新消息</a>'
             pages += '</p>'
             return pages
-
-        data = {}
-        if isinstance(ip, dict):
-            data = ip
-            ip = str(ip.get("ip"))
-        querys = {i.split("=",1)[0]:i.split("=",1)[1]
-                  for i in (data.get("query") or "").split("&") if "=" in i}
-        s = []
-        if self.now_user.get(ip):
-            u = self.now_user[ip]
-            s.append(f"""<a href="/dashboard">{escape(u.name)}</a>""")
-        else:
-            s.append("""<a href="/register">注册</a></li>""")
-            s.append("""<a href="/login">登录</a>""")
-        loginstatus = "\n".join([f"""<li style="float:right;">{i}</li>""" for i in s])
-
-        meta = ""
-        title = ""
-        s = ""
-        self.load()
-        if tag == "msg_list":
-            try:
-                limit = int(str(querys.get("page_limit")))
-            except ValueError:
-                limit = 12
-            all_pages = len(self.messages)//limit + (len(self.messages)%limit!=0)
-            now_page = querys.get("p") or "1"
-            try:
-                now_page = int(now_page)
-            except ValueError:
-                if now_page == "last_msg":
-                    now_page = all_pages
-                else:
-                    now_page = 1
-            if now_page < 1:
-                now_page = 1
-            elif now_page > all_pages:
-                now_page = all_pages
-            pages = generate_pager(now_page, all_pages)
-
-            userlist = {u.id:u.name for u in self.users}
-            for m in self.messages[(now_page-1)*limit:now_page*limit]:
-                name = userlist.get(m.owner)
-                if name is None:
-                    name = "<未知用户>"
-                msg_id = ' id="last_msg"' if m == self.messages[-1] else f''
-                s += rescourses("msg_data", {
-                    "id":msg_id,
-                    "name":escape(name),
-                    "owner":escape(m.owner),
-                    "timestamp":escape(get_strtime(m.timestamp)),
-                    "ind":self.messages.index(m)+1,
-                    "msg":"<br/>".join(escape(m.content).splitlines()),
-                    })
-
-            data = {
-                "messages":s,
-                "send_window": rescourses("send_window" if self.now_user.get(ip) \
-                        else "send_window2", {}),
-                "pages":pages}
-            title = "Python聊天室"
-        elif tag == "search":
-            userlist = {u.id:u.name for u in self.users}
-            messages = self.messages
-            flags = re.DOTALL
-            if querys.get("cap"):
-                flags += re.I
-            if not querys.get("msg"):
-                messages = []
-            if querys.get("user"):
-                re_str = urllib.parse.unquote(querys["user"])
-                try:
-                    messages = [i for i in messages if
-                                re.search(re_str, str(userlist.get(i.owner)), flags)]
-                except re.error as e:
-                    log_in_file(f"re.search: '{e}' - '{re_str}'", "[WARN]")
-            if querys.get("msg"):
-                re_str = urllib.parse.unquote(querys["msg"])
-                try:
-                    messages = [i for i in messages if
-                                re.search(re_str, i.content, flags)]
-                except re.error as e:
-                    log_in_file(f"re.search: '{e}' - '{re_str}'", "[WARN]")
-
+        def generate_message_list(messages:list, req:Union[dict,str]="", lst=True) -> tuple[str,str]:
             try:
                 limit = int(str(querys.get("page_limit")))
             except ValueError:
@@ -1264,28 +1233,89 @@ class System:
                 now_page = 1
             elif now_page > all_pages:
                 now_page = all_pages
-            pages = generate_pager(now_page, all_pages, querys, False)
 
+            userlist = {u.id:u.name for u in self.users}
+            s = ""
+            messages_len = len(messages)
             for m in messages[(now_page-1)*limit:now_page*limit]:
                 name = userlist.get(m.owner)
                 if name is None:
                     name = "<未知用户>"
-                msg_id = f' id="last_msg"' if m == self.messages[-1] else f''
-                if limit == 1:
+                msg_id = ' id="last_msg"' if m == self.messages[-1] else ''
+                msg = self.render_html(m.content, m.id)
+                if limit == 1 or messages_len == 1:
                     msg_id += ' style="max-height:100%;"'
-                s += rescourses("msg_data", {
+                    if datetime.now().timestamp() - m.timestamp < 60*10 or\
+                            self.now_user.get(ip) == self.system:
+                        msg += "<a href='/edit?id="+m.id+"'><button>编辑留言</button></a>"
+                s += Rescourses.get("msg_data", {
                     "id":msg_id,
+                    "msgid":m.id,
                     "name":escape(name),
                     "owner":escape(m.owner),
                     "timestamp":escape(get_strtime(m.timestamp)),
                     "ind":self.messages.index(m)+1,
-                    "msg":"<br/>".join(escape(m.content).splitlines()),
+                    "msg":msg,
                     })
+            return s,generate_pager(now_page, all_pages, req, lst)
+
+        s = []
+        if self.now_user.get(ip):
+            u = self.now_user[ip]
+            s.append(f"""<a href="/dashboard">{escape(u.name)}</a>""")
+        else:
+            s.append("""<a href="/register">注册</a></li>""")
+            s.append("""<a href="/login">登录</a>""")
+        loginstatus = "\n".join([f"""<li style="float:right;">{i}</li>""" for i in s])
+
+        meta = ""
+        title = ""
+        s = ""
+        self.load()
+        if tag == "msg_list":
+            s,pages = generate_message_list(self.messages)
+            data = {
+                "messages":s,
+                "send_window": Rescourses.get("send_window" if self.now_user.get(ip) \
+                        else "send_window2", {}),
+                "pages":pages}
+            title = "Python聊天室"
+        elif tag == "search":
+            userlist = {u.id:u.name for u in self.users}
+            messages = self.messages
+            flags = re.DOTALL
+            if querys.get("cap"):
+                flags += re.I
+            if querys.get("id"):
+                re_str = urllib.parse.unquote(querys["id"])
+                messages = [i for i in messages if re.search(re_str, i.id, flags)]
+            elif not querys.get("msg"):
+                messages = []
+            if querys.get("user"):
+                re_str = urllib.parse.unquote(querys["user"])
+                try:
+                    messages = [i for i in messages if
+                                re.search(re_str, str(userlist.get(i.owner)), flags)]
+                except re.error as e:
+                    log_in_file(f"re.search: '{e}' - '{re_str}'", "[WARN]")
+            if querys.get("msg"):
+                re_str = urllib.parse.unquote(querys["msg"])
+                try:
+                    messages = [i for i in messages if
+                                re.search(re_str, i.content, flags)]
+                except re.error as e:
+                    log_in_file(f"re.search: '{e}' - '{re_str}'", "[WARN]")
+
+            s,pages = generate_message_list(messages, querys or "", False)
+            try:
+                limit = int(str(querys.get("page_limit")))
+            except ValueError:
+                limit = 12
 
             data = {
                 "messages":s or "<p>无搜索结果</p>",
-                "send_window": rescourses("send_window" if self.now_user.get(ip) \
-                        else "send_window2", {}),
+                "send_window": Rescourses.get2(
+                    "send_window" if self.now_user.get(ip) else "send_window2"),
                 "pages":pages,
                 "user": urllib.parse.unquote(querys.get("user") or ".*"),
                 "msg": urllib.parse.unquote(querys.get("msg") or ".*"),
@@ -1295,9 +1325,19 @@ class System:
                 title = "搜索结果"
             else:
                 title = "搜索界面"
+        elif tag == "edit":
+            title = "消息重编辑页面"
+            data = {
+                    "content":"未选中有效消息",
+                    "keyid":""
+                    }
+            msgs = [i for i in self.messages if i.id == str(querys.get("id"))]
+            if msgs:
+                data["keyid"] = msgs[0].id
+                data["content"] = escape(msgs[0].content)
         elif tag == "userlist":
             for u in self.users:
-                s += rescourses(
+                s += Rescourses.get(
                         "user-data",
                         {"id":u.id,"name":escape(u.name),
                          "timestamp":escape(get_strtime(u.timestamp)),
@@ -1325,8 +1365,8 @@ class System:
                             escape("> "+f"在 {escape(get_strtime(i))} 登录过") \
                             for i in u.login_record)
                     }
-                data["usercard"] = rescourses("user-data", data)
-                data = {"userdata": rescourses("dashboard-data", data)}
+                data["usercard"] = Rescourses.get("user-data", data)
+                data = {"userdata": Rescourses.get("dashboard-data", data)}
             else:
                 data = {"userdata":"<p>你尚未登录</p>"}
             title = "个人仪表板"
@@ -1336,7 +1376,7 @@ class System:
             s = str(data.get("content"))
         elif tag == "about":
             title = "About 关于 | 帮助"
-            data = {i:rescourses(i, {}) for i in [
+            data = {i:str(Rescourses.get2(i)) for i in [
                 "url_self_1",
                 "url_self_2",
                 "url_anti_jiyu",
@@ -1344,7 +1384,7 @@ class System:
         elif tag == "self_update":
             title = "自动更新启动页"
             meta = """<meta http-equiv="refresh" content="2;url=/?p=last_msg#last_msg">"""
-            s = rescourses("self_update", {})
+            s = Rescourses.get2("self_update")
             threading.Thread(target=self_update).start()
         else:
             tag = "404"
@@ -1352,10 +1392,10 @@ class System:
             meta = """<meta http-equiv="refresh" content="2;url=/">"""
 
         if tag:
-            tmp = rescourses(tag, data)
+            tmp = Rescourses.get(tag, data)
             if tmp != "None":
                 s = tmp
-        s = rescourses("template", {
+        s = Rescourses.get("template", {
             "content":s,
             "meta":meta, "title":f"{title} - {ip}",
             "loginstatus":loginstatus})
@@ -1371,13 +1411,13 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
         # 如果访问根路径，返回主页
         if path in ('/', '/userlist', '/login', '/register',
                     '/login', '/dashboard', '/about', '/search',
-                    '/self_update'):
+                    '/self_update', '/edit'):
             ip = self.client_address[0]
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
             # 生成HTML页面(生成主页面HTML)
-            if path in ("/", "/search", "/login"):
+            if path in ("/", "/search", "/login", "/edit"):
                 ip = {"ip":ip, "query":parsed_path.query}
             if path == "/":
                 path = "msg_list"
@@ -1388,7 +1428,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-type', 'text/css')
             self.end_headers()
-            html_content = rescourses("css", {})
+            html_content = Rescourses.get2("css")
         else:
             # # 对于其他路径，使用默认的文件服务行为
             # super().do_GET()
@@ -1473,6 +1513,30 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
                 SYSTEM.messages.append(Message(SYSTEM.now_user[self.client_address[0]], str(message)))
                 data["content"] = """<p>留言成功！</p>"""
                 url_ref = "/?p=last_msg#last_msg"
+        elif parsed_path.path == '/edit' and "message" in parsed_data and "keyid" in parsed_data:
+            data["content"] = """<p>消息编辑失败，原因未知</p>"""
+            keyid = parsed_data.get("keyid")
+            keyid = str(keyid[0] if keyid else "")
+            if keyid:
+                msgs = [i for i in SYSTEM.messages if i.id == keyid]
+            else:
+                msgs = []
+            if msgs and ((datetime.now().timestamp() - msgs[0].timestamp < 60*10\
+                    and SYSTEM.now_user.get(self.client_address[0]) and\
+                    SYSTEM.now_user[self.client_address[0]]._id == msgs[0].owner) \
+                    or SYSTEM.now_user.get(self.client_address[0]) == SYSTEM.system):
+                message = parsed_data.get("message")
+                message = str(message[0] if message else "")
+                msgs[0].content = message
+                msgs[0].edit_history.append(datetime.now().timestamp())
+                data["content"] = """<p>编辑成功！</p>"""
+                url_ref = "/search?id="+keyid
+            elif msgs and not SYSTEM.now_user.get(self.client_address[0]):
+                data["content"] = """<p>尚未登录！</p>"""
+            elif msgs and (datetime.now().timestamp() - msgs[0].timestamp >= 60*10):
+                data["content"] = """<p>提交修改时已超时（10分钟）！</p>"""
+            else:
+                data["content"] = """<p>错误的用户！</p>"""
         elif parsed_path.path == '/logout':
             if SYSTEM.now_user.get(self.client_address[0]):
                 SYSTEM.now_user.pop(self.client_address[0])
@@ -1585,7 +1649,7 @@ def download_anti_program():
     if outf.is_file() and not has_file:
         outf.unlink()
     print("[INFO] 正在尝试下载反极域软件")
-    url = rescourses("url_anti_jiyu", {})
+    url = Rescourses.get2("url_anti_jiyu")
     urls = [f"http://ghfast.top/{url}", f"http://{url}"]
     download_file(urls, outf)
     if outf.is_file():
@@ -1594,10 +1658,10 @@ def download_anti_program():
 
 def self_update():
     print("[INFO] 正在尝试更新本程序")
-    url = rescourses("url_self_1", {})
+    url = Rescourses.get2("url_self_1")
     urls = [f"http://ghfast.top/{url}",
             f"http://{url}",
-            rescourses("url_self_2", {}),]
+            Rescourses.get("url_self_2"),]
     content = download_file(urls, "")
     msg = []
     try:

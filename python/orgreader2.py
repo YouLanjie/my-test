@@ -874,7 +874,7 @@ class Document:
                         "footnote_style":("", ""),
                         "css_in_html":"", "js_in_html":"",
                         "pygments_css":True,"mathjax_script":True,
-                        "progress":False}
+                        "progress":False,"id_prefix":""}
         self.status = {"lowest_title":50, "clean_up":False, "is_in_src":[],
                        "table_of_content":[], "footnotes":{},
                        "setupfiles":setupfiles or []}
@@ -1449,53 +1449,83 @@ class HtmlExportVisitor(ExportVisitor):
         self.figure_count = 0
         self.footnote_count = 0
         self.call_footnotes = []
+    def toc_to_html(self, node: Document) -> str:
+        """获取目录并转成html"""
+        options :dict = node.meta["options"]
+        if not node.status["table_of_content"] or not options["toc"]:
+            return ""
+        ret = """\n<div id="table-of-contents" role="doc-toc">\n<h2>Table of Contents</h2>\n"""
+        ret += """<div id="text-table-of-contents" role="doc-toc">\n"""
+        last = node.status["lowest_title"]-1
+        for i in node.status["table_of_content"]:
+            if not isinstance(options["toc"],bool) and len(i[:-1]) > options["toc"]:
+                continue
+            if not isinstance(options["h"],bool) and len(i[:-1]) > options["h"]:
+                continue
+            level = ".".join(str(j) for j in i[node.status["lowest_title"]-1:-1])+"."
+            if not isinstance(options["num"],bool) and len(i[:-1]) > options["num"]:
+                text = ""
+            else:
+                text = f"{level} "
+            if i[-1]["todo"]:
+                text+=f"<span class=\"todo {i[-1]["todo"][0]}\">{i[-1]["todo"][1]}</span> "
+            text+=f"{i[-1]["title"].accept(self.text_backend)}"
+            if i[-1]["tag"]:
+                text+=f"""{"&nbsp;"*3}<span class="tag">"""
+                tags = i[-1]["tag"].split(":")
+                li = []
+                for j in tags:
+                    li.append(f"""<span class="{j}">{j}</span>""")
+                text += "&nbsp;".join(li)
+                text += """</span>"""
+
+            if len(i[:-1]) > last:
+                ret+="<ul><li>"*(len(i[:-1])-last)
+            elif len(i[:-1]) == last:
+                ret+="</li><li>"
+            else:
+                ret+="</li></ul>"*(last-len(i[:-1]))
+                ret+="</li>\n<li>"
+            levels = node.setting["id_prefix"] + re.sub(r"\.","-",level[:-1])
+            ret+=f"""<a href="#org-title-{levels}">{text}</a>"""
+            last = len(i[:-1])
+
+        ret+="</li></ul>"*(last)
+        ret += "</div></div>"
+        return ret
+    def fns_to_html(self, node: Document) -> str:
+        """获取footnotes并转成html"""
+        template = {
+        "footnotes": Template("""\
+<div id="footnotes">
+<h2 class="footnotes">Footnotes: </h2>
+<div id="text-footnotes">
+${footnotes}</div></div>"""),
+                    "footnote": Template("""\
+<div class="footdef">
+<sup>\
+<a id="fn.${href_id}" class="footnum" href="#fnr.${href_id}" role="doc-backlink">${s}${id}${e}</a>\
+</sup>
+<div class="footpara" role="doc-footnote">${content}</div>
+</div>"""),}
+        li = sorted([node.status["footnotes"][i] for i in self.call_footnotes],
+                    key=lambda x:x.id)
+        footnotes = []
+        for i in li:
+            href_id = i.name if i.type == "str" else i.id
+            footnotes.append(template["footnote"].safe_substitute(
+                href_id = node.setting["id_prefix"]+str(href_id),
+                s = node.setting["footnote_style"][0],
+                id = i.id,
+                e = node.setting["footnote_style"][1],
+                content = self.visit_footnote(i, printable=True).\
+                        replace("<p>","<p class=\"footpara\">"),
+                    ))
+        return template["footnotes"].safe_substitute(footnotes = "".join(footnotes))
     def visit_document(self, node: Document) -> str:
         self.figure_count = 0
         self.footnote_count = 0
         self.call_footnotes = []
-        def toc_to_html() -> str:
-            """获取目录并转成html"""
-            options :dict = node.meta["options"]
-            if not node.status["table_of_content"] or not options["toc"]:
-                return ""
-            ret = """\n<div id="table-of-contents" role="doc-toc">\n<h2>Table of Contents</h2>\n"""
-            ret += """<div id="text-table-of-contents" role="doc-toc">\n"""
-            last = node.status["lowest_title"]-1
-            for i in node.status["table_of_content"]:
-                if not isinstance(options["toc"],bool) and len(i[:-1]) > options["toc"]:
-                    continue
-                if not isinstance(options["h"],bool) and len(i[:-1]) > options["h"]:
-                    continue
-                level = ".".join(str(j) for j in i[node.status["lowest_title"]-1:-1])+"."
-                if not isinstance(options["num"],bool) and len(i[:-1]) > options["num"]:
-                    text = ""
-                else:
-                    text = f"{level} "
-                if i[-1]["todo"]:
-                    text+=f"<span class=\"todo {i[-1]["todo"][0]}\">{i[-1]["todo"][1]}</span> "
-                text+=f"{i[-1]["title"].accept(self.text_backend)}"
-                if i[-1]["tag"]:
-                    text+=f"""{"&nbsp;"*3}<span class="tag">"""
-                    tags = i[-1]["tag"].split(":")
-                    li = []
-                    for j in tags:
-                        li.append(f"""<span class="{j}">{j}</span>""")
-                    text += "&nbsp;".join(li)
-                    text += """</span>"""
-
-                if len(i[:-1]) > last:
-                    ret+="<ul><li>"*(len(i[:-1])-last)
-                elif len(i[:-1]) == last:
-                    ret+="</li><li>"
-                else:
-                    ret+="</li></ul>"*(last-len(i[:-1]))
-                    ret+="</li>\n<li>"
-                ret+=f"""<a href="#org-title-{re.sub(r"\.","-",level[:-1])}">{text}</a>"""
-                last = len(i[:-1])
-
-            ret+="</li></ul>"*(last)
-            ret += "</div></div>"
-            return ret
 
         template = {"body": Template("""\
 <!DOCTYPE html>
@@ -1519,18 +1549,6 @@ ${postamble}
  <a accesskey="h" href="${up}"> UP </a>
  |
  <a accesskey="H" href="${home}"> HOME </a>
-</div>"""),
-                    "footnotes": Template("""\
-<div id="footnotes">
-<h2 class="footnotes">Footnotes: </h2>
-<div id="text-footnotes">
-${footnotes}</div></div>"""),
-                    "footnote": Template("""\
-<div class="footdef">
-<sup>\
-<a id="fn.${href_id}" class="footnum" href="#fnr.${href_id}" role="doc-backlink">${s}${id}${e}</a>\
-</sup>
-<div class="footpara" role="doc-footnote">${content}</div>
 </div>"""),
                     "postamble" : f"""\
 <div id="postamble" class="status">\
@@ -1560,7 +1578,7 @@ ${footnotes}</div></div>"""),
                     ) if node.meta["html_link_home"] or node.meta["html_link_up"] else "",
                 "bodytitle": f"\n<h1 class=\"title\">{" ".join(node.meta["title"])}</h1>" \
                         if node.meta["title"] else "",
-                "toc": toc_to_html(),
+                "toc": self.toc_to_html(node),
                 "body": node.root.accept(self),
                 "footnotes" : "",
                 "postamble" : template["postamble"],
@@ -1572,22 +1590,7 @@ ${footnotes}</div></div>"""),
                 data[i] = "\n" + data[i]
 
         if node.status["footnotes"]:
-            li = sorted([node.status["footnotes"][i] for i in self.call_footnotes],
-                        key=lambda x:x.id)
-            footnotes = []
-            for i in li:
-                href_id = i.name if i.type == "str" else i.id
-                footnotes.append(template["footnote"].safe_substitute(
-                    href_id = href_id,
-                    s = node.setting["footnote_style"][0],
-                    id = i.id,
-                    e = node.setting["footnote_style"][1],
-                    content = self.visit_footnote(i, printable=True).\
-                            replace("<p>","<p class=\"footpara\">"),
-                        ))
-            data["footnotes"] = template["footnotes"].safe_substitute(
-                    footnotes = "".join(footnotes),
-                    )
+            data["footnotes"] = self.fns_to_html(node)
 
         html = template["body"].safe_substitute(data)
         return html
@@ -1772,7 +1775,7 @@ ${footnotes}</div></div>"""),
                 j += "\n"
             text +=  j
         return text
-    def visit_title(self, node) -> str:
+    def visit_title(self, node: Title) -> str:
         if node.comment or not node.opt["printable"]:
             return ""
         title = node.line.accept(self)
@@ -1780,16 +1783,17 @@ ${footnotes}</div></div>"""),
         lv = ".".join([str(i) for i in ids])
 
         text = ""
+        levels = node.document.setting["id_prefix"] + re.sub(r"\.","-",lv)
         if node.level <= node.document.meta["options"]["h"]:
-            text += f"""<div id="outline-container-{re.sub(r"\.","-",lv)}" class=\"outline-{node.level+1}\">\n"""
+            text += f"""<div id="outline-container-{levels}" class=\"outline-{node.level+1}\">\n"""
             text += f"""<h{node.level+2-node.document.status["lowest_title"]} """+\
-                f"""id="org-title-{re.sub(r"\.","-",lv)}">"""
+                f"""id="org-title-{levels}">"""
             headline_num = node.document.meta["options"]["num"]
             if (isinstance(headline_num,bool) and headline_num) or len(ids) <= headline_num:
                 text += """<span class="section-number-"""+\
                         f"""{node.level+2-node.document.status["lowest_title"]}">{lv}.</span>"""
         else:
-            text += f"""<li>\n<a id="org-title-{re.sub(r"\.","-",lv)}"></a>"""
+            text += f"""<li>\n<a id="org-title-{levels}"></a>"""
 
         if node.todo:
             text+=f" <span class=\"{node.todo[0]} {node.todo[1]}\">{node.todo[1]}</span>"
@@ -1811,7 +1815,7 @@ ${footnotes}</div></div>"""),
         has_text_outline = False
         if node.child and not isinstance(node.child[0], Title):
             text += f"""<div class="outline-text-{node.level+1}" """+\
-                    f"""id="text-{re.sub(r"\.","-",lv)}">"""
+                    f"""id="text-{levels}">"""
             has_text_outline = True
 
         for i in node.child:
@@ -1827,7 +1831,7 @@ ${footnotes}</div></div>"""),
         else:
             text += "</li>\n"
         return text
-    def visit_strings(self, node, li: list) -> str:
+    def visit_strings(self, node: Strings, li: list) -> str:
         """输出行内html"""
         if not li:
             return ""
@@ -1872,6 +1876,7 @@ ${footnotes}</div></div>"""),
                 else:
                     num = fn.id
                 name = fn.name if fn.type == "str" else num
+                name = node.upward.document.setting["id_prefix"] + str(name)
                 fn.line.accept(self)
                 ret += f"""<sup><a id="fnr.{name}" class="footref" """
                 ret += f"""href="#fn.{name}" role="doc-backlink">"""
