@@ -13,6 +13,7 @@ import curses
 import argparse
 from pathlib import Path
 import json
+import shlex
 
 import pytools
 
@@ -178,7 +179,17 @@ class Ui():
         curses.endwin()
         print("\n>>>>>>>> RUN:\n"+"\n".join(["$ "+i for i in cmd.splitlines()]))
         print("<<<<<<<<")
-        os.system(cmd)
+        if os.name == "posix":
+            os.system(cmd)
+        else:
+            # 针对windows做的尝试性优化处理
+            for i in cmd.splitlines():
+                if i.startswith("#"):
+                    continue
+                c = shlex.split(i)
+                if not c:
+                    continue
+                subprocess.run(shlex.split(i), check=False)
         input("Press enter to return")
         curses.reset_prog_mode()
     def setting(self):

@@ -90,9 +90,19 @@ def calculate_relative2(path_to:Path, path_from:Path) -> Path:
     return Path(f"./{back_relative}/{relative}")
 
 def get_strtime(dt:datetime.datetime = datetime.datetime.now(), h=True,m=True,s=True) -> str:
-    """get formatted datetime string"""
+    """返回格式化的字符串（时分秒可选）"""
     t = dt.strftime("%Y-%m-%d ")
     t += "一二三四五六日"[dt.weekday()]
     l = [i[1] for i in ((h,"%H"),(m,"%M"),(s,"%S")) if i[0]]
     t += dt.strftime(" "+":".join(l) if l else "")
     return t
+
+def get_filename_test_str(touch=False, skip="") -> str:
+    """生成用于文件名测试的字符串"""
+    spec = r"`~!@#$%^&*()-=_+[]{}\|,.<>?;:' "+'"\n\t'
+    spec = list(set(spec)-set(skip))
+    table = list(range(ord('A'),ord('Z')+1))+list(range(ord('a'),ord('z')))
+    f = "".join(["%c%c" % (i,j) for i,j in zip(table[:len(spec)],spec)]) + ".txt"
+    if touch and not Path(f).exists():
+        Path(f).touch()
+    return f

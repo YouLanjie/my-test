@@ -132,6 +132,7 @@ class Sites:
         self.output_d = output_d
         self.title = title
         self.args = args
+        self.formatter = orgreader2.HtmlExportVisitor()
     def process_sigal_page(self, index:int, running, finish_count, lock):
         lock.acquire()
         running.value += 1
@@ -160,7 +161,8 @@ class Sites:
             finish_count.value += 1
             lock.release()
             save_file(Path(f"{self.output_d}/{objname}.html"),
-                      str(doc.to_html()).replace("<img ", '<img data-fancybox="gallery" '),
+                      str(doc.accept(self.formatter)).\
+                              replace("<img ", '<img data-fancybox="gallery" '),
                       f"({finish_count.value}/{len(self.dir_list)})")
         # print(output)
         lock.acquire()
@@ -197,7 +199,7 @@ def main():
             doc = orgreader2.Document(output.splitlines(),
                                       setting={"pygments_css":False,"mathjax_script":False})
             save_file(Path(f"{output_d}/index.html"),
-                      str(doc.to_html()))
+                      str(doc.accept(orgreader2.HtmlExportVisitor())))
         # print(output)
     elif dir_list:
         print("INFO 单文件(无章节)")
