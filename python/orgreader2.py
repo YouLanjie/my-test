@@ -10,6 +10,7 @@ import re
 import gzip
 import importlib
 import threading
+import subprocess
 from html import escape
 from abc import ABC, abstractmethod
 from string import Template
@@ -74,6 +75,9 @@ class ExportVisitor(ABC):
         return ""
     @abstractmethod
     def visit_blockcenter(self, node) -> str:
+        return ""
+    @abstractmethod
+    def visit_blockproperties(self, node) -> str:
         return ""
     @abstractmethod
     def visit_table(self, node) -> str:
@@ -144,10 +148,13 @@ class Strings:
                 file_path = file_path.group(2) if file_path else link
                 if not link.startswith("./") and not Path(file_path).is_file():
                     self.log(f"无法解决的链接: {link}", "ERROR")
-                for j in "%[]\"\\ #?|<>":
+                elif self.upward.document.setting.get("verbose_msg")\
+                        and link.startswith("./") and not Path(file_path).is_file():
+                    self.log(f"无法找到链接文件: {link}", "WARN")
+                for j in "%[]\"\\ #?|<>\t":
                     if j not in link:
                         continue
-                    link = link.replace(j, f"%{hex(ord(j))[2:].upper()}")
+                    link = link.replace(j, f"%{hex(ord(j))[2:].upper().zfill(2)}")
         ret = re.match(r".*/(.*\.(?:"+"|".join(self.img_exts)+r"))",link,re.I)
         if not alt and ret:
             mode,alt = self._parse_img(ret, last)
@@ -349,6 +356,39 @@ class Root:
             return getattr(visitor, method_name)(self)
         # 默认返回空字符串（适配未实现的节点类型）
         return ""
+    def search(self, key, opt="father"):
+        """search for node"""
+        if isinstance(key, int):
+            if self.start > key:
+                return None
+            if self.start == key:
+                return self
+            i = 0
+            while i < len(self.child):
+                if self.child[i].start > key and i > 0:
+                    return self.child[i-1].search(key, opt)
+                i += 1
+            if self.child:
+                return self.child[i-1].search(key, opt)
+            return None
+
+        if isinstance(key, Root) and key in self.child:
+            if opt == "father":
+                return self
+            if opt == "last":
+                if self.child.index(key)-1 >= 0:
+                    return self.child[self.child.index(key)-1]
+                return None
+            if opt == "next":
+                if self.child.index(key)+1 < len(self.child):
+                    return self.child[self.child.index(key)+1]
+                return None
+            return None
+        for i in self.child:
+            ret = i.search(key, opt)
+            if ret:
+                return ret
+        return None
 
 class TextBase(Root):
     """文本基类"""
@@ -395,11 +435,94 @@ class Meta(Root):
         elif self.key == "options":
             self._process_options()
             return
+        elif self.key == "include":
+            self._load_include_file()
         elif self.key in ("caption", "name"):
             self.document.meta[self.key][self.start] = self.value
+    def _load_include_file(self):
+        incf=Path(self.document.setting["file_name"]).parent if self.document.setting["file_name"] else Path()
+
+        i = self.value
+        li : list[tuple[bool,str]] = []
+        s = ""
+        is_str = False
+        for j,k in enumerate(i):
+            if is_str:
+                s += k
+            elif k != " ":
+                s += k
+            if (j <= 0 or i[j-1] == " ") and not is_str and k == '"':
+                is_str = True
+            if (j+1==len(i) or (j+1<len(i) and i[j+1] == " ")) and is_str and k == '"':
+                is_str = False
+                li.append((True, s[1:-1]))
+                s = ""
+                continue
+            if s and (k == " " and not is_str) or j+1==len(i):
+                li.append((False, s))
+                s = ""
+        if not li:
+            return
+        incf=incf/li[0][1]
+        if not incf or not Path(incf).is_file():
+            return
+
+        args = {"search":"", "block":[],
+                ":minlevel":"", ":lines":[]}
+        li = li[1:]
+        i = 0
+        while i < len(li):
+            if li[i][1] == ":lines" and i+1 < len(li):
+                s = li[i+1][1].split("-")
+                if not s or len(s) > 2:
+                    i+=1
+                    continue
+                try:
+                    s = [int(i or -1) for i in s]
+                    if set(s) == {-1}:
+                        s = []
+                except ValueError:
+                    s = []
+                args[":lines"] = s
+                i += 1
+            elif li[i][1] == "src":
+                args["block"] = ["src"]
+                if i+1 < len(li) and (li[i+1][0] or not li[i+1][1].startswith(":")):
+                    args["block"] += [li[i+1][1]]
+            elif li[i][1] == "quote":
+                args["block"] = ["quote"]
+            i+=1
+            
+        s = Path(incf).read_text(encoding="utf8").splitlines()
+        if len(args[":lines"]) == 1:
+            s = [s[args[":lines"][0]]]
+        elif len(args[":lines"]) == 2:
+            s1 = args[":lines"][0]
+            s1 = 0 if s1 < 0 else s1
+            s2 = args[":lines"][1]
+            if s2 > s1:
+                s = s[s1:s2]
+            else:
+                s = s[s1:]
+        if args["block"]:
+            blk = args["block"][0]
+            arg = "".join(args["block"][1:])
+            if arg:
+                arg = " "+arg
+            if blk == "src":
+                i = 0
+                while i < len(s):
+                    s[i] = re.sub(r"^( *)([*,]|#\+)", r"\1,\2", s[i])
+                    i+=1
+            s = ["",f"#+begin_{blk}{arg}"]+s+[f"#+end_{blk}",""]
+
+        self.document.lines = self.document.lines[:self.start+1]+\
+                s+\
+                self.document.lines[self.start+1:]
     def _load_sub_setupfile(self):
         content = ""
-        setupfile=Path(f"{Path(self.document.setting["file_name"]).parent}/{self.value}")
+        setupfile=Path(self.document.setting["file_name"]).parent if self.document.setting["file_name"] else Path()
+        setupfile=setupfile/self.value
         setupfile_name = ""
         if setupfile.is_file():
             content = setupfile.read_text(encoding="utf8")
@@ -789,6 +912,18 @@ class BlockQuote(Block):
 class BlockCenter(BlockQuote):
     """居中块"""
 
+class BlockProperties(BlockQuote):
+    """属性块"""
+    is_printable = re.compile(r"^ *:([^:]*):(?:\s+(.*)|$)")
+    def __init__(self, document) -> None:
+        super().__init__(document)
+        self.opt["printable"] = False
+    def add(self, obj:Root):
+        super().add(obj)
+        line = self.document.lines[obj.start]
+        if not self.is_printable.match(line):
+            self.log(str((line)), "DEBUG")
+            self.opt["printable"] = True
 class Table(TextBase):
     """表格"""
     def __init__(self, document) -> None:
@@ -874,7 +1009,7 @@ class Document:
                         "footnote_style":("", ""),
                         "css_in_html":"", "js_in_html":"",
                         "pygments_css":True,"mathjax_script":True,
-                        "progress":False,"id_prefix":""}
+                        "progress":False,"id_prefix":"","verbose_msg":False}
         self.status = {"lowest_title":50, "clean_up":False, "is_in_src":[],
                        "table_of_content":[], "footnotes":{},
                        "setupfiles":setupfiles or []}
@@ -886,14 +1021,19 @@ class Document:
             "setupfile":[],
             "html_link_home":"",
             "html_link_up":"",
+            "include":[],
             "caption":{},
             "name":{},
+            "language":"",
+            "property":[],
             "html_head":[],
             "seq_todo":{"todo":["TODO"], "done":["DONE"]},
             # H:最大视为标题等级
             # toc:目录显示的标题等级(num/t/nil)
             # num:最大显示数字标号的标题等级
-            "options":{"h":3, "toc":True, "num":True},
+            # ^:上下角标
+            "options":{"h":3, "toc":True, "num":True,
+                       "^":True},
             "latex_compiler":"xelatex",
             "latex_header":[],
         }
@@ -1069,6 +1209,10 @@ RULES = {
     "BlockVerse":   {"match":re.compile(r"^ *#\+begin_verse(?:[ ]+(.*))?", re.I),
                      "class":BlockVerse,
                      "end":re.compile(r"^ *#\+end_verse", re.I)},
+    "BlockProperties":    # 这玩意绝对算是奇葩中的奇葩，一堆Block下来的就它一个:properties:
+                    {"match":re.compile(r"^ *:PROPERTIES:", re.I),
+                     "class":BlockProperties,
+                     "end":re.compile(r"^ *:END:", re.I)},
     "Comment":      {"match":re.compile(r"^[ ]*#[ ]+(.*)", re.I),"class":Comment},
     "List":         {"match":re.compile(r"^( *)(-|\+|(?<!^)\*|[0-9]+(?:\)|\.))( +(?:.*)|$)", re.I),
                      "class":List,
@@ -1210,6 +1354,8 @@ class TextExportVisitor(ExportVisitor):
         ret += "\n".join(f"| {i}" for i in node.line.accept(self).splitlines())
         ret += "`===="
         return ret
+    def visit_blockproperties(self, node) -> str:
+        return ""
     def visit_comment(self, node) -> str:
         return ""
     def visit_list(self, node) -> str:
@@ -1392,6 +1538,8 @@ class TexExportVisitor(ExportVisitor):
     def visit_blockquote(self, node) -> str:
         return ""
     def visit_blockcenter(self, node) -> str:
+        return ""
+    def visit_blockproperties(self, node) -> str:
         return ""
     def visit_table(self, node) -> str:
         return ""
@@ -1690,6 +1838,16 @@ ${postamble}
         return ret
     def visit_comment(self, node) -> str:
         return ""
+    def visit_blockproperties(self, node: BlockProperties) -> str:
+        cond = not node.opt["printable"]
+        last = node.document.root.search(node, "last")
+        cond = cond and not last
+        if cond:
+            return ""
+        text = ""
+        for i in node.child:
+            text += i.accept(self)
+        return text
     def visit_list(self, node) -> str:
         text = f"<{node.type} class=\"org-{node.type}\">\n"
         for i in node.child:
@@ -1905,10 +2063,22 @@ def _set_css(args, doc:Document):
         doc.setting["css_in_html"] = ""
     if not args.emacs_css:
         return
-    if not list(Path("/usr/share/emacs/").glob("**/ox-html.el.gz")):
+    ret = subprocess.run("type emacs", capture_output=True, shell=True, check=False)
+    emacs_home = None
+    if ret.returncode == 0:
+        emacs_home = list(Path(ret.stdout.decode()[9:]).resolve().parents)
+        if len(emacs_home) < 2:
+            emacs_home = None
+        else:
+            emacs_home = emacs_home[1]/"share/emacs/"
+    if not emacs_home or not emacs_home.is_dir():
+        doc.root.log("内嵌emacs内置css失败 - 找不到Emacs")
+        return
+    li = list(emacs_home.glob("**/ox-html.el.gz"))
+    if not li:
         doc.root.log("内嵌emacs内置css失败 - 找不到文件")
         return
-    css_file = list(Path("/usr/share/emacs/").glob("**/ox-html.el.gz"))[0]
+    css_file = li[0]
     if not css_file.is_file():
         doc.root.log(f"内嵌emacs内置css失败 - 不是文件:{css_file}")
         return
@@ -1967,7 +2137,8 @@ def run_main() -> Document|str|None:
 
     ret = Document(inp.splitlines(), file_name=inp_fname,
                    setting={"pygments_css":args.pygments_css,
-                            "progress":args.auto_output and args.progress})
+                            "progress":args.auto_output and args.progress,
+                            "verbose_msg":args.verbose})
     _set_css(args, ret)
     configs = {
             "html":["html", lambda:ret.accept(HtmlExportVisitor())],
@@ -1995,6 +2166,7 @@ def parse_arguments():
     parser.add_argument('-E', '--emacs-css', action="store_true", help='从安装好的emacs获取内置css文件')
     parser.add_argument('-O', '--auto-output', action="store_true", help='自动输出到同名的.org文件')
     parser.add_argument('-p', '--progress', action="store_true", help='显示进度条')
+    parser.add_argument('-v', '--verbose', action="store_true", help='显示更verbose msg')
     parser.add_argument('--pygments-css', action="store_true", help='内置pygments生产的css文件')
     parser.add_argument('--feature-info', action="store_true", help='查看特性信息')
     try:
