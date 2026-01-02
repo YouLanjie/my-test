@@ -31,6 +31,9 @@ class ExportVisitor(ABC):
     def visit_footnotes(self, node: "Footnotes") -> str:
         del node
         return ""
+    def visit_blockcomment(self, node: "BlockComment") -> str:
+        del node
+        return ""
 
     @abstractmethod
     def visit_strings(self, node: 'Strings', li: list) -> str:
@@ -61,9 +64,6 @@ class ExportVisitor(ABC):
         return ""
     @abstractmethod
     def visit_blockexport(self, node: "BlockExport") -> str:
-        return ""
-    @abstractmethod
-    def visit_blockcomment(self, node: "BlockComment") -> str:
         return ""
     @abstractmethod
     def visit_blockexample(self, node: "BlockExample") -> str:
@@ -147,10 +147,12 @@ class Strings:
                 # 非章节名且非#开头
                 file_path = re.match(r"((?:file:)?)(.*)",link)
                 file_path = file_path.group(2) if file_path else link
+                base_path=Path(self.upward.document.setting["file_name"]).parent if\
+                        self.upward.document.setting["file_name"] else Path()
                 if not link.startswith("./") and not Path(file_path).is_file():
                     self.log(f"无法解决的链接: {link}", "ERROR")
                 elif self.upward.document.setting.get("verbose_msg")\
-                        and link.startswith("./") and not Path(file_path).is_file():
+                        and link.startswith("./") and not (base_path/file_path).is_file():
                     self.log(f"无法找到链接文件: {link}", "WARN")
                 for j in "%[]\"\\ #?|<>\t":
                     if j not in link:
@@ -465,7 +467,8 @@ class Meta(Root):
         elif self.key in ("caption", "name"):
             self.document.meta[self.key][self.start] = self.value
     def _load_include_file(self):
-        incf=Path(self.document.setting["file_name"]).parent if self.document.setting["file_name"] else Path()
+        incf=Path(self.document.setting["file_name"]).parent if\
+                self.document.setting["file_name"] else Path()
 
         i = self.value
         li : list[tuple[bool,str]] = []
@@ -1323,8 +1326,6 @@ class TextExportVisitor(ExportVisitor):
                 text+=f"{node.document.setting["indent_str"]}{pytools.get_str_in_width(j, 60)}\n"
         text += "`>>>>>>>>"
         return text
-    def visit_blockcomment(self, node) -> str:
-        return ""
     def visit_blockquote(self, node) -> str:
         if not node.opt["printable"]:
             return ""
@@ -1526,25 +1527,30 @@ includegraphics[width=.9\linewidth]{%s}
         return "\n".join([i.accept(self) for i in node.child])
     def visit_text(self, node: Text) -> str:
         return node.line.accept(self)
-    def visit_blockcomment(self, node) -> str:
-        return ""
-    def visit_meta(self, node) -> str:
         return ""
     def visit_title(self, node:Title) -> str:
         level = node.level-node.document.status["lowest_title"]
         if level < 3:
-            tag = "sub"*level+"section"
+            tag = ["sub"*level+"section{", "}"]
         else:
-            tag = "item"
-        title = "\\%s{%s}\n" % (tag, node.line.accept(self))
+            tag = ["item ", ""]
+        title = f"\\{tag[0]}{node.line.accept(self)}{tag[1]}\n"
         return title+"\n".join([i.accept(self) for i in node.child])
     def visit_titleoutline(self, node) -> str:
-        return "\n".join([i.accept(self) for i in node.child])
+        ret = ""
+        ret = "\n".join([i.accept(self) for i in node.child])
+        level = node.level-node.document.status["lowest_title"]
+        if level >= 3:
+            headline_num = node.document.meta["options"]["num"]
+            li_type = "itemize"
+            if (isinstance(headline_num,bool) and headline_num) or node.level <= headline_num:
+                li_type = "enumerate"
+            ret = "\\begin{%s}\n%s\n\\end{%s}" % (li_type, ret, li_type)
+        return ret
     def visit_footnote(self, node) -> str:
         return "\n".join([i.accept(self) for i in node.child])
-    def visit_listitem(self, node) -> str:
+    def visit_listitem(self, node: ListItem) -> str:
         text = ""
-        # indent_str = node.document.setting["indent_str"]
         indent_str = ""
         ret = f"\n{indent_str}".join(node.child[0].accept(self).splitlines())
         text += f"{ret}\n"
@@ -1923,8 +1929,6 @@ ${postamble}
             text += i.accept(self)
         text += "</div>"
         return text
-    def visit_blockcomment(self, node) -> str:
-        return ""
     def visit_blockexample(self, node) -> str:
         if not isinstance(node.line, Strings) or not node.opt["printable"]:
             return ""
