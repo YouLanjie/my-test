@@ -22,6 +22,16 @@ except ImportError:
 
 class ExportVisitor(ABC):
     """导出基类"""
+    def visit_comment(self, node: "Comment") -> str:
+        del node
+        return ""
+    def visit_meta(self, node: "Meta") -> str:
+        del node
+        return ""
+    def visit_footnotes(self, node: "Footnotes") -> str:
+        del node
+        return ""
+
     @abstractmethod
     def visit_strings(self, node: 'Strings', li: list) -> str:
         return ""
@@ -32,19 +42,10 @@ class ExportVisitor(ABC):
     def visit_text(self, node: "Text") -> str:
         return ""
     @abstractmethod
-    def visit_comment(self, node: "Comment") -> str:
-        return ""
-    @abstractmethod
-    def visit_meta(self, node: "Meta") -> str:
-        return ""
-    @abstractmethod
     def visit_title(self, node: "Title") -> str:
         return ""
     @abstractmethod
     def visit_titleoutline(self, node: "TitleOutline") -> str:
-        return ""
-    @abstractmethod
-    def visit_footnotes(self, node: "Footnotes") -> str:
         return ""
     @abstractmethod
     def visit_footnote(self, node: "Footnote") -> str:
@@ -93,16 +94,16 @@ def _get_strings_pattern(s:str,blank_char=" )-,") -> re.Pattern:
 class Strings:
     """行内字符串类，提供行内格式转换"""
     pattern = [
-            ("link", re.compile(r"^\[\[((?:[^\[\]\\]|\\.)*)(?:\]\[(.*?))?\]\]")),
+            ("link", re.compile(r"^\[\[((?:[^\[\]\\]|\\.)*)(?:\]\[(.*?))?\]\]"), "["),
             ("timestamp",
-             re.compile(r"([\[<])(\d{4})-(\d{2})-(\d{2})(?:\D*(?<= )(\d\d?):(\d{2}).*|.*)[\]>]")),
-            ("fn", re.compile(r"\[fn:([^]]*)\]")),
-            ("code", _get_strings_pattern("=")),
-            ("code", _get_strings_pattern("~")),
-            ("italic", _get_strings_pattern("/")),
-            ("bold", _get_strings_pattern(r"\*")),
-            ("del", _get_strings_pattern(r"\+")),
-            ("underline", _get_strings_pattern("_")),
+             re.compile(r"([\[<])(\d{4})-(\d{2})-(\d{2})(?:\D*(?<= )(\d\d?):(\d{2}).*|.*)[\]>]"), "[<"),
+            ("fn", re.compile(r"\[fn:([^]]*)\]"), "["),
+            ("code", _get_strings_pattern("="), "="),
+            ("code", _get_strings_pattern("~"), "~"),
+            ("italic", _get_strings_pattern("/"), "/"),
+            ("bold", _get_strings_pattern(r"\*"), "*"),
+            ("del", _get_strings_pattern(r"\+"), "+"),
+            ("underline", _get_strings_pattern("_"), "_"),
             ]
     img_exts=["png", "jpg", "jpeg", "gif", "webp", "svg", "avif"]
     rules = {"code":("<code>","</code>"),
@@ -194,35 +195,43 @@ class Strings:
         li = []
         i = 0
         last = i
-        while i < len(s):
-            for current_pattern in self.pattern:
+        patterns = [j for j in self.pattern if \
+                [k for k in j[2] if k in s]]
+        if not patterns:
+            i = len(s)
+        while patterns and i < len(s):
+            ret = None
+            current_pattern = None
+            for current_pattern in patterns:
                 ret = current_pattern[1].match(s[i:])
-                if not ret:
-                    continue
-                # 识别前一字符是否满足条件（前后条件还不一样）
-                if current_pattern[0] not in ("link", "fn") and i-1 > 0 \
-                        and s[i-1] not in " (-\n":
-                    continue
-                if last != i and re.findall(r"[^ ]", s[last:i]):
-                    # 补充增加前面的纯文本内容
-                    li.append(s[last:i])
-                last = i
-                i+=ret.span()[1]
-                if current_pattern[0] == "link":
-                    self._parse_link(ret, li, last)
-                elif current_pattern[0] == "timestamp":
-                    self._parse_timestamp(ret, li)
-                elif current_pattern[0] == "code":
-                    li.append([current_pattern[0], [ret.group(1)]])
-                elif current_pattern[0] == "fn":
-                    li.append([current_pattern[0], ret.group(1)])
-                else:
-                    # 其他杂项并嵌套调用
-                    li.append([current_pattern[0], self.orgtext_to_list(ret.group(1), True)])
-                last = i
-                i -= 1
-                break
-            i+=1
+                if ret:
+                    break
+            if not ret or not current_pattern:
+                i+=1
+                continue
+
+            # 识别前一字符是否满足条件（前后条件还不一样）
+            if current_pattern[0] not in ("link", "fn") and i-1 > 0 \
+                    and s[i-1] not in " (-\n":
+                i+=1
+                continue
+            if last != i and s[last:i].strip():
+                # 补充增加前面的纯文本内容
+                li.append(s[last:i])
+            last = i
+            i+=ret.span()[1]
+            if current_pattern[0] == "link":
+                self._parse_link(ret, li, last)
+            elif current_pattern[0] == "timestamp":
+                self._parse_timestamp(ret, li)
+            elif current_pattern[0] == "code":
+                li.append([current_pattern[0], [ret.group(1)]])
+            elif current_pattern[0] == "fn":
+                li.append([current_pattern[0], ret.group(1)])
+            else:
+                # 其他杂项并嵌套调用
+                li.append([current_pattern[0], self.orgtext_to_list(ret.group(1), True)])
+            last = i
         if last != i and re.findall(r"[^ ]", s[last:i]):
             # 补充增加前面的纯文本内容(若非空)
             li.append(s[last:i])
@@ -267,24 +276,31 @@ class Strings:
 
 class Root:
     """根节点/节点父类"""
-    def __init__(self, document) -> None:
+    re_match = re.compile("")
+    re_end = re.compile(r"^([*]+) +(.*)", re.I)
+    def __init__(self, document, match: re.Match|None = None) -> None:
         if not isinstance(document, Document):
             return
         self.opt = {"childable": True, "breakable": True,
                     "printable":True}
         self.document = document
         self.start = document.current_line
-        self.line = Strings("", self)
         if document.lines:
-            self.line = Strings(document.lines[document.current_line], self)
+            line = document.lines[document.current_line]
+            self.line = Strings(line, self)
+            if not match:
+                match = self.re_match.match(line)
+        else:
+            self.line = Strings("", self)
+        self.match = match
         self.end_offset = 0
         self.child :list[Root] = []
         self.current = self
     def checkend(self, lines:list[str], i:int) -> tuple[bool,int]:
         """检查结构是否结束"""
-        if not self.opt["childable"]:
+        if not self.opt["childable"] and self.re_end:
             return False, i
-        match = RULES[type(self).__name__]["end"].match(lines[i])
+        match = self.re_end.match(lines[i])
         ret = i
         self.document.current_line = i
         if self.end_condition(match):
@@ -301,6 +317,8 @@ class Root:
         return False,ret
     def end(self, i:int, is_normal_end:bool) -> int:
         """进行层级关闭通知，返回落点(<i则倒退)"""
+        if hasattr(self, "match"):
+            del self.match
         if not is_normal_end and not self.opt["breakable"]:
             return self.start
         # 由上级关闭引起的关闭
@@ -394,8 +412,9 @@ class Root:
 
 class TextBase(Root):
     """文本基类"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
+    re_end = None
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
         self.opt["childable"] = False
         self.line.s = re.sub(r"^ *", "", self.line.s)
 
@@ -404,18 +423,22 @@ class Text(TextBase):
 
 class Comment(Root):
     """注释行"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
+    re_match = re.compile(r"^[ ]*#[ ]+(.*)", re.I)
+    re_end = None
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
         self.opt["childable"] = False
         self.opt["printable"] = False
 
 class Meta(Root):
     """元数据"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
+    re_match = re.compile(r"^[ ]*#\+([^: ]*)(?! ):[ ]*(.*)", re.I)
+    re_end = None
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
         self.opt["childable"] = False
         self.opt["printable"] = False
-        match = RULES[type(self).__name__]["match"].match(self.line.s)
+        match = self.match
         if match is None:
             return
         self.key = match.group(1).lower()
@@ -546,7 +569,8 @@ class Meta(Root):
         else:
             self.log(f"异常文件名提示: '{self.value}'")
         self.document.status["setupfiles"].append(self.value)
-        doc = Document(content.splitlines(),
+        content = str(content).splitlines()
+        doc = Document(content,
                        file_name=setupfile_name,
                        setupfiles=self.document.status["setupfiles"])
         self.document.status["setupfiles"]=list(\
@@ -603,9 +627,11 @@ class Meta(Root):
 
 class TitleBase(Root):
     """标题基类"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
-        match = RULES[type(self).__name__]["match"].match(self.line.s)
+    re_match = re.compile(r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)
+    re_end = re.compile(r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
+        match = self.match
         if match is None:
             return
         self.id = []
@@ -631,10 +657,9 @@ class TitleBase(Root):
 
 class Title(TitleBase):
     """标题"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
-        match = RULES[type(self).__name__]["match"]\
-                .match(self.document.lines[self.document.current_line])
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
+        match = self.match
         if match is None:
             return
         self.tag = Strings(match.group(3), self)
@@ -679,10 +704,9 @@ class Title(TitleBase):
 
 class TitleOutline(TitleBase):
     """标题（多项集合）"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
-        match = RULES[type(self).__name__]["match"]\
-                .match(self.document.lines[self.document.current_line])
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
+        match = self.match
         if match is None:
             return
         self.line = Strings("", self)
@@ -706,16 +730,20 @@ class TitleOutline(TitleBase):
 
 class Footnotes(TitleBase):
     """脚注(大标题)"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
+    re_match = re.compile(r"^([*]+) +(Footnotes *.*)(?: +:(.*):)?")
+    re_end = re.compile(r"^([*]+) +(.*)", re.I)
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
         self.opt["printable"] = False
 
 class Footnote(Root):
     """脚注(整行甚至多行的定义)"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
+    re_match = re.compile(r"^\[fn:([^]]*)\](.*)")
+    re_end = re.compile(r"(?:^\[fn:([^]]*)\](.*))|(?:^([*]+) +[^ ]+.*)")
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
         # self.opt["printable"] = False
-        match = RULES[type(self).__name__]["match"].match(self.line.s)
+        match = self.match
         if match is None:
             return
         self.line.s = ""
@@ -737,9 +765,11 @@ class Footnote(Root):
 
 class ListItem(Root):
     """列表(单项)"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
-        match = RULES[type(self).__name__]["match"].match(self.line.s)
+    re_match = re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.))( +(?:.*)|$)", re.I)
+    re_end = re.compile(r"^( *)(.*)", re.I)
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
+        match = self.match
         if match is None:
             return
         self.indent = len(match.group(1))
@@ -773,9 +803,11 @@ class ListItem(Root):
 
 class List(Root):
     """列表(多项集合)"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
-        match = RULES[type(self).__name__]["match"].match(self.line.s)
+    re_match = re.compile(r"^( *)(-|\+|(?<!^)\*|[0-9]+(?:\)|\.))( +(?:.*)|$)", re.I)
+    re_end = re.compile(r"^( *)(.*)", re.I)
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
+        match = self.match
         if match is None:
             return
         self.indent = len(match.group(1))
@@ -798,7 +830,7 @@ class List(Root):
         is_list = 0
         if len(match.group(1)) == self.indent:
             current_line = self.document.lines[self.document.current_line]
-            if RULES[type(self).__name__]["match"].match(current_line):
+            if self.re_match.match(current_line):
                 is_list = 1
         if len(match.group(1)) <= self.indent-is_list:
             i = -1
@@ -820,21 +852,24 @@ class List(Root):
 
 class Block(Root):
     """Block共同空类"""
+    re_match = re.compile("")
+    re_end = None
 
 class BlockCode(Block):
     """代码块"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
+    re_match = re.compile(r"^ *#\+begin_src(?:[ ]+(.*))?", re.I)
+    re_end = re.compile(r"^ *#\+end_src", re.I)
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
         self.opt["breakable"] = False
         self.line = self.document.lines
         self.number = 0
         self.end_offset = 1
         self.baise = -1
         self.document.status["is_in_src"].append(self.start)
-        match = RULES[type(self).__name__]["match"].match(self.line[self.start])
-        if match is None:
+        if self.match is None:
             return
-        self.lang = match.group(1)
+        self.lang = self.match.group(1)
     def add(self, obj):
         if isinstance(obj, Block):
             self.document.status["is_in_src"].pop(-1)
@@ -873,18 +908,26 @@ class BlockCode(Block):
 
 class BlockExport(BlockCode):
     """对应语言导出块"""
+    re_match = re.compile(r"^ *#\+begin_export(?:[ ]+(.*))?", re.I)
+    re_end = re.compile(r"^ *#\+end_export", re.I)
 
 class BlockComment(BlockCode):
     """注释块"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
+    re_match = re.compile(r"^ *#\+begin_comment(?:[ ]+(.*))?", re.I)
+    re_end = re.compile(r"^ *#\+end_comment", re.I)
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
         self.opt["printable"] = False
 
 class BlockExample(BlockCode):
     """代码块"""
+    re_match = re.compile(r"^ *#\+begin_example(?:[ ]+(.*))?", re.I)
+    re_end = re.compile(r"^ *#\+end_example", re.I)
 
 class BlockVerse(BlockCode):
     """参照原样输出(不合并行)"""
+    re_match = re.compile(r"^ *#\+begin_verse(?:[ ]+(.*))?", re.I)
+    re_end = re.compile(r"^ *#\+end_verse", re.I)
     def add(self, obj, flag=True):
         super().add(obj)
         if flag:
@@ -895,8 +938,10 @@ class BlockVerse(BlockCode):
 
 class BlockQuote(Block):
     """引用块"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
+    re_match = re.compile(r"^ *#\+begin_quote", re.I)
+    re_end = re.compile(r"^ *#\+end_quote", re.I)
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
         self.opt["breakable"] = False
         self.end_offset = 1
         self.document.status["is_in_src"].append(self.start)
@@ -913,12 +958,16 @@ class BlockQuote(Block):
 
 class BlockCenter(BlockQuote):
     """居中块"""
+    re_match = re.compile(r"^ *#\+begin_center", re.I)
+    re_end = re.compile(r"^ *#\+end_center", re.I)
 
 class BlockProperties(BlockQuote):
     """属性块"""
+    re_match = re.compile(r"^ *:PROPERTIES:", re.I)
+    re_end = re.compile(r"^ *:END:", re.I)
     is_printable = re.compile(r"^ *:([^:]*):(?:\s+(.*)|$)")
-    def __init__(self, document) -> None:
-        super().__init__(document)
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
         self.opt["printable"] = False
     def add(self, obj:Root):
         super().add(obj)
@@ -928,8 +977,9 @@ class BlockProperties(BlockQuote):
             self.opt["printable"] = True
 class Table(TextBase):
     """表格"""
-    def __init__(self, document) -> None:
-        super().__init__(document)
+    re_match = re.compile(r"^ *\|", re.I)
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
         self.col = 0
         self.lines : list[list[Strings]|str] = []
         self.control_line = []
@@ -941,12 +991,12 @@ class Table(TextBase):
             self.lines = ["split"]
             self.check_control_line()
             return
-        match = re.findall(r"\|([^|]*)", line)
-        if len(match)>1 and match[-1] == "":
-            match = match[:-1]
-        self.col = len(match)
+        ret = re.findall(r"\|([^|]*)", line)
+        if len(ret)>1 and ret[-1] == "":
+            ret = ret[:-1]
+        self.col = len(ret)
         self.lines : list[list[Strings]|str] = \
-                [[Strings(re.sub(r"^ *(.*?) *$", r"\1", i), self) for i in match]]
+                [[Strings(re.sub(r"^ *(.*?) *$", r"\1", i), self) for i in ret]]
         self.check_control_line()
     def check_control_line(self):
         """检查控制行(分割线、对齐行)"""
@@ -1094,17 +1144,23 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
             while not self.status["clean_up"]:
                 progress.update(self.current_line-last)
                 last = self.current_line
-                time.sleep(1/20)
+                time.sleep(1/5)
             progress.close()
         except ModuleNotFoundError:
             while not self.status["clean_up"]:
                 progress = self.current_line / total_line
                 s = "#"*int(progress*width)+" "*(width-int(progress*width))
                 print(f"{typ} [{s}] {progress*100:6.2f}% {self.current_line:10}", end="\r")
-                time.sleep(1/20)
+                time.sleep(1/5)
             print("")
     def build_tree(self):
         """构建节点树"""
+        rules = [
+                Meta, Footnotes, TitleOutline,
+                BlockCode, BlockExport, BlockQuote, BlockCenter,
+                BlockComment, BlockExample, BlockVerse, BlockProperties,
+                Comment, List, Table, Footnote,
+                Text, Root, ListItem, Title]
         last = -1
         self.current_line = 0
         while self.current_line < len(self.lines):
@@ -1114,11 +1170,11 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
             elif self.current_line - last > 1:
                 self.current_line -= 1
             else:
-                for _,current in RULES.items():
-                    ret = current["match"].match(self.lines[self.current_line])
+                for current in rules:
+                    ret = current.re_match.match(self.lines[self.current_line])
                     if ret is None:
                         continue
-                    obj = current["class"](self)
+                    obj = current(self, ret)
                     self.root.add(obj)
                     break
             last = self.current_line
@@ -1181,66 +1237,6 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
             pth.join()
         return s
 
-#^ *#\+begin_([^ \n]+)(?:[ ]+(.*?))?\n(.*?)^ *#\+end_\1\n?
-RULES = {
-    "Meta":         {"match":re.compile(r"^[ ]*#\+([^: ]*)(?! ):[ ]*(.*)", re.I), "class":Meta},
-    "Footnotes":    {"match":re.compile(
-                        r"^([*]+) +(Footnotes *.*)(?: +:(.*):)?"),
-                     "class":Footnotes,
-                     "end":re.compile(r"^([*]+) +(.*)", re.I)},
-    "TitleOutline": {"match":re.compile(
-                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
-                     "class":TitleOutline,
-                     "end":re.compile(
-                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
-    "BlockCode":    {"match":re.compile(r"^ *#\+begin_src(?:[ ]+(.*))?", re.I),
-                     "class":BlockCode,
-                     "end":re.compile(r"^ *#\+end_src", re.I)},
-    "BlockExport":  {"match":re.compile(r"^ *#\+begin_export(?:[ ]+(.*))?", re.I),
-                      "class":BlockExport,
-                      "end":re.compile(r"^ *#\+end_export", re.I)},
-    "BlockQuote":   {"match":re.compile(r"^ *#\+begin_quote", re.I),
-                     "class":BlockQuote,
-                     "end":re.compile(r"^ *#\+end_quote", re.I)},
-    "BlockCenter":  {"match":re.compile(r"^ *#\+begin_center", re.I),
-                     "class":BlockCenter,
-                     "end":re.compile(r"^ *#\+end_center", re.I)},
-    "BlockComment": {"match":re.compile(r"^ *#\+begin_comment(?:[ ]+(.*))?", re.I),
-                     "class":BlockComment,
-                     "end":re.compile(r"^ *#\+end_comment", re.I)},
-    "BlockExample": {"match":re.compile(r"^ *#\+begin_example(?:[ ]+(.*))?", re.I),
-                     "class":BlockExample,
-                     "end":re.compile(r"^ *#\+end_example", re.I)},
-    "BlockVerse":   {"match":re.compile(r"^ *#\+begin_verse(?:[ ]+(.*))?", re.I),
-                     "class":BlockVerse,
-                     "end":re.compile(r"^ *#\+end_verse", re.I)},
-    "BlockProperties":    # 这玩意绝对算是奇葩中的奇葩，一堆Block下来的就它一个:properties:
-                    {"match":re.compile(r"^ *:PROPERTIES:", re.I),
-                     "class":BlockProperties,
-                     "end":re.compile(r"^ *:END:", re.I)},
-    "Comment":      {"match":re.compile(r"^[ ]*#[ ]+(.*)", re.I),"class":Comment},
-    "List":         {"match":re.compile(r"^( *)(-|\+|(?<!^)\*|[0-9]+(?:\)|\.))( +(?:.*)|$)", re.I),
-                     "class":List,
-                     "end":re.compile(r"^( *)(.*)", re.I)},
-    "Table":        {"match":re.compile(r"^ *\|", re.I), "class":Table},
-    "Footnote":     {"match":re.compile(r"^\[fn:([^]]*)\](.*)"),
-                     "class":Footnote,
-                     "end":re.compile(r"(?:^\[fn:([^]]*)\](.*))|(?:^([*]+) +[^ ]+.*)")},
-    "Text":         {"match":re.compile(""), "class":Text},
-    "Root":         {"match":re.compile(""),
-                     "class":Comment,
-                     "end":re.compile(r"^([*]+) +(.*)", re.I)},
-                     # "end":re.compile(r"^([*]+)[ ]+((?:COMMENT )?)[ ]*(.*)", re.I)},
-    "ListItem":     {"match":re.compile(r"^( *)(-|\+|\*|[0-9]+(?:\)|\.))( +(?:.*)|$)", re.I),
-                     "class":List,
-                     "end":re.compile(r"^( *)(.*)", re.I)},
-    "Title":        {"match":re.compile(
-                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I),
-                     "class":Title,
-                     "end":re.compile(
-                            r"^([*]+) +(.*?(?= +:.*:|$))(?: +:(.*):)?", re.I)},
-    }
-
 class TextExportVisitor(ExportVisitor):
     """转成纯文本"""
     def visit_document(self, node: Document) -> str:
@@ -1290,10 +1286,6 @@ class TextExportVisitor(ExportVisitor):
                     j+="\n"
                 text += f"{node.document.setting["indent_str"]}{j}"
         return text
-    def visit_meta(self, node) -> str:
-        return ""
-    def visit_footnotes(self, node) -> str:
-        return ""
     def visit_titleoutline(self, node) -> str:
         text = ""
         for i in node.child:
@@ -1360,8 +1352,6 @@ class TextExportVisitor(ExportVisitor):
         ret += "`===="
         return ret
     def visit_blockproperties(self, node) -> str:
-        return ""
-    def visit_comment(self, node) -> str:
         return ""
     def visit_list(self, node) -> str:
         text = ""
@@ -1486,7 +1476,7 @@ class TexExportVisitor(ExportVisitor):
                 s = s.replace(i, "\\"+i)
             for i in "^~":
                 s = s.replace(i, "\\"+i+"{}")
-            s = s.replace("\n", "\\\\\n")
+            s = re.sub("(.)\n", r"\1\\\\"+"\n", s)
             return s
         if not li:
             return ""
@@ -1496,7 +1486,6 @@ class TexExportVisitor(ExportVisitor):
         for i in li:
             if isinstance(i, str):
                 i = tex_escape(i)
-                # i = escape(i).replace("\n", "<br/>")
                 ret+=i
                 continue
             i = [tex_escape(i) if isinstance(i, str) else i for i in i]
@@ -1532,7 +1521,6 @@ includegraphics[width=.9\linewidth]{%s}
                 ret += str(i)
         if ret and ret[0] == "\n":
             ret = ret[1:]
-        ret.replace("\\", "<span>\\</span>")
         return ret
     def visit_root(self, node:Root) -> str:
         return "\n".join([i.accept(self) for i in node.child])
@@ -1552,8 +1540,6 @@ includegraphics[width=.9\linewidth]{%s}
         return title+"\n".join([i.accept(self) for i in node.child])
     def visit_titleoutline(self, node) -> str:
         return "\n".join([i.accept(self) for i in node.child])
-    def visit_footnotes(self, node) -> str:
-        return ""
     def visit_footnote(self, node) -> str:
         return "\n".join([i.accept(self) for i in node.child])
     def visit_listitem(self, node) -> str:
@@ -1583,7 +1569,8 @@ includegraphics[width=.9\linewidth]{%s}
         return text
     def visit_blockcode(self, node) -> str:
         ret = "\\begin{verbatim}\n"
-        ret += node.line.s
+        if isinstance(node.line, Strings):
+            ret += node.line.s
         ret += "\\end{verbatim}"
         return ret
     def visit_blockexport(self, node) -> str:
@@ -1591,8 +1578,6 @@ includegraphics[width=.9\linewidth]{%s}
             return ""
         if node.lang == "html":
             return node.line.s
-        return ""
-    def visit_comment(self, node) -> str:
         return ""
     def visit_blockexample(self, node) -> str:
         return self.visit_blockcode(node)
@@ -1872,8 +1857,6 @@ ${postamble}
         return text
     def visit_meta(self, node) -> str:
         return ""
-    def visit_footnotes(self, node) -> str:
-        return ""
     def visit_titleoutline(self, node) -> str:
         text = ""
         for i in node.child:
@@ -1957,8 +1940,6 @@ ${postamble}
             ret += f"{Strings(i, node).accept(self)}<br/>"
         ret += "</p>"
         return ret
-    def visit_comment(self, node) -> str:
-        return ""
     def visit_blockproperties(self, node: BlockProperties) -> str:
         cond = not node.opt["printable"]
         last = node.document.root.search(node, "last")
