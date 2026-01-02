@@ -23,67 +23,67 @@ except ImportError:
 class ExportVisitor(ABC):
     """导出基类"""
     @abstractmethod
-    def visit_strings(self, node, li: list) -> str:
+    def visit_strings(self, node: 'Strings', li: list) -> str:
         return ""
     @abstractmethod
-    def visit_root(self, node) -> str:
+    def visit_root(self, node: 'Root') -> str:
         return ""
     @abstractmethod
-    def visit_text(self, node) -> str:
+    def visit_text(self, node: "Text") -> str:
         return ""
     @abstractmethod
-    def visit_blockcomment(self, node) -> str:
+    def visit_comment(self, node: "Comment") -> str:
         return ""
     @abstractmethod
-    def visit_meta(self, node) -> str:
+    def visit_meta(self, node: "Meta") -> str:
         return ""
     @abstractmethod
-    def visit_title(self, node) -> str:
+    def visit_title(self, node: "Title") -> str:
         return ""
     @abstractmethod
-    def visit_titleoutline(self, node) -> str:
+    def visit_titleoutline(self, node: "TitleOutline") -> str:
         return ""
     @abstractmethod
-    def visit_footnotes(self, node) -> str:
+    def visit_footnotes(self, node: "Footnotes") -> str:
         return ""
     @abstractmethod
-    def visit_footnote(self, node) -> str:
+    def visit_footnote(self, node: "Footnote") -> str:
         return ""
     @abstractmethod
-    def visit_listitem(self, node) -> str:
+    def visit_listitem(self, node: "ListItem") -> str:
         return ""
     @abstractmethod
-    def visit_list(self, node) -> str:
+    def visit_list(self, node: "List") -> str:
         return ""
     @abstractmethod
-    def visit_blockcode(self, node) -> str:
+    def visit_blockcode(self, node: "BlockCode") -> str:
         return ""
     @abstractmethod
-    def visit_blockexport(self, node) -> str:
+    def visit_blockexport(self, node: "BlockExport") -> str:
         return ""
     @abstractmethod
-    def visit_comment(self, node) -> str:
+    def visit_blockcomment(self, node: "BlockComment") -> str:
         return ""
     @abstractmethod
-    def visit_blockexample(self, node) -> str:
+    def visit_blockexample(self, node: "BlockExample") -> str:
         return ""
     @abstractmethod
-    def visit_blockverse(self, node) -> str:
+    def visit_blockverse(self, node: "BlockVerse") -> str:
         return ""
     @abstractmethod
-    def visit_blockquote(self, node) -> str:
+    def visit_blockquote(self, node: "BlockQuote") -> str:
         return ""
     @abstractmethod
-    def visit_blockcenter(self, node) -> str:
+    def visit_blockcenter(self, node: "BlockCenter") -> str:
         return ""
     @abstractmethod
-    def visit_blockproperties(self, node) -> str:
+    def visit_blockproperties(self, node: "BlockProperties") -> str:
         return ""
     @abstractmethod
-    def visit_table(self, node) -> str:
+    def visit_table(self, node: "Table") -> str:
         return ""
     @abstractmethod
-    def visit_document(self, node) -> str:
+    def visit_document(self, node: "Document") -> str:
         return ""
 
 def _get_strings_pattern(s:str,blank_char=" )-,") -> re.Pattern:
@@ -237,6 +237,8 @@ class Strings:
             return ""
         # 均为中文
         if ord(ch1[-1]) > 127 and ord(ch2[0]) > 127:
+            return ""
+        if ch1[-1] == "\n":
             return ""
         return " "
     def get_pre_text(self) -> str:
@@ -998,6 +1000,9 @@ class Table(TextBase):
             line += t
         li.append(line)
         self.lines = li
+    def accept(self, visitor: ExportVisitor) -> str:
+        self.check_control_line()
+        return super().accept(visitor)
 
 class Document:
     """文档类，操作基本单位"""
@@ -1467,30 +1472,59 @@ class TextExportVisitor(ExportVisitor):
 
 class TexExportVisitor(ExportVisitor):
     """导出为tex格式"""
-    def visit_strings(self, node, li: list) -> str:
+    rules = {"code":(r"\texttt{","}"),
+             "italic":(r"\emph{", "}"),
+             "bold":(r"\textbf{", "}"),
+             "del":(r"\sout{", "}"), # ulem
+             "underline":(r"\uline{", "}"), # ulem
+             "timestamp":(r"\textit{", "}")}
+    def visit_strings(self, node: Strings, li: list) -> str:
         """输出行内文本(LaTex)"""
+        def tex_escape(s:str):
+            s = s.replace("\\",r"\textbackslash ")
+            for i in "#$%&_{}":
+                s = s.replace(i, "\\"+i)
+            for i in "^~":
+                s = s.replace(i, "\\"+i+"{}")
+            s = s.replace("\n", "\\\\\n")
+            return s
         if not li:
             return ""
         ret = ""
         last_stat = ""
+        i : str | list = ""
         for i in li:
             if isinstance(i, str):
+                i = tex_escape(i)
+                # i = escape(i).replace("\n", "<br/>")
                 ret+=i
                 continue
+            i = [tex_escape(i) if isinstance(i, str) else i for i in i]
             if i[0] == "link":
-                ret += f"""[{self.visit_strings(node, i[2])}]({i[1]})"""
+                alt = self.visit_strings(node, i[2])
+                if i[1] == alt:
+                    ret += r"\url{%s}" % i[1]
+                else:
+                    ret += r"\href{%s}{%s}" % (i[1], alt)
             elif i[0] == "img":
-                ret += f"""![{self.visit_strings(node, i[2])}]({i[1]})"""
+                ret += r"""\begin{center}
+\includegraphics[width=.9\linewidth]{%s}
+\end{center}""" % i[1]
             elif i[0] == "figure":
-                ret += f"""![{self.visit_strings(node, i[2])}]({i[1]})"""
-            elif i[0] == "timestamp":
-                ret += '<span class="timestamp-wrapper"><span class="timestamp">'
-                ret += f"{i[1]}"
-                ret += '</span></span>'
-                ret += last_stat
-                last_stat = ""
-            elif i[0] in node.rules:
-                ret += f"""{node.rules[i[0]][0]}{self.visit_strings(node, i[1])}{node.rules[i[0]][1]} """
+                ret += r"""\begin{figure}[htbp]
+\centering
+includegraphics[width=.9\linewidth]{%s}
+\caption{%s}
+\end{figure}""" % (i[1],self.visit_strings(node, i[2]))
+            elif i[0] == "fn":
+                fns : dict = node.upward.document.status["footnotes"]
+                if not fns.get(i[1]):
+                    node.log(f"引用没有定义的脚注'{i[1]}'", "ERROR")
+                    continue
+                fn : Footnote = fns[i[1]]
+                ret += "\\footnote{%s}" % fn.accept(self)
+            elif i[0] in self.rules:
+                ret += f"""{self.rules[i[0]][0]}{self.visit_strings(node, i[1])}{self.rules[i[0]][1]}"""
                 ret += last_stat
                 last_stat = ""
             else:
@@ -1498,11 +1532,12 @@ class TexExportVisitor(ExportVisitor):
                 ret += str(i)
         if ret and ret[0] == "\n":
             ret = ret[1:]
+        ret.replace("\\", "<span>\\</span>")
         return ret
     def visit_root(self, node:Root) -> str:
         return "\n".join([i.accept(self) for i in node.child])
-    def visit_text(self, node) -> str:
-        return "\n".join([i.accept(self) for i in node.child])
+    def visit_text(self, node: Text) -> str:
+        return node.line.accept(self)
     def visit_blockcomment(self, node) -> str:
         return ""
     def visit_meta(self, node) -> str:
@@ -1513,47 +1548,135 @@ class TexExportVisitor(ExportVisitor):
             tag = "sub"*level+"section"
         else:
             tag = "item"
-        title = r"\%s{%s【%s,%s】 }" % (tag, node.line.accept(self), node.level, node.document.status["lowest_title"])
+        title = "\\%s{%s}\n" % (tag, node.line.accept(self))
         return title+"\n".join([i.accept(self) for i in node.child])
     def visit_titleoutline(self, node) -> str:
         return "\n".join([i.accept(self) for i in node.child])
     def visit_footnotes(self, node) -> str:
         return ""
     def visit_footnote(self, node) -> str:
-        return ""
+        return "\n".join([i.accept(self) for i in node.child])
     def visit_listitem(self, node) -> str:
-        return ""
-    def visit_list(self, node) -> str:
-        return ""
+        text = ""
+        # indent_str = node.document.setting["indent_str"]
+        indent_str = ""
+        ret = f"\n{indent_str}".join(node.child[0].accept(self).splitlines())
+        text += f"{ret}\n"
+        for i in node.child[1:]:
+            # 下一级的东西
+            for j in i.accept(self).splitlines():
+                if j and j[-1] != "\n":
+                    j+="\n"
+                text += f"{indent_str}{j}"
+        return text
+    def visit_list(self, node: List) -> str:
+        typ = "itemize" if node.type == "ul" else "enumerate"
+        text = r"\begin{%s}" % typ
+        for i in node.child:
+            if text and text[-1] != "\n":
+                text += "\n"
+            # 每个列表组的每个项目
+            text += r"\item %s" % i.accept(self)
+        if text and text[-1] != "\n":
+            text += "\n"
+        text += r"\end{%s}" % typ
+        return text
     def visit_blockcode(self, node) -> str:
-        return ""
+        ret = "\\begin{verbatim}\n"
+        ret += node.line.s
+        ret += "\\end{verbatim}"
+        return ret
     def visit_blockexport(self, node) -> str:
+        if not isinstance(node.line, Strings) or not node.opt["printable"]:
+            return ""
+        if node.lang == "html":
+            return node.line.s
         return ""
     def visit_comment(self, node) -> str:
         return ""
     def visit_blockexample(self, node) -> str:
-        return ""
-    def visit_blockverse(self, node) -> str:
-        return ""
+        return self.visit_blockcode(node)
+    def visit_blockverse(self, node: BlockVerse) -> str:
+        if not node.opt["printable"]:
+            return ""
+        text = "\\begin{verse}\n"
+        if isinstance(node.line, Strings):
+            for i in node.line.s.splitlines():
+                i = Strings(i, node).accept(self)
+                text += i
+                if i:
+                    text += r"\\"
+                text += "\n"
+            text = text[:-1]
+        text += "\n\\end{verse}"
+        return text
     def visit_blockquote(self, node) -> str:
-        return ""
-    def visit_blockcenter(self, node) -> str:
-        return ""
+        if not node.opt["printable"]:
+            return ""
+        text = "\\begin{quote}\n"
+        text +="\n".join([i.accept(self) for i in node.child])
+        text += "\n\\end{quote}"
+        return text
+    def visit_blockcenter(self, node: "BlockCenter") -> str:
+        if not node.opt["printable"]:
+            return ""
+        text = "\\begin{center}\n"
+        text +="\n".join([i.accept(self) for i in node.child])
+        text += "\n\\end{center}"
+        return text
     def visit_blockproperties(self, node) -> str:
-        return ""
+        cond = not node.opt["printable"]
+        last = node.document.root.search(node, "last")
+        cond = cond and not last
+        if cond:
+            return ""
+        text = ""
+        for i in node.child:
+            text += i.accept(self)
+        return text
     def visit_table(self, node) -> str:
-        return ""
+        skip_list = [i[0] for i in node.control_line if i[1] == "align"]
+        text = "\\begin{center}\n\\begin{tabular}{"
+        text += "".join([i[1] for i in node.align])
+        text += "}\n"
+        index = 0
+        for line in node.lines:
+            if index in skip_list:
+                index+=1
+                continue
+            if isinstance(line, str):
+                text+="\\hline\n"
+                index+=1
+                continue
+            text += " & ".join([i.accept(self) for i in line])
+            text+="\\\\\n"
+            index+=1
+        text += "\\end{tabular}\n\\end{center}\n"
+        return text
     def visit_document(self, node:Document) -> str:
         template = r"""% 创建于 ${created_time}
 % 预期latex编译器: ${latex_compiler}
-\documentclass[11pt]{article}
+\documentclass{article}
 \usepackage{graphicx}
 \usepackage{longtable}
 \usepackage{wrapfig}
 \usepackage{rotating}
 \usepackage[normalem]{ulem}
 \usepackage{capt-of}
-\usepackage{hyperref}${latex_header}${author}${date}${title}
+\usepackage{hyperref}
+\usepackage[
+	a4paper,
+	left=1.7cm,
+	right=1.7cm,
+	top=1.5cm,
+	bottom=1.9cm,
+	footskip=1.2ex,  % 页码到正文的间距
+	bindingoffset=0.9cm,
+	twoside,
+]{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{ctex}${latex_header}${author}${date}${title}
 \hypersetup{
  pdfauthor={${pdf_author}},
  pdftitle={${pdf_author}},
@@ -1564,8 +1687,7 @@ class TexExportVisitor(ExportVisitor):
 \begin{document}
 ${maketitle}${toc}
 ${body}
-\end{document}
-"""
+\end{document}"""
         data = {"latex_compiler":node.meta["latex_compiler"],
                 "latex_header":"\n"+"\n".join(node.meta["latex_header"])\
                         if node.meta["latex_header"] else "",
@@ -1690,8 +1812,7 @@ ${body}${footnotes}\
 </div>
 ${postamble}
 </body>
-</html>
-"""),
+</html>"""),
                     "home_and_up": Template("""
 <div id="org-div-home-and-up">
  <a accesskey="h" href="${up}"> UP </a>
@@ -1858,7 +1979,6 @@ ${postamble}
         text += f"</{node.type}>\n"
         return text
     def visit_table(self, node:Table) -> str:
-        node.check_control_line()
         skip_list = [i[0] for i in node.control_line if i[1] == "align"]
         split_list = [i[0] for i in node.control_line if i[1] == "split"]
         text = """\n<table border="2" cellspacing="0" cellpadding="6" """+\
