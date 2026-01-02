@@ -1147,14 +1147,14 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
             while not self.status["clean_up"]:
                 progress.update(self.current_line-last)
                 last = self.current_line
-                time.sleep(1/5)
+                time.sleep(1/50)
             progress.close()
         except ModuleNotFoundError:
             while not self.status["clean_up"]:
                 progress = self.current_line / total_line
                 s = "#"*int(progress*width)+" "*(width-int(progress*width))
                 print(f"{typ} [{s}] {progress*100:6.2f}% {self.current_line:10}", end="\r")
-                time.sleep(1/5)
+                time.sleep(1/50)
             print("")
     def build_tree(self):
         """构建节点树"""
@@ -2168,7 +2168,8 @@ def _set_css(args, doc:Document):
         doc.setting["css_in_html"] = ""
     if not args.emacs_css:
         return
-    ret = subprocess.run("type emacs", capture_output=True, shell=True, check=False)
+    ret = subprocess.run("type emacs", capture_output=True, shell=True, env={"LANG":"en_US.UTF-8"},
+                         check=False)
     emacs_home = None
     if ret.returncode == 0:
         emacs_home = list(Path(ret.stdout.decode()[9:]).resolve().parents)
