@@ -1503,7 +1503,7 @@ class TexExportVisitor(ExportVisitor):
             elif i[0] == "figure":
                 ret += r"""\begin{figure}[htbp]
 \centering
-includegraphics[width=.9\linewidth]{%s}
+\includegraphics[width=.9\linewidth]{%s}
 \caption{%s}
 \end{figure}""" % (i[1],self.visit_strings(node, i[2]))
             elif i[0] == "fn":
