@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Created:2025.10.18
 """基于python的简陋聊天室程序，向下兼容至python3.8"""
-# Filename: 聊天室v0.0.11.py
+# Filename: 聊天室v0.0.12.py
 
 from pathlib import Path
 from datetime import datetime
@@ -1162,8 +1162,7 @@ class System:
                 raise ModuleNotFoundError
             doc = self.orgreader.Document(content,
                                           file_name=msgid+".org",
-                                          setting={"progress":True,
-                                                   "id_prefix":"org_"+msgid+"_"})
+                                          setting={"id_prefix":"org_"+msgid+"_"})
             doc.root.line.s = ""
             visitor = self.orgreader.HtmlExportVisitor()
             msg = visitor.toc_to_html(doc) + doc.root.accept(visitor)
@@ -1661,7 +1660,7 @@ def self_update():
     url = Rescourses.get2("url_self_1")
     urls = [f"http://ghfast.top/{url}",
             f"http://{url}",
-            Rescourses.get("url_self_2"),]
+            Rescourses.get2("url_self_2"),]
     content = download_file(urls, "")
     msg = []
     try:
