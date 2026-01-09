@@ -14,8 +14,30 @@ import argparse
 from pathlib import Path
 import json
 import shlex
+import re
+from functools import lru_cache
+
+try:
+    import readline
+    del readline
+except ModuleNotFoundError:
+    pass
+
+try:
+    from pypinyin import lazy_pinyin
+except ModuleNotFoundError:
+    lazy_pinyin = None
+
+@lru_cache(maxsize=1024)
+def get_pinyin(s:str) -> str:
+    if lazy_pinyin:
+        return s + " " + "".join(lazy_pinyin(s))
+    else:
+        return s
 
 import pytools
+
+userlist = {}
 
 class Video():
     """存储单个视频信息"""
@@ -38,7 +60,10 @@ class Video():
         self.f_timestamp = file.stat().st_mtime
         # 分P总标题/合集分标题
         self.maintitle = str(data.get("title"))
-        self.owner = str(data.get("owner_name"))
+        self.owner_id = str(data.get("owner_id"))
+        self.owner = data.get("owner_name")
+        if not self.owner is None:
+            userlist[self.owner_id] = self.owner
         self.is_ep = data.get("page_data") is None
         page_data = data.get("page_data") or data.get("ep") or {}
         # 分P排序
@@ -72,16 +97,19 @@ class Video():
             self.title = self.part
         elif mode == "auto_reverse":
             self.title = self.maintitle
-            if self.part not in ("None", "", self.maintitle):
+            if self.part not in ("None", "", self.maintitle) and \
+                    not self.part.startswith(("Video_", "studio_video_")):
                 self.title = f"{self.part} - {self.title}"
             if self.subtitle not in ("None", "", self.maintitle, f"{self.maintitle} {self.part}"):
                 self.title = f"{self.subtitle} - {self.title}"
         else:
             self.title = self.maintitle
-            if self.part not in ("None", "", self.maintitle):
+            if self.part not in ("None", "", self.maintitle) and \
+                    not self.part.startswith(("Video_", "studio_video_")):
                 self.title = f"{self.title} - {self.part}"
             if self.subtitle not in ("None", "", self.maintitle, f"{self.maintitle} {self.part}"):
                 self.title = f"{self.title} - {self.subtitle}"
+
         if self.is_ep:
             self.title = f"{self.title} - {self.index:02d}"
             if self.indextitle not in ("None", ""):
@@ -112,7 +140,7 @@ class Ui():
         self.list = curses.newwin(self.height + 1, self.width, 0, 0)
         self.info = curses.newwin(info_height, self.width, self.height + 1, 0)
         self.sets = curses.newwin(int(self.height/2), int(self.width/2), int(self.height/4), int(self.width/4))
-        self.content = content
+        self.content : list[list[Video]] = content
         # self.height = len(self.content)
     def print_list(self, content):
         """打印视频列表"""
@@ -163,6 +191,28 @@ class Ui():
                 f"INDEX_TITLE: {p.indextitle}"
             )
         self.info.refresh()
+    def gen_verbose_info(self, content) -> str:
+        """显示光标处视频more详细信息"""
+        p : Video|list[Video] = content[self.select]
+        sets = True
+        if isinstance(p, list):
+            sets = len(p) == 1
+            p = p[0]
+        s = f"AV: AV{p.avid}\n"
+        s += f"BV: {p.bvid:12}\n"
+        s += f"DIR: {p.dir_self if sets else "<SET> "+p.dir_parent}\n"
+        s += f"up主: {p.owner}\n"
+        s += f"up主id: {p.owner_id}\n"
+        s += f"分P总标题/合集分标题: {p.maintitle}\n"
+        s += f"分P分标题/合集总标题: {p.part}\n"
+        s += f"合并后标题: {p.title if sets else p.maintitle}\n"
+        s += f"缓存更新日期: {pytools.get_strtime(p.u_timestamp/1000)}\n"
+        s += f"缓存创建日期: {pytools.get_strtime(p.timestamp/1000)}\n"
+        s += f"文件日期: {pytools.get_strtime(float(p.f_timestamp))}\n"
+        if p.indextitle != "None":
+            s += f"INDEX: {p.index}\n"
+            s += f"INDEX_TITLE: {p.indextitle}\n"
+        return s
     def check(self, content):
         """越界、上下滑动检查"""
         if self.select < 0:
@@ -190,7 +240,7 @@ class Ui():
                 if not c:
                     continue
                 subprocess.run(shlex.split(i), check=False)
-        input("Press enter to return")
+        input("按下回车返回")
         curses.reset_prog_mode()
     def setting(self):
         """设置界面"""
@@ -264,6 +314,22 @@ class Ui():
         for i in self.content:
             for j in i:
                 j.reset_title(CONFIG["name_format"])
+    def videos_filter(self, key:str) -> list[list[Video]]:
+        """获取过滤后的视频列表"""
+        key = key.lower()
+        if key.startswith("owner:"):
+            key = key[6:]
+            flag = lambda x:get_pinyin(str(x[0].owner))
+        else:
+            flag = lambda x:get_pinyin(x[0].title)
+        if not key:
+            return self.content
+        try:
+            pattern = re.compile(key, re.I)
+            li = [i for i in self.content if pattern.search(flag(i))]
+        except re.error:
+            li = self.content
+        return li
     def main(self):
         """ui主程序"""
         self.check(self.content)
@@ -274,8 +340,13 @@ class Ui():
         position = 0
         select = 0
         collection = []
+        search_key = "owner:fm"
+        key_modes = {"p":"play","P":"play_mp4","c":"copy",
+                     "e":"mp3","E":"mp4","d":"mp4"}
         while inp != "q":
-            cont = [self.content, self.content[select]][deep]
+            cont = self.videos_filter(search_key)
+            cont = [cont, cont[select]][deep]
+            self.check(cont)
             obj = [cont[self.select]] \
                     if len(self.collection) == 0 else \
                     [cont[i] for i in self.collection]
@@ -290,30 +361,21 @@ class Ui():
                 self.select=0
             elif inp == "G":
                 self.select=-1
-            elif inp in "l"+chr(curses.KEY_RIGHT) and len(self.content[self.select]) != 1 and deep == 0:
+            elif inp in "l"+chr(curses.KEY_RIGHT) and deep == 0 and len(cont[self.select]) != 1:
                 position,select,self.position,self.select = self.position, self.select, 0, 0
                 collection, self.collection = self.collection, []
                 deep = 1
             elif inp in "h"+chr(curses.KEY_LEFT) and deep == 1:
                 self.position,self.select = position,select
+                position,select = 0, 0
                 self.collection = collection
                 deep = 0
             elif inp == "r":
                 self.select = len(cont) - self.select - 1
                 cont.reverse()
                 CONFIG["sort_reverse"] = not CONFIG["sort_reverse"]
-            elif inp == "p":
-                self.cmd(cmd_genal(obj, "play"))
-            elif inp == "P":
-                self.cmd(cmd_genal(obj, "play_mp4"))
-            elif inp == "c":
-                self.cmd(cmd_genal(obj, "copy"))
-            elif inp == "e":
-                self.cmd(cmd_genal(obj, "mp3"))
-            elif inp == "E":
-                self.cmd(cmd_genal(obj, "mp4"))
-            elif inp == "d":
-                self.cmd(cmd_genal(obj, "mp4"))
+            elif inp in key_modes:
+                self.cmd(cmd_genal(obj, key_modes[inp]))
             elif inp == " ":
                 if self.select in self.collection:
                     self.collection.remove(self.select)
@@ -325,8 +387,6 @@ class Ui():
             elif inp == "a":
                 self.collection = list(range(len(cont)))
             elif inp in "1234":
-                if not isinstance(obj[0], list):
-                    obj = [obj]
                 title_mode = {"1":"maintitle", "2":"part", "3":"auto",
                               "4":"auto_reverse"}
                 CONFIG["name_format"] = title_mode[inp]
@@ -335,7 +395,43 @@ class Ui():
                 CONFIG["vfat_name"] = not CONFIG["vfat_name"]
             elif inp == "o":
                 self.setting()
-            self.check([self.content, self.content[select]][deep])
+            elif inp == "i":
+                self.cmd("#" + "\n#".join(self.gen_verbose_info(cont).splitlines()))
+            elif inp == "/":
+                curses.def_prog_mode()
+                curses.endwin()
+                print(">"*8+"搜索"+"<"*8)
+                print("$ 输入`owner:xxx`以匹配up")
+                print("$ 支持正则表达式")
+                print("$ 留白表示清除搜索结果")
+                if lazy_pinyin:
+                    print("$ 支持简单的拼音搜索")
+                _search_key = input("请输入搜索关键词:")
+                if not self.videos_filter(_search_key):
+                    print("$ WARN 无对应搜索结果")
+                    input("按下回车返回")
+                else:
+                    search_key = _search_key
+                curses.reset_prog_mode()
+            elif inp == "O":
+                curses.def_prog_mode()
+                curses.endwin()
+                outputf = Path(input("输入预期要保存的文件名:"))
+                if outputf.exists():
+                    print("文件已存在")
+                    input("按下回车返回")
+                else:
+                    print("key list:")
+                    __import__('pprint').pprint(key_modes)
+                    k = input("输入类型:")
+                    if k not in key_modes:
+                        print("键不存在")
+                        input("按下回车返回")
+                    else:
+                        Path(outputf).write_text(
+                                cmd_genal(obj, key_modes[k]),
+                                encoding="utf8")
+                curses.reset_prog_mode()
         # curses.endwin()
 
 def get_video_dimensions(file_path:Path) -> tuple[int, int]:
@@ -393,8 +489,8 @@ def cmd_genal(li, mode) -> str:
 
             vid = vid[0]
             aud = aud[0]
-            if vid.stat().st_size != j.size:
-                t+="# [WARN] 视频文件大小对不上，文件可能不完整\n"
+            # if vid.stat().st_size != j.size:
+                # t+="# [WARN] 视频文件大小对不上，文件可能不完整\n"
 
             # -v warning -progress pipe:1
             ffmpeg = "ffmpeg -hide_banner"
@@ -425,6 +521,8 @@ def cmd_genal(li, mode) -> str:
                 if j.owner != "None":
                     t+=f'-metadata artist={repr(j.owner)} '
                 t+=f'-metadata title={repr(j.title)} '
+                comment = f"AV{j.avid}({j.bvid}) || MAINTITLE: {j.maintitle} || PART: {j.part}"
+                t+=f'-metadata comment={repr(comment)} '
                 output+=".mp3"
             t+=f'{repr(str(output))}\n'
             if CONFIG["genass"] and has_subprocess and mode not in ("play", "play_mp4"):
@@ -439,7 +537,7 @@ def cmd_genal(li, mode) -> str:
     t+='echo "Done!"\n'
     return t
 
-def run_main():
+def run_main() -> list[list[Video]]:
     """运行主程序(需要)"""
     list_mode = False
     inputd = ["/sdcard/Android/data/tv.danmaku.bili/download/",
@@ -489,7 +587,7 @@ def run_main():
     if len(input_f) == 0:
         mhelp(msg="[!] no input file was found")
     print(f"{len(input_f)} files were found")
-    li = []
+    li : list[list[Video]] = []
     for i in enumerate(input_f):
         v = Video(input_f[i[0]])
         if len(li) > 0 and li[-1][0].dir_parent == v.dir_parent:
@@ -497,6 +595,11 @@ def run_main():
         else:
             li.append([v])
         li[-1] = sorted(li[-1], key=lambda x:x.page, reverse=not CONFIG["sort_reverse"])
+    for i in li:
+        for j in i:
+            if not j.owner is None or j.owner_id not in userlist:
+                continue
+            j.owner = userlist[j.owner_id]
     li = sorted(li, key=lambda x:x[0].timestamp, reverse=CONFIG["sort_reverse"])
 
     if list_mode:
@@ -506,8 +609,8 @@ def run_main():
             print()
         sys.exit(0)
     if outputf is not None:
-        if not args.no_ass:
-            print("Tips: 导出太慢？尝试使用`--no-ass`选项")
+        if not args.gen_ass:
+            print("Tips: 没有弹幕？尝试使用`--gen-ass`选项")
         Path(outputf).write_text(cmd_genal(li, mode), encoding="utf8")
         sys.exit(0)
     return li

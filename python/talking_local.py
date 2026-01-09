@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # Created:2025.10.18
 """基于python的简陋聊天室程序，向下兼容至python3.8"""
-# Filename: 聊天室v0.0.12.py
+# Filename: 聊天室v0.0.13.py
 
 from pathlib import Path
 from datetime import datetime
 from getpass import getpass
-from typing import Callable, Union, Any
+from typing import Callable, Union, Any, Tuple
 from importlib import import_module
 from functools import lru_cache
 import argparse
@@ -343,167 +343,150 @@ img {
     border-left: 3px solid #3498db;
 }
 
+""", # ==================
+"css_dark":"""
 /* 暗色模式样式 */
-@media (prefers-color-scheme: dark) {
-    body {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        color: #e0e0e0;
-    }
-
-    .container {
-        background-color: #1e1e2e;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    }
-
-    h1 {
-        color: #bb86fc;
-    }
-
-    h1:after {
-        background: linear-gradient(90deg, #bb86fc, #03dac6);
-    }
-
-    label {
-        color: #e0e0e0;
-    }
-
-    input, textarea {
-        background-color: #2d2d3e;
-        border: 1px solid #444;
-        color: #e0e0e0;
-    }
-
-    input:focus, textarea:focus {
-        border-color: #bb86fc;
-        box-shadow: 0 0 0 3px rgba(187, 134, 252, 0.2);
-        background-color: #363648;
-    }
-
-    button {
-        background: linear-gradient(135deg, #bb86fc, #9c64f2);
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-    }
-
-    button:hover {
-        box-shadow: 0 7px 14px rgba(0, 0, 0, 0.4);
-    }
-
-    .result {
-        background-color: #2a2a3e;
-        border-left: 4px solid #bb86fc;
-    }
-
-    .messages, .users {
-        background-color: #252536;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-    }
-
-    .messages:hover, .users:hover {
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-    }
-
-    .msg_name, .user_name {
-        color: #bb86fc;
-    }
-
-    .msg_name:hover, .user_name:hover {
-        color: #9c64f2;
-    }
-
-    .msg_time, .user_time {
-        color: #a0a0a0;
-    }
-
-    .messages::-webkit-scrollbar-track, .users::-webkit-scrollbar-track {
-        background: #2d2d3e;
-    }
-
-    .messages::-webkit-scrollbar-thumb, .users::-webkit-scrollbar-thumb {
-        background: linear-gradient(135deg, #bb86fc, #03dac6);
-    }
-
-    .messages::-webkit-scrollbar-thumb:hover, .users::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(135deg, #9c64f2, #00c9b7);
-    }
-
-    a {
-        color: #bb86fc;
-    }
-
-    a:visited {
-        color: #c792ea;
-    }
-
-    a:hover {
-        color: #9c64f2;
-    }
-
-    .header ul {
-        background: linear-gradient(90deg, #121212, #1e1e1e);
-    }
-
-    .header li a:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-    }
-
-    .pager {
-        background-color: #2d2d3e;
-    }
-
-    .pager a {
-        background-color: #363648;
-        color: #e0e0e0;
-    }
-
-    .pager a:hover {
-        background-color: #bb86fc;
-        color: #121212;
-    }
-
-    .pager b a {
-        background-color: #bb86fc;
-        color: #121212;
-    }
-
-    details {
-        border: 1px solid #444;
-    }
-
-    summary {
-        background-color: #2d2d3e;
-    }
-
-    summary:hover {
-        background-color: #363648;
-    }
-
-    details p {
-        background-color: #1e1e2e;
-    }
-
-    /* 消息气泡样式增强 - 暗色模式 */
-    .msgcont {
-        background-color: #2d2d3e;
-        border-left: 3px solid #bb86fc;
-    }
+body {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #e0e0e0;
 }
 
-/* 手动切换暗色模式的类（可选） */
-.dark-mode {
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
-    color: #e0e0e0 !important;
+.container {
+    background-color: #1e1e2e;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
-.dark-mode .container {
-    background-color: #1e1e2e !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+h1 {
+    color: #bb86fc;
 }
 
-.dark-mode h1 {
-    color: #bb86fc !important;
+h1:after {
+    background: linear-gradient(90deg, #bb86fc, #03dac6);
 }
 
-/* 其他暗色模式样式同上，只需将@media内的样式复制到这里，并加上 !important */
+label {
+    color: #e0e0e0;
+}
+
+input, textarea {
+    background-color: #2d2d3e;
+    border: 1px solid #444;
+    color: #e0e0e0;
+}
+
+input:focus, textarea:focus {
+    border-color: #bb86fc;
+    box-shadow: 0 0 0 3px rgba(187, 134, 252, 0.2);
+    background-color: #363648;
+}
+
+button {
+    background: linear-gradient(135deg, #bb86fc, #9c64f2);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+button:hover {
+    box-shadow: 0 7px 14px rgba(0, 0, 0, 0.4);
+}
+
+.result {
+    background-color: #2a2a3e;
+    border-left: 4px solid #bb86fc;
+}
+
+.messages, .users {
+    background-color: #252536;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.messages:hover, .users:hover {
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.msg_name, .user_name {
+    color: #bb86fc;
+}
+
+.msg_name:hover, .user_name:hover {
+    color: #9c64f2;
+}
+
+.msg_time, .user_time {
+    color: #a0a0a0;
+}
+
+.messages::-webkit-scrollbar-track, .users::-webkit-scrollbar-track {
+    background: #2d2d3e;
+}
+
+.messages::-webkit-scrollbar-thumb, .users::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #bb86fc, #03dac6);
+}
+
+.messages::-webkit-scrollbar-thumb:hover, .users::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #9c64f2, #00c9b7);
+}
+
+a {
+    color: #bb86fc;
+}
+
+a:visited {
+    color: #c792ea;
+}
+
+a:hover {
+    color: #9c64f2;
+}
+
+.header ul {
+    background: linear-gradient(90deg, #121212, #1e1e1e);
+}
+
+.header li a:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.pager {
+    background-color: #2d2d3e;
+}
+
+.pager a {
+    background-color: #363648;
+    color: #e0e0e0;
+}
+
+.pager a:hover {
+    background-color: #bb86fc;
+    color: #121212;
+}
+
+.pager b a {
+    background-color: #bb86fc;
+    color: #121212;
+}
+
+details {
+    border: 1px solid #444;
+}
+
+summary {
+    background-color: #2d2d3e;
+}
+
+summary:hover {
+    background-color: #363648;
+}
+
+details p {
+    background-color: #1e1e2e;
+}
+
+/* 消息气泡样式增强 - 暗色模式 */
+.msgcont {
+    background-color: #2d2d3e;
+    border-left: 3px solid #bb86fc;
+}
 """, # ==================
 "template":"""
 <!DOCTYPE html>
@@ -514,11 +497,19 @@ img {
 ${meta}
   <title>${title}</title>
   <link rel="stylesheet" type="text/css" href="/main.css">
+  <script>
+  (function() {
+    theme = localStorage.getItem('theme') || "light"
+    if (theme == "dark") {
+      document.head.insertAdjacentHTML("beforeend", '<link id="dark-theme-css" rel="stylesheet" type="text/css" href="/dark.css"/>')
+    }
+  })();
+  </script>
 </head>
 <body>
   <div class="header">
     <ul>
-      <li><a href="/">消息列表</a></li>
+      <li><a href="/?p=last_msg#last_msg">消息列表</a></li>
       <li><a href="/userlist">用户列表</a></li>
       <li><a href="/search?cap=on">搜索</a></li>
       <li><a href="/about">关于或帮助</a></li>
@@ -674,6 +665,23 @@ ${content}
 </div>
 """, # ==================
 "about":"""
+<script>
+function toggleTheme() {
+  theme = localStorage.getItem('theme')
+  theme = theme === "dark" ? "light" : "dark"
+  localStorage.setItem('theme', theme);
+  document.getElementById("theme-toggle-button").innerText = theme+"（点击切换）"
+  if (theme == "dark") {
+    document.head.insertAdjacentHTML("beforeend", '<link id="dark-theme-css" rel="stylesheet" type="text/css" href="/dark.css"/>')
+  } else {
+    document.getElementById("dark-theme-css").remove()
+  }
+}
+window.onload = function() {
+  theme = localStorage.getItem('theme') || "light";
+  document.getElementById("dark-theme-css").innerText = theme+"（点击切换）"
+}
+</script>
 <div class="container">
   <h1>About 关于</h1>
   <h2>Web ui使用</h2>
@@ -694,6 +702,8 @@ ${content}
     <li><a href="http://${url_anti_jiyu}">反极域程序链接(github)</a></li>
     <li><a href="http://ghfast.top/${url_anti_jiyu}">反极域程序链接(github代理加速链接)</a></li>
   </ul>
+  <h2>主题设置</h2>
+  <p>当前主题为：<a id="theme-toggle-button" onclick="toggleTheme()">light（点击切换）</a></p>
 </div>
 """, # ==================
 "self_update":"""
@@ -731,7 +741,7 @@ def get_strtime(dt:Union[datetime,float] = datetime.now()) -> str:
 def log_in_file(msg:str, loglevel = "INFO", filename:str = "chat_room.log"):
     """将信息记录到文件"""
     try:
-        if ARGS.no_logs:
+        if not ARGS or ARGS.no_logs:
             return
         with open(filename, "a") as f:
             print(f"[{loglevel}] [{get_strtime()}] {msg}", file=f)
@@ -1214,7 +1224,7 @@ class System:
                 pages += '点击查看最新消息</a>'
             pages += '</p>'
             return pages
-        def generate_message_list(messages:list, req:Union[dict,str]="", lst=True) -> tuple[str,str]:
+        def generate_message_list(messages:list, req:Union[dict,str]="", lst=True) -> Tuple[str,str]:
             try:
                 limit = int(str(querys.get("page_limit")))
             except ValueError:
@@ -1428,6 +1438,11 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-type', 'text/css')
             self.end_headers()
             html_content = Rescourses.get2("css")
+        elif path == "/dark.css":
+            self.send_response(200)
+            self.send_header('Content-type', 'text/css')
+            self.end_headers()
+            html_content = Rescourses.get2("css_dark")
         else:
             # # 对于其他路径，使用默认的文件服务行为
             # super().do_GET()
@@ -1727,7 +1742,7 @@ def main(port = 8000):
     # SYSTEM["commandline"] = SYSTEM
     c = ""
     right = True
-    menu : dict[str,tuple[str,Callable]] = {
+    menu : dict[str,Tuple[str,Callable]] = {
             "more":("更多可选操作（更新等）",extra_funtions),
             "save":("保存数据",system.save),
             "save2":("以人类易读形式保存数据", lambda:system.save(readable=True)),

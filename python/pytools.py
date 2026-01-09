@@ -89,8 +89,10 @@ def calculate_relative2(path_to:Path, path_from:Path) -> Path:
     back_relative = "../"*depth
     return Path(f"./{back_relative}/{relative}")
 
-def get_strtime(dt:datetime.datetime = datetime.datetime.now(), h=True,m=True,s=True) -> str:
+def get_strtime(dt :float|int|datetime.datetime = datetime.datetime.now(), h=True,m=True,s=True) -> str:
     """返回格式化的字符串（时分秒可选）"""
+    if isinstance(dt, (float,int)):
+        dt = datetime.datetime.fromtimestamp(dt)
     t = dt.strftime("%Y-%m-%d ")
     t += "一二三四五六日"[dt.weekday()]
     l = [i[1] for i in ((h,"%H"),(m,"%M"),(s,"%S")) if i[0]]
