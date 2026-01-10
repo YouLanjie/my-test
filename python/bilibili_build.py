@@ -340,7 +340,7 @@ class Ui():
         position = 0
         select = 0
         collection = []
-        search_key = "owner:fm"
+        search_key = ""
         key_modes = {"p":"play","P":"play_mp4","c":"copy",
                      "e":"mp3","E":"mp4","d":"mp4"}
         while inp != "q":

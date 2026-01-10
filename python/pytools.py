@@ -108,3 +108,56 @@ def get_filename_test_str(touch=False, skip="") -> str:
     if touch and not Path(f).exists():
         Path(f).touch()
     return f
+
+def merge_dict(old:dict, new:dict, warn=False, prefix=""):
+    """将new词典的内容依照old的结构和类型合并"""
+    if prefix:
+        prefix+="/"
+    for k in new:
+        if ".*" in old:
+            old[k] = old[".*"]
+        if k not in old:
+            if warn:
+                print_err(f"[WARN] 词典'/{prefix}'不存在关键词'{k}'")
+            continue
+        if type(old[k]) != type(new[k]):
+            if warn:
+                print_err(f"[WARN] 词典'/{prefix}'的关键词'{k}'的类型应该是"
+                        f"{type(old[k])}而非{type(new[k])}")
+            continue
+        if isinstance(old[k], dict):
+            merge_dict(old[k], new[k], warn=warn, prefix=prefix+k)
+            continue
+        old[k] = new[k]
+    if ".*" in old:
+        old.pop(".*")
+
+def squash_dict(data:dict, prefix="", split=".") -> dict:
+    """将分级词典以'.'为分割字符合并为同级词典"""
+    new = {}
+    if prefix:
+        prefix+=split
+    for k in data:
+        if isinstance(data[k], dict):
+            new.update(squash_dict(data[k], prefix=f"{prefix}{k}", split=split))
+            continue
+        new[f"{prefix}{k}"] = data[k]
+    return new
+
+def process_filelist(li:list[str]) -> dict[str,list[int]]:
+    """识别文件列表"""
+    ret = {}
+    for s in li:
+        s = str(s)
+        l = s.split("::")
+        if len(l) != 2:
+            ret[s] = []
+            continue
+        nums = []
+        try:
+            nums = [int(i or -1) for i in l[1].split("-")]
+        except ValueError:
+            ret[s] = (-1, -1)
+            continue
+        ret[l[0]] = nums
+    return ret
