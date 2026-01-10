@@ -6,7 +6,6 @@
 from string import Template
 from pathlib import Path
 import time
-import datetime
 import json
 import argparse
 import re
@@ -228,8 +227,8 @@ class Config:
 footskip：#${setting.border.footskip}pt,
 装订偏移：#${setting.border.bindingoffset}cm,
 字体大小(h1,h2,h3,正文)：#${setting.fontsize.section}pt, #${setting.fontsize.subsection}pt ,#${setting.fontsize.subsubsection}pt ,#${setting.fontsize}pt
-字词统计：#${counter.words}k,
-LINES:#${counter.lines}""".splitlines())
+字词统计：
+#${counter.words}""".splitlines())
     latex_template_fgruler = r"""
 \usepackage[type=user]{fgruler}
 \fgrulerdefuser{
@@ -273,12 +272,10 @@ LINES:#${counter.lines}""".splitlines())
                 bl = set()
                 whitelist.update({((home/inp_dir).parent/i).resolve():j for i,j in wl.items()})
                 wl = {(home/inp_dir).parent/i for i in wl}
-            print(wl)
-            print(fl)
             filelist |= {i.resolve() for i in ((fl-bl)|wl)}
         filelist = mysorted(filelist)
         return filelist, whitelist
-    def get_merged(self) -> tuple[int,int,str]:
+    def get_merged(self) -> tuple[str,str]:
         """生成org文件内容"""
         filelist, whitelist = self.get_filelist()
         home = self.cfg_f.parent
@@ -311,10 +308,12 @@ LINES:#${counter.lines}""".splitlines())
                     file_name=str(file),
                     setting={"verbose_msg":True})
             content += doc.accept(exportor)
-        return (len([i for i in content if i not in " \t\n\r\\{}[]"]),
-                len([i for i in content.splitlines() if i]),
+        return (f"字数：{len([i for i in content if i not in " \t\n\r\\{}[]"])/1000}k,\n"
+                f"中文字符数：{len([i for i in content if len(i.encode()) > 1])/1000}k,\n"
+                f"覆盖字符数：{len(set(content))},\n"
+                f"行数：{len([i for i in content.splitlines() if i])},\n",
                 content)
-    def generate_template_dict(self, words = 0, lines = 0) -> dict:
+    def generate_template_dict(self, words = "None") -> dict:
         """生成用于模板的词典"""
         k : dict[str, str|int|float] = {
                 "template.gtst": time.strftime("%Y%m%d_%H%M%S"),
@@ -325,7 +324,6 @@ LINES:#${counter.lines}""".splitlines())
         k["setting.fontsize.subsection"] = float(k["setting.fontsize"]) + 1
         k["setting.fontsize.subsubsection"] = k["setting.fontsize"]
         k["counter.words"] = words
-        k["counter.lines"] = lines
         k["template.mktitle"] = r"\maketitle{}" if k["setting.mktitle"] else ""
         k["template.mktoc"] = Template2(self.latex_template_toc).safe_substitute(k) \
                 if k["setting.mktoc"] else ""
@@ -356,8 +354,8 @@ def main():
         return
     print("[INFO] Config:")
     __import__('pprint').pprint(config.cfg)
-    w,l,c = config.get_merged()
-    temp_dict = config.generate_template_dict(w, l)
+    w,c = config.get_merged()
+    temp_dict = config.generate_template_dict(w)
     outputf = config.cfg_f.parent/Template2(config.cfg["output"]).safe_substitute(temp_dict)
 
     temp_dict["template.body"] = c

@@ -33,6 +33,7 @@ def main():
            "encoding":"gbk",
            "title":"",
            "setupfile":"./setup.setup",
+           "section_pattern":r"[　]*(第.*卷.*)",
            "comment":"这里用来记录点额外信息，不会对结果产生影响",
            "words":[["身分","身份"], ["计画","计划"], ["徵","征"],
                     ["乾","干"]],}
@@ -51,7 +52,7 @@ def main():
         print(json.dumps(cfg, ensure_ascii=False, indent='\t'))
         return
 
-    inp = cfg_f/cfg["source_file"]
+    inp = cfg_f.parent/cfg["source_file"]
     if not inp.is_file():
         pytools.print_err(f"[WARN] '{inp}' is not file")
         return
@@ -62,13 +63,18 @@ def main():
         content = content.replace(w1, w2)
 
     content = content.splitlines()
-    groups = []
+    groups : list[list[str]] = []
     now_group = []
     begin = False
+    try:
+        pattern = re.compile(cfg["section_pattern"], re.I)
+    except re.error as e:
+        pytools.print_err(f"[WARN] re compile error: {e}")
+        pattern = re.compile(r"[　]*(第.*卷.*)", re.I)
     for line in content:
         if line == "":
             continue
-        if re.match(r"[　]*(第.*卷.*)", line):
+        if pattern.match(line):
             if now_group:
                 groups.append(now_group)
             now_group = []
@@ -81,6 +87,7 @@ def main():
     ind = 1
     contents = []
     content = []
+    same_len = 0
     while ind < len(groups):
         if not repeat:
             repeat = get_same(groups[ind-1][0].split(), groups[ind][0].split())
@@ -93,13 +100,14 @@ def main():
             content+=groups[ind-1][1:]
             print(f"==> {repeat}")
             print(f"  --> {groups[ind-1][0].split()[len(repeat):]}")
-        if groups[ind][0].split()[:1] != repeat[:1]:
+        if len(get_same(groups[ind][0].split(), repeat)) < same_len:
             repeat = []
         else:
             if "插图" not in groups[ind][0]:
                 content.append(f"** {" ".join(groups[ind][0].split()[len(repeat):])}")
             content+=groups[ind][1:]
             print(f"  --> {groups[ind][0].split()[len(repeat):]}")
+        same_len = len(get_same(groups[ind][0].split(), repeat))
         ind += 1
     if content:
         contents.append(content)
