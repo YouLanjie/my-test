@@ -70,7 +70,7 @@ class Config:
                     "add":[]
                     }
                 },
-            "output":"output_#${title}_#${setting.papersize}_#${setting.fontsize}px_#${template.gtst}.tex",
+            "output":"output_#${title}_#${setting.papersize}_#${setting.fontsize}pt_#${template.gtst}.tex",
             }
     latex_template = r"""% 生成于: #${template.generate_time}
 \documentclass{article}
