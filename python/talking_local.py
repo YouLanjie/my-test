@@ -727,8 +727,10 @@ window.onload = function() {
         return Template(cls.get2(key)).safe_substitute(data)
 
 # 由于在py3.8时仍不支持将联合类型写成 X|Y ，心碎了
-def get_strtime(dt:Union[datetime,float] = datetime.now()) -> str:
+def get_strtime(dt:Union[datetime,float,None] = None) -> str:
     """格式化时间"""
+    if dt is None:
+        dt = datetime.now()
     if isinstance(dt, float):
         dt = datetime.fromtimestamp(dt)
     if isinstance(dt, datetime):

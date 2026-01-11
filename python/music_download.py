@@ -8,6 +8,12 @@ import argparse
 import shutil
 import requests
 
+try:
+    import readline
+    del readline
+except ModuleNotFoundError:
+    pass
+
 # 设置请求头
 headers = {
     'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -126,8 +132,17 @@ class Song:
             command += ["&&", "rm", repr(str(cover_outputf.resolve()))]
         command = " ".join(command)
         # print(command)
-        subprocess.run(command, shell=True, check=True)
+        ret = subprocess.run(command, shell=True, check=False)
+        if ret.returncode != 0:
+            print(f"ERROR 命令错误: {command}")
+            print(f"ERROR {tmp_outputf}")
+            print(f"ERROR {str(tmp_outputf).encode()}")
+            print(f"ERROR {repr(str(tmp_outputf))}")
         print("INFO 转换完成")
+    def filter(self, s:str) -> str:
+        """过滤字符串不可见字符"""
+        s = "".join(i for i in s if i.isprintable() or i in "\r\n\t")
+        return s
     @property
     def full_info(self) -> str:
         """返回易读的信息行"""
@@ -146,7 +161,7 @@ class Song:
         # if aliases:
             # album += f"({",".join(aliases)})"
         # print(album)
-        return album
+        return self.filter(album)
     @property
     def cover(self) -> str:
         """返回封面链接（其实是专辑封面）"""
@@ -163,7 +178,7 @@ class Song:
         if trans_name:
             name += f"({trans_name})"
         # print(name)
-        return name
+        return self.filter(name)
     @property
     def artist(self) -> str:
         """返回作者"""
@@ -171,7 +186,7 @@ class Song:
         if not artists:
             return ""
         artists = [i.get("name") for i in artists if i.get("name")]
-        return ",".join(artists)
+        return self.filter(",".join(artists))
 
 # 获取指定歌手的歌曲信息
 def get_artist_songs(artist_id):

@@ -46,7 +46,7 @@ class Config:
             "author":"内容作者",
             "setting":{
                 "gen_info":True,
-                "mktitle":False,
+                "mktitle":True,
                 "mktoc":True,
                 "ruler":False,    # 尺子，测试用
                 "papersize":"a4paper",
@@ -223,12 +223,9 @@ class Config:
     latex_template_info = "\n\n\\noindent\n".join(r"""\section{页面设置}
 生成于:#${template.generate_time}
 纸张类型：#${setting.papersize}
-上下左右边距：#${setting.border.top}cm ,#${setting.border.bottom}cm ,#${setting.border.left}cm ,#${setting.border.right}cm,
-footskip：#${setting.border.footskip}pt,
-装订偏移：#${setting.border.bindingoffset}cm,
+边距：上#${setting.border.top}cm,下#${setting.border.bottom}cm,左#${setting.border.left}cm,右#${setting.border.right}cm,装订偏移：#${setting.border.bindingoffset}cm,页脚：#${setting.border.footskip}pt,栏距#${setting.col_gap},
 字体大小(h1,h2,h3,正文)：#${setting.fontsize.section}pt, #${setting.fontsize.subsection}pt ,#${setting.fontsize.subsubsection}pt ,#${setting.fontsize}pt
-字词统计：
-#${counter.words}""".splitlines())
+字词统计：#${counter.words}""".splitlines())
     latex_template_fgruler = r"""
 \usepackage[type=user]{fgruler}
 \fgrulerdefuser{
@@ -254,6 +251,7 @@ footskip：#${setting.border.footskip}pt,
         """打印模板json"""
         print(json.dumps(self.cfg_template, ensure_ascii=False, indent='\t'))
     def get_filelist(self) -> tuple[list,dict[str,list[int]]]:
+        """获取文件列表"""
         filelist = set()
         whitelist = {}
         home = self.cfg_f.parent
