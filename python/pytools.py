@@ -120,9 +120,9 @@ def merge_dict(old:dict, new:dict, warn=False, prefix=""):
             if warn:
                 print_err(f"[WARN] 词典'/{prefix}'不存在关键词'{k}'")
             continue
-        if type(old[k]) != type(new[k]):
+        if not isinstance(new[k], type(old[k])):
             if warn:
-                print_err(f"[WARN] 词典'/{prefix}'的关键词'{k}'的类型应该是"
+                print_err(f"[WARN] 路径'/{prefix}{k}'的类型应该是"
                         f"{type(old[k])}而非{type(new[k])}")
             continue
         if isinstance(old[k], dict):

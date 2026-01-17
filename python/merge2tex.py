@@ -9,6 +9,7 @@ import time
 import json
 import argparse
 import re
+import subprocess
 
 import pytools
 import orgreader2 as org2
@@ -29,8 +30,8 @@ class TexExport(org2.TexExportVisitor):
     def visit_blockcode(self, node: org2.BlockCode) -> str:
         ret = r"\begin{lstlisting}"
         # 可能导致latex编译错误
-        # if node.lang:
-            # ret += f"[language={node.lang}]"
+        # if node.lang.lower() in ("c", "python", "java"):
+            # ret += f"[language={node.lang.lower()}]"
         ret += "\n"
         if isinstance(node.line, org2.Strings):
             ret += node.line.s
@@ -50,7 +51,15 @@ class Config:
                 "mktoc":True,
                 "ruler":False,    # 尺子，测试用
                 "papersize":"a4paper",
-                "fontsize":4,
+                "fontsize":4.0,
+                "fontsizes":{
+                    "autocontrol":True,
+                    "section":6.0,
+                    "subsection":5.0,
+                    "subsubsection":4.0,
+                    "skip":0.1,
+                    "footer":4.0,
+                    },
                 "fontname":"DengXian Light",
                 "border":{
                     "left":0.7,
@@ -111,24 +120,22 @@ class Config:
 \setlength{\skip\footins}{0.5\skip\footins} % 减少脚注与正文的间距
 \renewcommand{\footnote}[1]{{【脚注：#1】}} % 替换原生脚注
 
-% 需要装有windows自带的 "等线 light" 字体,
-% 4pt字体对于600dpi激光打印机足够了
-\setmainfont{#${setting.fontname}}
-\newcommand{\setsmallf}{\fontsize{#${setting.fontsize}}{0.1}\selectfont\CJKfontspec{#${setting.fontname}}}
+% 字体大小设置
+#${template.setfont}
 
 % 使用 titlesec 重新定义标题格式，保持目录功能
 \titleformat{\section}
-  {\fontsize{#${setting.fontsize.section}}{0.1}\selectfont\bfseries}
+  {\fontsize{#${setting.fontsizes.section}}{0.1}\selectfont\bfseries}
   {【\arabic{section}.】}
   {0pt}
   {}
 \titleformat{\subsection}
-  {\fontsize{#${setting.fontsize.subsection}}{0.1}\selectfont\bfseries}
+  {\fontsize{#${setting.fontsizes.subsection}}{0.1}\selectfont\bfseries}
   {【\arabic{section}.\arabic{subsection}.】}
   {0pt}
   {}
 \titleformat{\subsubsection}
-  {\fontsize{#${setting.fontsize.subsubsection}}{0.1}\selectfont\bfseries}
+  {\fontsize{#${setting.fontsizes.subsubsection}}{0.1}\selectfont\bfseries}
   {【\arabic{section}.\arabic{subsection}.\arabic{subsubsection}.】}
   {0pt}
   {}
@@ -139,11 +146,11 @@ class Config:
 
 % 页脚设置
 \pagestyle{fancy}
-\fancyfoot[C]{\setsmallf\thepage}
-\fancyfoot[RO]{\setsmallf【#${title}】|【\leftmark】}
-\fancyfoot[LE]{\setsmallf【\leftmark】|【#${title}】}
-\fancyfoot[LO]{\setsmallf【#${template.generate_time}】}
-\fancyfoot[RE]{\setsmallf【#${template.generate_time}】}
+\fancyfoot[C]{\setsmallf{#${setting.fontsizes.footer}}\thepage}
+\fancyfoot[RO]{\setsmallf{#${setting.fontsizes.footer}}【#${title}】|【\leftmark】}
+\fancyfoot[LE]{\setsmallf{#${setting.fontsizes.footer}}【\leftmark】|【#${title}】}
+\fancyfoot[LO]{\setsmallf{#${setting.fontsizes.footer}}【#${template.generate_time}】}
+\fancyfoot[RE]{\setsmallf{#${setting.fontsizes.footer}}【#${template.generate_time}】}
 
 % 设置列表的间距
 \setlist{noitemsep,leftmargin=1em,labelsep=0.1em,topsep=0.1em,partopsep=0.1em}
@@ -178,8 +185,8 @@ class Config:
     breaklines=true,
     breakatwhitespace=false,     % 允许在任意位置换行
     breakindent=0em,             % 换行缩进（由于设置了箭头符号故这里设置为0）
-    prebreak=\mbox{\textcolor{red}{$\hookleftarrow$}\space},
-    postbreak=\mbox{\space\textcolor{red}{$\hookrightarrow$}},
+    % prebreak=\mbox{\textcolor{red}{$\hookleftarrow$}\space},
+    % postbreak=\mbox{\space\textcolor{red}{$\hookrightarrow$}},
     numbers=left,      % 行号位置
     numbersep=0.5em,   % 行号距左侧宽度
     xleftmargin=1em,   % 左侧整体偏移
@@ -204,7 +211,7 @@ class Config:
 
 \begin{document}
 % 分栏、字体设置
-\setsmallf
+\setsmallf{#${setting.fontsize}}
 #${template.mktitle}
 #${template.mktoc}
 \begin{multicols}{#${setting.cols}}
@@ -224,7 +231,7 @@ class Config:
 生成于:#${template.generate_time}
 纸张类型：#${setting.papersize}
 边距：上#${setting.border.top}cm,下#${setting.border.bottom}cm,左#${setting.border.left}cm,右#${setting.border.right}cm,装订偏移：#${setting.border.bindingoffset}cm,页脚：#${setting.border.footskip}pt,栏距#${setting.col_gap},
-字体大小(h1,h2,h3,正文)：#${setting.fontsize.section}pt, #${setting.fontsize.subsection}pt ,#${setting.fontsize.subsubsection}pt ,#${setting.fontsize}pt
+字体大小：题一:#${setting.fontsizes.section}pt,题二:#${setting.fontsizes.subsection}pt,题三:#${setting.fontsizes.subsubsection}pt,页脚:#${setting.fontsizes.footer}pt,正文:#${setting.fontsize}pt
 字词统计：#${counter.words}""".splitlines())
     latex_template_fgruler = r"""
 \usepackage[type=user]{fgruler}
@@ -234,6 +241,12 @@ class Config:
     \fi
 }
 """
+    latex_template_setfont = [r"""
+\setmainfont{#${setting.fontname}}
+\newcommand{\setsmallf}[1]{\fontsize{#1pt}{#${setting.fontsizes.skip}}\selectfont\CJKfontspec{#${setting.fontname}}}
+""",r"""
+\newcommand{\setsmallf}[1]{\fontsize{#1pt}{#${setting.fontsizes.skip}}\selectfont}
+"""]
     def __init__(self, cfg_f:Path):
         self.cfg_f = cfg_f
         self.cfg = self.cfg_template
@@ -247,6 +260,13 @@ class Config:
             pytools.print_err(f"Err type: {type(cfg)}")
             cfg = {}
         pytools.merge_dict(self.cfg, cfg, True)
+        basefontsize = self.cfg["setting"]["fontsize"]
+        fontsizes = self.cfg["setting"]["fontsizes"]
+        if fontsizes["autocontrol"]:
+            fontsizes["section"] = basefontsize + 2
+            fontsizes["subsection"] = basefontsize + 1
+            fontsizes["subsubsection"] = basefontsize
+            fontsizes["footer"] = basefontsize
     def print_config_template(self):
         """打印模板json"""
         print(json.dumps(self.cfg_template, ensure_ascii=False, indent='\t'))
@@ -318,9 +338,6 @@ class Config:
                 "template.generate_time": pytools.get_strtime(),
                 }
         k.update(pytools.squash_dict(self.cfg))
-        k["setting.fontsize.section"] = float(k["setting.fontsize"]) + 2
-        k["setting.fontsize.subsection"] = float(k["setting.fontsize"]) + 1
-        k["setting.fontsize.subsubsection"] = k["setting.fontsize"]
         k["counter.words"] = words
         k["template.mktitle"] = r"\maketitle{}" if k["setting.mktitle"] else ""
         k["template.mktoc"] = Template2(self.latex_template_toc).safe_substitute(k) \
@@ -328,6 +345,10 @@ class Config:
         k["template.ruler"] = self.latex_template_fgruler if k["setting.ruler"] else ""
         k["template.gen_info"] = Template2(self.latex_template_info).safe_substitute(k) \
                 if k["setting.gen_info"] else ""
+
+        k["template.setfont"] = Template2(
+                self.latex_template_setfont[0 if k["setting.fontname"] != "CTEX_DEFAULT" else 1]
+                ).safe_substitute(k)
         return k
 
 def main():
@@ -360,6 +381,16 @@ def main():
     outputf.write_text(Template2(config.latex_template).safe_substitute(temp_dict),
                        encoding="utf8")
     print(f"[INFO] 输出文件为'{outputf}'")
+    if args.run:
+        try:
+            subprocess.run(["xelatex", outputf], check=True)
+            if config.cfg["setting"]["mktoc"]:
+                subprocess.run(["xelatex", outputf], check=True)
+                subprocess.run(["xelatex", outputf], check=True)
+        except KeyError as e:
+            pytools.print_err(f"[WARN] KeyError: {e}")
+        except (FileNotFoundError, subprocess.CalledProcessError) as e:
+            pytools.print_err(f"[WARN] run command error: {e}")
 
 def parse_arg() -> argparse.Namespace:
     """解释参数"""
@@ -368,6 +399,7 @@ def parse_arg() -> argparse.Namespace:
                         help="指定配置文件(不可用时命令行配置才有用)")
     parser.add_argument("-C", "--print-config", action="store_true", help="打印配置文件模板")
     parser.add_argument("-p", "--print-template", action="store_true", help="打印latex模板")
+    parser.add_argument("-r", "--run", action="store_true", help="auto run command")
     parser.add_argument("-t", "--title", type=str, help="指定标题")
     parser.add_argument("-a", "--author", type=str, help="指定作者")
     parser.add_argument("-f", "--filelist", action="append", help="增设文件列表")
