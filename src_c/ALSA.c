@@ -177,7 +177,7 @@ struct Note {
  * base: 以n分音符为一拍
  * speed: 速度，n拍/分钟
  * */
-short *create_note_wave(const char *note, double type, int base, double speed)
+short *create_note_wave(const char *note, double type, int base, double speed, double *amplitude)
 {
 	if (note == NULL) return NULL;
 	struct Note note_list[20] = {};
@@ -191,6 +191,15 @@ short *create_note_wave(const char *note, double type, int base, double speed)
 		['5'] = 784.0, ['6'] = 880.0, ['7'] = 987.8, ['0'] = -1,
 		['{'] = 20, ['}'] = 20000};
 	int counter = -1;
+	static double fadeout = 0.0;
+	*amplitude *= (1+fadeout);
+	if (*amplitude > 1 || *amplitude < 0) {
+		int istty = isatty(STDERR_FILENO);
+		char *colors[2][2] = {{"", ""}, {"\e[31m", "\e[0m"}};
+		fprintf(stderr, "[%sWARN%s amplitude out of range:%lf]\n",
+			colors[istty][0], colors[istty][1], *amplitude);
+		*amplitude /= (1+fadeout);
+	}
 
 	for (const char *p = note; *p != '\0' && counter < 20; p++) {
 		if (!note_freq[(int)*p] && !current_note->freq)
@@ -200,7 +209,7 @@ short *create_note_wave(const char *note, double type, int base, double speed)
 				current_note++;
 			current_note->freq = note_freq[(int)*p];
 			current_note->duration = SAMPLE_RATE*(base/type)*(60/speed);
-			current_note->amplitude = 0.2;
+			current_note->amplitude = *amplitude;
 			counter++;
 		} else if (*p == '/')
 			current_note->duration /= 2;
@@ -226,6 +235,12 @@ short *create_note_wave(const char *note, double type, int base, double speed)
 			current_note->freq*=2;
 		else if (*p == 'r')
 			current_note->use_right_side = 1;
+		else if (*p == '<')
+			fadeout += 0.005;
+		else if (*p == '>')
+			fadeout -= 0.005;
+		else if (*p == '=')
+			fadeout = 0;
 		else
 			continue;
 		if (status&FLG_PRINT) printf("%c", *p);
@@ -344,7 +359,7 @@ char *str_in_group(char *p, char *splitors, int id)
 	return ret;
 }
 
-int melody(int id, char *filename, int speed, char *input)
+int melody(int id, char *filename, int speed, double amplitude, char *input)
 {
 	id %= 7;
 	const char *note[7][514] = {
@@ -519,7 +534,7 @@ int melody(int id, char *filename, int speed, char *input)
 		if (!p || !*p) continue;
 		if (status&FLG_PRINT)
 			printf(status&FLG_PRINT_CSTYLE?"\"":"");
-		short *wave = create_note_wave(p, 4, base, speed);
+		short *wave = create_note_wave(p, 4, base, speed, &amplitude);
 		if (!wave || *(int*)wave <= 10) {
 			fprintf(stderr,"波形为空,Code:[%d], ind:%d, str:'%s'\n",
 			       wave ? *(int*)wave : -1, i, p);
@@ -628,9 +643,10 @@ int read_play_wave(char *filename)
 int main(int argc, char *argv[])
 {
 	int ch = 0, id = 0, speed = 120;
+	double amplitude = 0.2;
 	char filename[125] = "output.wav",
 	     *notes = NULL;
-	while ((ch = getopt(argc, argv, "hi:psnmHo:S:r:C:Pcd")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "hi:psnmHo:S:r:C:PcdA:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -649,6 +665,7 @@ int main(int argc, char *argv[])
 			       "    -d        指定额外音符时读取头两个数字作拍号\n"
 			       "    -P        打印音符(格式化)\n"
 			       "    -c        打印音符时采用c语言样式\n"
+			       "    -A <NUM>  基本音量(0~1,默认0.2)\n"
 			       "    -h        显示帮助\n"
 			       "  NUM: 0: 小星星\n"
 			       "       1: 中国人民志愿军战歌\n"
@@ -688,6 +705,9 @@ int main(int argc, char *argv[])
 		case 'S':
 			speed = strtod(optarg, NULL);
 			break;
+		case 'A':
+			amplitude = strtof(optarg, NULL);
+			break;
 		case 'r':
 			strcpy(filename, optarg);
 			return read_play_wave(filename);
@@ -714,7 +734,7 @@ int main(int argc, char *argv[])
 		}
 	}
 	speed = speed <= 2 ? 120 : speed;
-	melody(id, filename, speed, notes);
+	melody(id, filename, speed, amplitude, notes);
 	if (notes)
 		free(notes);
 	return 0;
