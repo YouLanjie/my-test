@@ -4,6 +4,7 @@
 import sys
 from pathlib import Path
 import datetime
+import copy
 
 def print_err(s:str):
     """从stderr打印输出"""
@@ -115,7 +116,7 @@ def merge_dict(old:dict, new:dict, warn=False, prefix=""):
         prefix+="/"
     for k in new:
         if ".*" in old:
-            old[k] = old[".*"]
+            old[k] = copy.deepcopy(old[".*"])
         if k not in old:
             if warn:
                 print_err(f"[WARN] 词典'/{prefix}'不存在关键词'{k}'")
