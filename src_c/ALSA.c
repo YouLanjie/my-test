@@ -707,6 +707,8 @@ int main(int argc, char *argv[])
 			break;
 		case 'A':
 			amplitude = strtof(optarg, NULL);
+			if (amplitude > 0.9 || amplitude < 0)
+				amplitude = 0.2;
 			break;
 		case 'r':
 			strcpy(filename, optarg);
