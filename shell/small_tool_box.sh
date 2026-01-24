@@ -1,7 +1,7 @@
 #!/usr/bin/bash
 # 存放一些又臭又长的命令
 
-choices=$(grep -G '[a-Z0-9 ]\+() {' $0|sed 's/() {//')
+choices=$(grep -G '[-_A-Za-z0-9 ]\+() {' $0|sed 's/() {//')
 
 quit() {
 	exit
@@ -112,6 +112,33 @@ debug_coredump() {
 	echo "输入程序名"
 	gdb "$(head -n 1)" $tmpfile
 	rm $tmpfile
+}
+
+git_cls() {
+	cwd=$(pwd)
+	cd "$(git rev-parse --show-toplevel)"
+	find -name ".gitignore" -type f -exec rm \{\} \;
+	gst >/dev/null 2>&1 || return -1
+	rm -rf `gss | awk '{print $2}'`
+	grs ./
+	cd "$cwd"
+}
+
+git_smaller() {
+	cwd=$(pwd)
+	cd "$(git rev-parse --show-toplevel)"
+
+	echo "----- BEFORE:"
+	du -sh .git
+	git count-objects -v
+
+	echo "----- CLEANING:"
+	git gc --prune=now
+
+	echo "----- AFTER:"
+	du -sh .git
+	git count-objects -v
+	cd "$cwd"
 }
 
 if [[ $1 != "" ]];then

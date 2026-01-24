@@ -53,10 +53,12 @@ class Config:
                 "papersize":"a4paper",
                 "fontsize":4.0,
                 "fontsizes":{
-                    "autocontrol":True,
-                    "section":6.0,
-                    "subsection":5.0,
-                    "subsubsection":4.0,
+                    "sections":{
+                        "autocontrol":True,
+                        "section":6.0,
+                        "subsection":5.0,
+                        "subsubsection":4.0,
+                        },
                     "skip":0.1,
                     "footer":4.0,
                     },
@@ -125,17 +127,17 @@ class Config:
 
 % 使用 titlesec 重新定义标题格式，保持目录功能
 \titleformat{\section}
-  {\fontsize{#${setting.fontsizes.section}}{0.1}\selectfont\bfseries}
+  {\fontsize{#${setting.fontsizes.sections.section}}{0.1}\selectfont\bfseries}
   {【\arabic{section}.】}
   {0pt}
   {}
 \titleformat{\subsection}
-  {\fontsize{#${setting.fontsizes.subsection}}{0.1}\selectfont\bfseries}
+  {\fontsize{#${setting.fontsizes.sections.subsection}}{0.1}\selectfont\bfseries}
   {【\arabic{section}.\arabic{subsection}.】}
   {0pt}
   {}
 \titleformat{\subsubsection}
-  {\fontsize{#${setting.fontsizes.subsubsection}}{0.1}\selectfont\bfseries}
+  {\fontsize{#${setting.fontsizes.sections.subsubsection}}{0.1}\selectfont\bfseries}
   {【\arabic{section}.\arabic{subsection}.\arabic{subsubsection}.】}
   {0pt}
   {}
@@ -231,7 +233,7 @@ class Config:
 生成于:#${template.generate_time}
 纸张类型：#${setting.papersize}
 边距：上#${setting.border.top}cm,下#${setting.border.bottom}cm,左#${setting.border.left}cm,右#${setting.border.right}cm,装订偏移：#${setting.border.bindingoffset}cm,页脚：#${setting.border.footskip}pt,栏距#${setting.col_gap},
-字体大小：题一:#${setting.fontsizes.section}pt,题二:#${setting.fontsizes.subsection}pt,题三:#${setting.fontsizes.subsubsection}pt,页脚:#${setting.fontsizes.footer}pt,正文:#${setting.fontsize}pt
+字体大小：题一:#${setting.fontsizes.sections.section}pt,题二:#${setting.fontsizes.sections.subsection}pt,题三:#${setting.fontsizes.sections.subsubsection}pt,页脚:#${setting.fontsizes.footer}pt,正文:#${setting.fontsize}pt
 字词统计：#${counter.words}""".splitlines())
     latex_template_fgruler = r"""
 \usepackage[type=user]{fgruler}
@@ -262,11 +264,11 @@ class Config:
         pytools.merge_dict(self.cfg, cfg, True)
         basefontsize = self.cfg["setting"]["fontsize"]
         fontsizes = self.cfg["setting"]["fontsizes"]
-        if fontsizes["autocontrol"]:
-            fontsizes["section"] = basefontsize + 2
-            fontsizes["subsection"] = basefontsize + 1
-            fontsizes["subsubsection"] = basefontsize
-            fontsizes["footer"] = basefontsize
+        if fontsizes["sections"]["autocontrol"]:
+            fontsizes["sections"]["section"] = basefontsize + 2
+            fontsizes["sections"]["subsection"] = basefontsize + 1
+            fontsizes["sections"]["subsubsection"] = basefontsize
+            # fontsizes["footer"] = basefontsize
     def print_config_template(self):
         """打印模板json"""
         print(json.dumps(self.cfg_template, ensure_ascii=False, indent='\t'))
@@ -350,6 +352,22 @@ class Config:
                 self.latex_template_setfont[0 if k["setting.fontname"] != "CTEX_DEFAULT" else 1]
                 ).safe_substitute(k)
         return k
+    def gen_toc_str(self, content:str) -> str:
+        "手动生成填充空间用的目录文件（减少一次xelatex编译）"
+        tocs = re.findall(r"\\((?:sub){0,2}section){(.*)}", content)
+        if not tocs:
+            return ""
+        dic = ["section","subsection","subsubsection"]
+        counter = [0, 0, 0]
+        s = ""
+        for i in tocs:
+            counter[dic.index(i[0])] += 1
+            for j in range(dic.index(i[0])+1,3):
+                counter[j] = 0
+            ind = ".".join([str(j) for j in counter if j])
+            s += "\\contentsline {%s}{\\numberline {%s}%s}{1}{%s.%s}%%\n" % \
+                    (i[0], ind, i[1], i[0], ind)
+        return s
 
 def main():
     """主函数"""
@@ -378,19 +396,22 @@ def main():
     outputf = config.cfg_f.parent/Template2(config.cfg["output"]).safe_substitute(temp_dict)
 
     temp_dict["template.body"] = c
-    outputf.write_text(Template2(config.latex_template).safe_substitute(temp_dict),
-                       encoding="utf8")
+    c = Template2(config.latex_template).safe_substitute(temp_dict)
+    outputf.write_text(c, encoding="utf8")
     print(f"[INFO] 输出文件为'{outputf}'")
-    if args.run:
-        try:
+    if not args.run:
+        return
+    print(f"[INFO] 自动构建'{outputf}'")
+    try:
+        if config.cfg["setting"]["mktoc"]:
+            toc_outputf = outputf.parent/(outputf.stem+".toc")
+            toc_outputf.write_text(config.gen_toc_str(c))
             subprocess.run(["xelatex", outputf], check=True)
-            if config.cfg["setting"]["mktoc"]:
-                subprocess.run(["xelatex", outputf], check=True)
-                subprocess.run(["xelatex", outputf], check=True)
-        except KeyError as e:
-            pytools.print_err(f"[WARN] KeyError: {e}")
-        except (FileNotFoundError, subprocess.CalledProcessError) as e:
-            pytools.print_err(f"[WARN] run command error: {e}")
+        subprocess.run(["xelatex", outputf], check=True)
+    except KeyError as e:
+        pytools.print_err(f"[WARN] KeyError: {e}")
+    except (FileNotFoundError, subprocess.CalledProcessError) as e:
+        pytools.print_err(f"[WARN] 执行命令出现错误：{e}")
 
 def parse_arg() -> argparse.Namespace:
     """解释参数"""

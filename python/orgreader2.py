@@ -1527,7 +1527,6 @@ class TexExportVisitor(ExportVisitor):
         return "\n".join([i.accept(self) for i in node.child])
     def visit_text(self, node: Text) -> str:
         return node.line.accept(self)
-        return ""
     def visit_title(self, node:Title) -> str:
         level = node.level-node.document.status["lowest_title"]
         if level < 3:
