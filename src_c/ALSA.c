@@ -152,11 +152,20 @@ double adsr_envelope(int current, int total)
 		return sustain * (1.0 - (t - (1.0 - release)) / release);	// 释放
 }
 
+#define sigmoid(x) (1 - 1/(1+exp(x)))
+
+/*
+ * 获取应有频率
+ * start: 初始频率
+ * end: 目标频率
+ * x: 0-1
+ * */
 double get_glide_freq(double start, double end, double x)
 {
-	double s = 1/(1+exp(-20*(x-0.5)));
-	if (status&FLG_SMMOTH_GLIDE)
-		s = x;
+	/* s:获取前后两个波形的音量占比
+	 * x=0.5附近从0平滑跃变为1 || y=kx */
+	double s = status&FLG_SMMOTH_GLIDE ? x : sigmoid(20*(x-0.5));
+	/* 对数和指数计算让音调“均匀”变化 */
 	double ret = log(start) + (log(end)-log(start))*s;
 	return exp(ret);
 }
@@ -165,8 +174,8 @@ struct Note {
 	double freq;
 	double amplitude;
 	int duration;    /* base on sample point */
-	int enable_glide;    /* 连音符 */
-	int enable_slide;    /* 滑动频率 */
+	int enable_glide;    /* 连音符(跳变) */
+	int enable_slide;    /* 滑动频率(滑动) */
 	int use_right_side;
 };
 
@@ -272,10 +281,10 @@ short *create_note_wave(const char *note, double type, int base, double speed, d
 	*(int*)buffer = buffer_frames;
 	struct Note *p = note_list;
 	int use_right_side = 0;
-	int flag_slide = 0;
+	int flag_slide = 0;    /* 启用滑音时的初始频率 */
 	for (int i = 0; i < 20 && p->amplitude != 0; i++,p++) {
 		short num = 0;
-		if (p->enable_slide) {
+		if (p->enable_slide) {    /* 滑音 != 连音 */
 			flag_slide = p->freq;
 			continue;
 		}
@@ -284,10 +293,10 @@ short *create_note_wave(const char *note, double type, int base, double speed, d
 						   (p->enable_glide || enable_glide) ? buffer_frames : p->duration)*p->amplitude;
 			double freq = flag_slide ? get_glide_freq(flag_slide, p->freq, (double)i/p->duration) : p->freq;
 			num = (short)wave((double)i/SAMPLE_RATE, env, freq);
-			if (p->enable_glide)
-				num *= (1 - 1/(1+exp((double)(p->duration+enable_glide-i)/800)));
+			if (p->enable_glide)    /* 若当前频率也启用连音 */
+				num *= sigmoid((double)(p->duration+enable_glide-i)/800);
 			if (enable_glide)
-				num *= (1/(1+exp((double)(enable_glide-i)/800)));
+				num *= sigmoid((double)(i-enable_glide)/800);
 			if (use_right_side == 1)
 				buffer[i * 2 + 3] = num;    /* 右声道 */
 			else if (use_right_side == 2)
