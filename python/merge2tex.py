@@ -74,6 +74,10 @@ class Config:
                 "cols":9,
                 "toc_cols":5,
                 "col_gap":"1mm",
+                "newpage":{
+                    "title": False,
+                    "toc": False,
+                    },
                 },
             "filelist":{
                 ".*":{
@@ -228,13 +232,15 @@ class Config:
     latex_template_toc = r"""\begin{multicols}{#${setting.toc_cols}}
 \tableofcontents
 \end{multicols}
+#${template.newpage.toc}
 """
-    latex_template_info = "\n\n\\noindent\n".join(r"""\section{页面设置}
+    latex_template_info = "\n\n\\noindent\n".join(r"""【页面设置】
 生成于:#${template.generate_time}
 纸张类型：#${setting.papersize}
 边距：上#${setting.border.top}cm,下#${setting.border.bottom}cm,左#${setting.border.left}cm,右#${setting.border.right}cm,装订偏移：#${setting.border.bindingoffset}cm,页脚：#${setting.border.footskip}pt,栏距#${setting.col_gap},
-字体大小：题一:#${setting.fontsizes.sections.section}pt,题二:#${setting.fontsizes.sections.subsection}pt,题三:#${setting.fontsizes.sections.subsubsection}pt,页脚:#${setting.fontsizes.footer}pt,正文:#${setting.fontsize}pt
-字词统计：#${counter.words}""".splitlines())
+字体名称：#${template.fontname}
+字体大小：卷:#${setting.fontsizes.sections.section}pt,章:#${setting.fontsizes.sections.subsection}pt,节:#${setting.fontsizes.sections.subsubsection}pt,正文:#${setting.fontsize}pt,页脚:#${setting.fontsizes.footer}pt
+字词统计：#${counter.words}""".splitlines()) + "\n\n【页面设置结束】"
     latex_template_fgruler = r"""
 \usepackage[type=user]{fgruler}
 \fgrulerdefuser{
@@ -295,6 +301,14 @@ class Config:
             filelist |= {i.resolve() for i in ((fl-bl)|wl)}
         filelist = mysorted(filelist)
         return filelist, whitelist
+    def _count_top_char(self, c:str, n:int = 10) -> str:
+        t = {}
+        for i in c:
+            if i not in t:
+                t[i] = 0
+            t[i] += 1
+        s = set(c) - set("，。？！,.?!—…")
+        return "".join(sorted(s, key=lambda x:t[x], reverse=True))[:n]
     def get_merged(self) -> tuple[str,str]:
         """生成org文件内容"""
         filelist, whitelist = self.get_filelist()
@@ -305,7 +319,7 @@ class Config:
         for i in filelist:
             file = pytools.calculate_relative(i, home)
             filename = str(file)
-            if i in whitelist:
+            if i in whitelist and whitelist[i]:
                 filename += f" {whitelist[i]}"
             print(f"       - {filename}")
             s = i.read_text(encoding="utf-8").splitlines()
@@ -322,7 +336,7 @@ class Config:
             if levels and min(levels) > 1 and max(levels) < 4:
                 s = f"* {i.name}\n" + s
             s = s.splitlines()
-            s = ["#+begin_verse", f"【FILE:{filename}】","#+end_verse",""] + s
+            s = ["#+begin_quote", f"FILE:【{filename}】","#+end_quote",""] + s
             doc = org2.Document(
                     s,
                     file_name=str(file),
@@ -330,8 +344,8 @@ class Config:
             content += doc.accept(exportor)
         return (f"字数：{len([i for i in content if i not in " \t\n\r\\{}[]"])/1000}k,\n"
                 f"中文字符数：{len([i for i in content if len(i.encode()) > 1])/1000}k,\n"
-                f"覆盖字符数：{len(set(content))},\n"
-                f"行数：{len([i for i in content.splitlines() if i])},\n",
+                f"行数：{len([i for i in content.splitlines() if i])},\n"
+                f"覆盖字符数：{len(set(content))}【{self._count_top_char(content)}】,\n",
                 content)
     def generate_template_dict(self, words = "None") -> dict:
         """生成用于模板的词典"""
@@ -341,10 +355,14 @@ class Config:
                 }
         k.update(pytools.squash_dict(self.cfg))
         k["counter.words"] = words
-        k["template.mktitle"] = r"\maketitle{}" if k["setting.mktitle"] else ""
+        k["template.mktitle"] = (r"\maketitle{}"+\
+                ("\\newpage\n" if k["setting.newpage.title"] else "")) \
+                if k["setting.mktitle"] else ""
+        k["template.newpage.toc"] = "\\newpage\n" if k["setting.newpage.toc"] else ""
         k["template.mktoc"] = Template2(self.latex_template_toc).safe_substitute(k) \
                 if k["setting.mktoc"] else ""
         k["template.ruler"] = self.latex_template_fgruler if k["setting.ruler"] else ""
+        k["template.fontname"] = org2.tex_escape(str(k["setting.fontname"]))
         k["template.gen_info"] = Template2(self.latex_template_info).safe_substitute(k) \
                 if k["setting.gen_info"] else ""
 
@@ -408,6 +426,14 @@ def main():
             toc_outputf.write_text(config.gen_toc_str(c))
             subprocess.run(["xelatex", outputf], check=True)
         subprocess.run(["xelatex", outputf], check=True)
+        logfile = outputf.parent/(outputf.stem+".log")
+        if logfile.is_file():
+            s = logfile.read_text()
+            if "Missing character" in s:
+                pytools.print_err("[WARN] 字体字符缺失:")
+                for i in set(re.findall(
+                    r"Missing character: There is no (.*?) in font (.*)", s)):
+                    pytools.print_err(f"({i[1]}): {i[0]}")
     except KeyError as e:
         pytools.print_err(f"[WARN] KeyError: {e}")
     except (FileNotFoundError, subprocess.CalledProcessError) as e:

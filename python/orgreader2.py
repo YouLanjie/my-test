@@ -91,6 +91,15 @@ def _get_strings_pattern(s:str,blank_char=" )-,") -> re.Pattern:
     return re.compile(f"{s}([^ ].*?(?<! )){s}(?=[{blank_char}]|\n|$)",
                       re.DOTALL)
 
+def tex_escape(s:str):
+    s = s.replace("\\",r"\textbackslash ")
+    for i in "#$%&_{}":
+        s = s.replace(i, "\\"+i)
+    for i in "^~":
+        s = s.replace(i, "\\"+i+"{}")
+    s = re.sub("(.)\n", r"\1\\\\"+"\n", s)
+    return s
+
 class Strings:
     """行内字符串类，提供行内格式转换"""
     pattern = [
@@ -1471,14 +1480,6 @@ class TexExportVisitor(ExportVisitor):
              "timestamp":(r"\textit{", "}")}
     def visit_strings(self, node: Strings, li: list) -> str:
         """输出行内文本(LaTex)"""
-        def tex_escape(s:str):
-            s = s.replace("\\",r"\textbackslash ")
-            for i in "#$%&_{}":
-                s = s.replace(i, "\\"+i)
-            for i in "^~":
-                s = s.replace(i, "\\"+i+"{}")
-            s = re.sub("(.)\n", r"\1\\\\"+"\n", s)
-            return s
         if not li:
             return ""
         ret = ""
@@ -1528,6 +1529,8 @@ class TexExportVisitor(ExportVisitor):
     def visit_text(self, node: Text) -> str:
         return node.line.accept(self)
     def visit_title(self, node:Title) -> str:
+        if node.comment or not node.opt["printable"]:
+            return ""
         level = node.level-node.document.status["lowest_title"]
         if level < 3:
             tag = ["sub"*level+"section{", "}"]

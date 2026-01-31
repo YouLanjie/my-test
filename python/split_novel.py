@@ -26,15 +26,23 @@ def get_same(li1:list, li2:list) -> list:
         limit -= 1
     return li1[:limit]
 
+def process_unicode(s: str):
+    def sub(match: re.Match):
+        try:
+            return chr(int(match.group(1)))
+        except ValueError:
+            return ""
+    return re.sub(r'&#(\d+);', sub, s)
+
 def main():
     args = parse_arg()
     cfg_f = args.config
     cfg = {"source_file":"",
-           "encoding":"gbk",
            "title":"",
            "setupfile":"./setup.setup",
            "section_pattern":r"[　]*(第.*卷.*)",
            "comment":"这里用来记录点额外信息，不会对结果产生影响",
+           "process_unicode":True,
            "words":[["身分","身份"], ["计画","计划"], ["徵","征"],
                     ["乾","干"]],}
     new_cfg = {}
@@ -56,11 +64,14 @@ def main():
     if not inp.is_file():
         pytools.print_err(f"[WARN] '{inp}' is not file")
         return
-    content = inp.read_text(encoding=cfg["encoding"])
+    content = pytools.read_text(inp)
+
+    if cfg["process_unicode"]:
+        content = process_unicode(content)
 
     for w1,w2 in cfg["words"]:
-        print(f"替换 '{w1}' 为 '{w2}' : 共计{len(content.split(w1))-1}处")
-        content = content.replace(w1, w2)
+        print(f"替换 '{w1}' 为 '{w2}' : 共计{len(re.findall(w1, content))}处")
+        content = re.sub(w1, w2, content)
 
     content = content.splitlines()
     groups : list[list[str]] = []

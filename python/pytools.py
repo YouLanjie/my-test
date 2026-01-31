@@ -162,3 +162,19 @@ def process_filelist(li:list[str]) -> dict[str,list[int]]:
             continue
         ret[l[0]] = nums
     return ret
+
+def read_text(file: Path) -> str:
+    if not file.is_file():
+        return ""
+    try:
+        b = file.read_bytes()
+    except (PermissionError):
+        return ""
+    s = ""
+    for i in ["utf8", "gbk", "utf32", "utf16"]:
+        try:
+            s = b.decode(i)
+            break
+        except UnicodeDecodeError:
+            pass
+    return s
