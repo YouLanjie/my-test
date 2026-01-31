@@ -27,6 +27,12 @@ class Template2(Template):
 
 class TexExport(org2.TexExportVisitor):
     """导出 LaTeX with 缩印模板"""
+    rules = {"code":(r"\texttt{","}"),
+             "italic":(r"\emph{", "}"),
+             "bold":(r"\textbf{", "}"),
+             "del":(r"\CJKsout{", "}"), # ulem
+             "underline":(r"\uline{", "}"), # ulem
+             "timestamp":(r"\textit{", "}")}
     def visit_blockcode(self, node: org2.BlockCode) -> str:
         ret = r"\begin{lstlisting}"
         # 可能导致latex编译错误
@@ -108,6 +114,7 @@ class Config:
 \usepackage{multicol}
 \usepackage[UTF8]{ctex}
 \usepackage{xcolor}
+\usepackage{xeCJKfntef} % 划线支持(ulem替代)
 \usepackage{fancyhdr}  % 自定义脚注
 \usepackage{titlesec}  % 控制标题格式
 \usepackage{enumitem}  % 控制列表格式
