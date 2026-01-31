@@ -168,7 +168,7 @@ def read_text(file: Path) -> str:
         return ""
     try:
         b = file.read_bytes()
-    except (PermissionError):
+    except PermissionError:
         return ""
     s = ""
     for i in ["utf8", "gbk", "utf32", "utf16"]:

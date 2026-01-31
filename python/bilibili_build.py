@@ -117,31 +117,49 @@ class Video():
 
 class Ui():
     """TUI,需要curses"""
-    width=80
+    info_height=9
     position=0
     select=0
     collection = []
-    def __init__(self, stdscr, content : list) -> None:
+    def __init__(self, stdscr: curses.window, content : list) -> None:
         if "curses" not in sys.modules:
             print("模块curses未导入，curses界面不可用")
             sys.exit(1)
-        info_height = 9
-        try:
-            self.width=os.get_terminal_size().columns
-            self.height=os.get_terminal_size().lines - info_height - 1
-        except OSError:
-            self.width = 80
-            self.height = 24
+        self.content : list[list[Video]] = content
+
         self.stdscr = stdscr
         curses.curs_set(0)
         curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLUE)
         curses.init_pair(2, curses.COLOR_GREEN, curses.COLOR_BLACK)
         curses.init_pair(3, curses.COLOR_WHITE, curses.COLOR_BLACK)
+        try:
+            self.width=os.get_terminal_size().columns
+            self.height=os.get_terminal_size().lines - self.info_height - 1
+        except OSError:
+            self.width = 80
+            self.height = 24
         self.list = curses.newwin(self.height + 1, self.width, 0, 0)
-        self.info = curses.newwin(info_height, self.width, self.height + 1, 0)
-        self.sets = curses.newwin(int(self.height/2), int(self.width/2), int(self.height/4), int(self.width/4))
-        self.content : list[list[Video]] = content
-        # self.height = len(self.content)
+        self.info = curses.newwin(self.info_height, self.width, self.height + 1, 0)
+        self.sets = curses.newwin(int(self.height/2), int(self.width/2),
+                                  int(self.height/4), int(self.width/4))
+    def update_winsize(self):
+        """更新窗口大小"""
+        try:
+            size = os.get_terminal_size()
+            self.width=size.columns
+            self.height=size.lines - self.info_height - 1
+        except OSError:
+            self.width = 80
+            self.height = 24 - self.info_height - 1
+        curses.update_lines_cols()
+        self.stdscr.touchwin()
+        self.stdscr.clear()
+        self.stdscr.getmaxyx()
+        # self.list.resize(self.height + 1, self.width)
+        self.list = curses.newwin(self.height + 1, self.width, 0, 0)
+        self.info = curses.newwin(self.info_height, self.width, self.height + 1, 0)
+        self.sets = curses.newwin(int(self.height/2), int(self.width/2),
+                                  int(self.height/4), int(self.width/4))
     def print_list(self, content):
         """打印视频列表"""
         self.list.erase()
@@ -352,7 +370,12 @@ class Ui():
                     [cont[i] for i in self.collection]
             self.print_list(cont)
             self.print_info(cont)
-            inp = chr(self.stdscr.getch())
+            inp = self.stdscr.getch()
+            if inp < 0:
+                inp = 0
+                self.update_winsize()
+                continue
+            inp = chr(inp)
             if inp in "j"+chr(curses.KEY_DOWN):
                 self.select+=1
             elif inp in "k"+chr(curses.KEY_UP):
