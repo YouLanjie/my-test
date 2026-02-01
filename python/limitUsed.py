@@ -89,8 +89,10 @@ def download_file(urls:list, savefile) -> bytes:
             logging.error("while saving '%s': %s", savefile, e)
     return content
 
-def auto_update():
+def auto_update(protect: "Protect"):
     """自动更新函数"""
+    if time.time() - EXE.stat().st_mtime < 60*60:
+        return
     local_content = EXE.read_bytes()
     logging.info("正在尝试自动更新")
     path = "python/limitUsed.py"
@@ -101,8 +103,13 @@ def auto_update():
     content = download_file(urls, "")
     if not content or content == local_content:
         return
+    obj = protect.filelist[EXE]
+    obj.keep_alive = False
+    if obj.pth:
+        obj.pth.join()
     EXE.write_bytes(content)
     logging.info("已自动更新")
+    protect.start()
     return
 
 def run_python(cmd:list):
@@ -304,10 +311,7 @@ class Protect:
             return
 
         if file == EXE:
-            try:
-                auto_update()
-            except Exception as e:
-                logger.warning("下载文件时未预料的错误: %s", e)
+            threading.Thread(target=auto_update, args=[self]).start()
 
         parent = file.parent
         content = file.read_bytes()
@@ -431,7 +435,7 @@ def main():
             try:
                 lock.pth.join()
             except (RuntimeError, KeyboardInterrupt) as e:
-                logger.warning("[%s进程] Except: %s",
+                logger.warning("[%s进程] Exception: %s",
                                "主副"[args.daemon], e)
         return
 
