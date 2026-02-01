@@ -387,8 +387,13 @@ class Root:
             return getattr(visitor, method_name)(self)
         # 默认返回空字符串（适配未实现的节点类型）
         return ""
-    def search(self, key, opt="father"):
-        """search for node"""
+    def search(self, key:"int|Root", opt="father") -> "Root|None":
+        """
+        搜索节点
+        Args:
+            key: 相对节点/文件行号
+            opt: 查找模式（father, last）
+        """
         if isinstance(key, int):
             if self.start > key:
                 return None
@@ -652,6 +657,9 @@ class TitleBase(Root):
         self.line = Strings(match.group(2), self)
         self.todo = []
         self.tag = Strings("", self)
+    def set_status(self, comment:bool = False):
+        """设置状态(COMMENT)"""
+        self.comment = comment
     def end_condition(self, match: re.Match | None) -> bool:
         if match is None:
             return False
@@ -1203,8 +1211,8 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
         while index+1 < len(node.child):
             index+=1
             i = node.child[index]
-            if isinstance(i, Title):
-                i.set_status(isinstance(node, Title) and node.comment)
+            if isinstance(i, TitleBase):
+                i.set_status(isinstance(node, TitleBase) and node.comment)
             if i.opt["childable"]:
                 self.merge_text(i)
                 last = None

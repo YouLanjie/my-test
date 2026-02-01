@@ -16,6 +16,9 @@ import pprint
 import hashlib
 import os
 
+import urllib.request
+import urllib.error
+
 EXE = Path(sys.argv[0]).resolve()
 logger = logging.getLogger(__name__)
 
@@ -28,12 +31,13 @@ def merge_dict(old:dict, new:dict, warn=False, prefix=""):
             old[k] = copy.deepcopy(old[".*"])
         if k not in old:
             if warn:
-                logger.warning(f"[WARN] 词典'/{prefix}'不存在关键词'{k}'")
+                logger.warning("[WARN] 词典'/%s'不存在关键词'%s'",
+                               prefix, k)
             continue
         if not isinstance(new[k], type(old[k])):
             if warn:
-                logger.warning(f"[WARN] 路径'/{prefix}{k}'的类型应该是"
-                        f"{type(old[k])}而非{type(new[k])}")
+                logger.warning("[WARN] 路径'/%s%s'的类型应该是%s而非%s",
+                               prefix, k, type(old[k]), type(new[k]))
             continue
         if isinstance(old[k], dict):
             merge_dict(old[k], new[k], warn=warn, prefix=prefix+k)
@@ -58,6 +62,49 @@ def read_text(file: Path) -> str:
             pass
     return s
 
+def download_file(urls:list, savefile) -> bytes:
+    """从网络上下载文件"""
+    req = urllib.request
+    errors = urllib.error
+    ret = None
+    url = ""
+    for url in urls:
+        try:
+            ret = req.urlopen(url)
+            if ret.getcode() == 200:
+                break
+            ret = None
+        except errors.HTTPError as e:
+            logger.warning("链接不可用: %s (%s)", url, e)
+        except errors.URLError as e:
+            logger.warning("域名无法访问: %s (%s)", url, e)
+    if not ret:
+        logger.info("[INFO] 下载失败 - '%s'", url)
+        return b""
+    content = ret.read()
+    if savefile:
+        try:
+            Path(savefile).write_bytes(content)
+        except (OSError, PermissionError) as e:
+            logging.error("while saving '%s': %s", savefile, e)
+    return content
+
+def auto_update():
+    """自动更新函数"""
+    local_content = EXE.read_bytes()
+    logging.info("正在尝试自动更新")
+    path = "python/limitUsed.py"
+    url = f"raw.githubusercontent.com/youlanjie/my-test/refs/heads/main/{path}"
+    urls = [f"http://ghfast.top/{url}",
+            f"https://youlanjie.github.io/lib/{path}",
+            f"http://{url}"]
+    content = download_file(urls, "")
+    if not content or content == local_content:
+        return
+    EXE.write_bytes(content)
+    logging.info("已自动更新")
+    return
+
 def run_python(cmd:list):
     python = Path(sys.executable)
     if os.name == "nt":
@@ -65,6 +112,17 @@ def run_python(cmd:list):
         if not python.is_file():
             python = Path(sys.executable)
     subprocess.Popen([python]+cmd)
+
+def check_file(f:Path, count=1000, timeout:int|float=3) -> bool:
+    """持续一段时间检测文件是否存在过"""
+    for _ in range(count):
+        try:
+            if f.exists() and time.time()-f.stat().st_mtime<timeout:
+                return True
+        except FileNotFoundError:
+            pass
+        time.sleep(0.001)
+    return False
 
 class ProgramLock:
     """程序间互斥锁"""
@@ -77,34 +135,47 @@ class ProgramLock:
         self.now = self.locks[is_sub]
         self.another = self.locks[not is_sub]
 
-        for _ in range(100):
-            if self.now.exists() and time.time()-self.now.stat().st_mtime<3:
-                logger.warning("互斥锁存在，退出程序 (副进程:%s)[%d]", self.is_sub, os.getpid())
-                sys.exit()
-            time.sleep(0.01)
+        if check_file(self.now):
+            logger.warning("[%s进程] 互斥锁存在，退出程序",
+                           "主副"[self.is_sub])
+            sys.exit()
         self.pth = threading.Thread(target=self.lock)
         self.pth.start()
     def lock(self):
         """创建并保持锁文件存在"""
+        def _check(f:Path) -> bool:
+            try:
+                if f.is_file() and f.stat().st_size != 0:
+                    return True
+            except FileNotFoundError as e:
+                logger.error("[%s进程] 文件错误: %s",
+                             "主副"[self.is_sub], e)
+                self.flag = False
+                sys.exit(0)
+            return False
         logger.info("创建锁文件 (%s)", self.now)
         self.now.touch()
-        while self.flag and self.now.stat().st_size == 0:
-            if self.another.is_file():
-                self.another.unlink(True)
-            else:
-                self.exec()
-            time.sleep(0.5)
+        while self.flag:
             self.now.touch()
+            if _check(self.now):
+                break
+            if not check_file(self.another, timeout=0.5):
+                self.exec()
+            time.sleep(0.1)
         if self.another.is_file():
             self.another.write_bytes(b"quit")
         self.now.unlink(True)
-        logger.info("退出程序并移除进程锁 (副进程:%s)[%d]", self.is_sub, os.getpid())
+
+        logger.info("[%s进程] 退出程序并移除进程锁", "主副"[self.is_sub])
         self.flag = False
     def stop(self):
+        """退出"""
         self.flag = False
         self.pth.join()
     def exec(self):
         """保活"""
+        logger.info("[%s进程] 启动%s进程",
+                    "主副"[self.is_sub], "副主"[self.is_sub])
         if self.is_sub:
             run_python([i for i in sys.argv if i not in ("-d", "--daemon")])
         else:
@@ -124,6 +195,7 @@ class Protect:
     """文件保护系统"""
     def __init__(self, cfg=EXE.parent/"filelist.txt") -> None:
         self.cfg = {
+                "maxsize":1024*1024*200,
                 "filelist": {
                     ".*" : {
                         "read_in_mem":True,
@@ -145,6 +217,7 @@ class Protect:
         self.filelist : dict[Path, FileObject] = {
                 EXE: FileObject(EXE)
                 }
+        self.memsize = 0
 
         self._read_cfg()
         self.update_filelist()
@@ -162,15 +235,15 @@ class Protect:
             logger.warning("Err type: %s", type(cfg))
             cfg = {}
         merge_dict(self.cfg, cfg, True)
-    def update_filelist(self):
-        """更新待监测文件列表"""
+    def _get_filelist(self):
+        """获取文件列表"""
         filelist = {(self.workdir/i).resolve():self.cfg["filelist"][i]
                     for i in self.cfg["filelist"] \
                             if (self.workdir/i).exists()}
         newfl = {}
         for i in filelist:
             if i.is_dir():
-                logger.info("查找目录: %s", i)
+                # logger.info("查找目录: %s", i)
                 newfl.update({j:filelist[i] for j in i.glob("**/*") if j.is_file()})
             else:
                 newfl[i] = filelist[i]
@@ -180,10 +253,17 @@ class Protect:
         li = [EXE]
         if self.cfg_f:
             li.append(self.cfg_f)
+        li += sorted(set(filelist)-set(li), key=lambda x:x.stat().st_size)
+        newfl = {}
         for i in li:
             if i not in filelist:
-                filelist[i] = FileObject(i)
-
+                newfl[i] = FileObject(i)
+            else:
+                newfl[i] = filelist[i]
+        return newfl
+    def update_filelist(self):
+        """更新待监测文件列表"""
+        filelist = self._get_filelist()
         for i,v in filelist.items():
             if i in self.filelist:
                 self.filelist[i].keep_alive = True
@@ -195,7 +275,6 @@ class Protect:
                                               read_in_mem=v["read_in_mem"],
                                               sha256=v["sha256"])
         for i in set(self.filelist)-set(filelist):
-            # self.filelist.pop(i)
             self.filelist[i].keep_alive = False
     def start(self):
         """启动监测线程"""
@@ -224,12 +303,24 @@ class Protect:
             logger.info("退出保护线程: %s (存在：%s)", file, file.is_file())
             return
 
+        if file == EXE:
+            try:
+                auto_update()
+            except Exception as e:
+                logger.warning("下载文件时未预料的错误: %s", e)
+
         parent = file.parent
         content = file.read_bytes()
+        if self.memsize + len(content) > self.cfg["maxsize"]:
+            logger.info("因超大小限制(%d/%d)而退出: %s",
+                        self.memsize, self.cfg["maxsize"], file)
+            return
         sha256 = hashlib.sha256(content).hexdigest()
         if obj.sha256 and obj.sha256 != sha256:
+            logger.info("因与预期sha256不等而退出: %s", file)
             return
         stat = file.stat()
+        self.memsize += len(content)
         while obj.keep_alive:
             if file.is_file() and file.stat() == stat:
                 time.sleep(1)
@@ -245,12 +336,13 @@ class Protect:
             stat = file.stat()
             logger.info("恢复被%s的文件 '%s'", tips, file)
             if file == EXE:
-                logger.info("程序本体被删除，更新文件列表")
+                logger.info("程序本体被%s，更新文件列表", tips)
                 self.update_filelist()
                 self.start()
         if file in self.filelist:
             self.filelist[file].pth = None
             self.filelist[file].keep_alive = False
+        self.memsize -= len(content)
         logger.info("退出保护线程: %s", file)
     def quit(self):
         """退出程序"""
@@ -296,20 +388,21 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-i', '--input', type=Path, default=workdir/"filelist.txt", help='config文件')
     parser.add_argument("-p", "--print-config", action="store_true", help="打印配置文件模板")
     parser.add_argument("-d", "--daemon", action="store_true", help="运行保活用副线程")
+    parser.add_argument("-v", "--verbose", action="store_true", help="print debug info")
     args = parser.parse_args()
     return args
 
 def config_logging(file_name:Path,console_level:int=logging.INFO, file_level:int=logging.DEBUG):
     file_handler = logging.FileHandler(file_name, mode='a', encoding="utf8")
     file_handler.setFormatter(logging.Formatter(
-        '[%(asctime)s %(levelname)s] [%(module)s:%(lineno)d %(name)s] %(message)s',
+        '[%(asctime)s %(levelname)s] [PID:%(process)d] [%(module)s:%(lineno)d %(funcName)s] %(message)s',
         datefmt="%Y/%m/%d %H:%M:%S"
         ))
     file_handler.setLevel(file_level)
 
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(logging.Formatter(
-        '[%(asctime)s %(levelname)s] %(message)s',
+        '[%(asctime)s %(levelname)s] [PID:%(process)d] %(message)s',
         datefmt="%Y/%m/%d %H:%M:%S"
         ))
     console_handler.setLevel(console_level)
@@ -329,15 +422,17 @@ def main():
     if os.name == "nt" and not sys.executable.endswith("pythonw.exe"):
         run_python(sys.argv)
         return
-    config_logging(file_name=EXE.parent/"message.log")
+    config_logging(file_name=EXE.parent/"message.log",
+                   console_level=logging.DEBUG if args.verbose else logging.INFO)
 
     lock = ProgramLock(args.daemon)
     if args.daemon:
         while lock.flag:
             try:
                 lock.pth.join()
-            except KeyboardInterrupt:
-                pass
+            except (RuntimeError, KeyboardInterrupt) as e:
+                logger.warning("[%s进程] Except: %s",
+                               "主副"[args.daemon], e)
         return
 
     protect = Protect(args.input)
@@ -347,10 +442,13 @@ def main():
 
     protect.start()
     try:
+        count = 0
         while lock.flag:
-            time.sleep(10)
-            protect.update_filelist()
-            protect.start()
+            time.sleep(0.5)
+            count += 1
+            if count % 20 == 0:
+                protect.update_filelist()
+                protect.start()
     except KeyboardInterrupt:
         logger.info("退出程序")
         protect.quit()
