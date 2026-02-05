@@ -1,10 +1,11 @@
 #!/usr/bin/python
 """python常用函数合集"""
 
-import sys
 from pathlib import Path
+import sys
 import datetime
 import copy
+import json
 
 def print_err(s:str):
     """从stderr打印输出"""
@@ -90,9 +91,13 @@ def calculate_relative2(path_to:Path, path_from:Path) -> Path:
     back_relative = "../"*depth
     return Path(f"./{back_relative}/{relative}")
 
-def get_strtime(dt :float|int|datetime.datetime = datetime.datetime.now(), h=True,m=True,s=True) -> str:
+def get_strtime(dt:datetime.datetime|float|int|None = None,
+                h=True,m=True,s=True) -> str:
     """返回格式化的字符串（时分秒可选）"""
-    if isinstance(dt, (float,int)):
+    if dt is None:
+        # 不能充当默认值，因为默认值只在初始化时生成不会改变
+        dt = datetime.datetime.now()
+    if isinstance(dt, (float, int)):
         dt = datetime.datetime.fromtimestamp(dt)
     t = dt.strftime("%Y-%m-%d ")
     t += "一二三四五六日"[dt.weekday()]
@@ -105,7 +110,7 @@ def get_filename_test_str(touch=False, skip="") -> str:
     spec = r"`~!@#$%^&*()-=_+[]{}\|,.<>?;:' "+'"\n\t'
     spec = list(set(spec)-set(skip))
     table = list(range(ord('A'),ord('Z')+1))+list(range(ord('a'),ord('z')))
-    f = "".join(["%c%c" % (i,j) for i,j in zip(table[:len(spec)],spec)]) + ".txt"
+    f = "".join([f"{i}{j}" for i,j in zip(table[:len(spec)],spec)]) + ".txt"
     if touch and not Path(f).exists():
         Path(f).touch()
     return f
@@ -132,6 +137,21 @@ def merge_dict(old:dict, new:dict, warn=False, prefix=""):
         old[k] = new[k]
     if ".*" in old:
         old.pop(".*")
+
+def load_json_cfg(data:dict, file:Path, warn=True) -> bool:
+    """读取json配置文件"""
+    if not file.is_file():
+        return False
+    try:
+        cfg = json.loads(file.read_bytes() or "{}")
+    except (ValueError, PermissionError) as e:
+        print_err(str(e))
+        return False
+    if not isinstance(cfg, dict):
+        print_err(f"Err type: {type(cfg)}")
+        return False
+    merge_dict(data, cfg, warn)
+    return True
 
 def squash_dict(data:dict, prefix="", split=".") -> dict:
     """将分级词典以'.'为分割字符合并为同级词典"""
@@ -164,6 +184,7 @@ def process_filelist(li:list[str]) -> dict[str,list[int]]:
     return ret
 
 def read_text(file: Path) -> str:
+    """读取文件并尝试解码"""
     if not file.is_file():
         return ""
     try:

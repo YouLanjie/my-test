@@ -265,16 +265,7 @@ class Config:
     def __init__(self, cfg_f:Path):
         self.cfg_f = cfg_f
         self.cfg = self.cfg_template
-        cfg = {}
-        if cfg_f.is_file():
-            try:
-                cfg = json.loads(cfg_f.read_bytes() or "{}")
-            except json.JSONDecodeError as e:
-                pytools.print_err(str(e))
-        if not isinstance(cfg, dict):
-            pytools.print_err(f"Err type: {type(cfg)}")
-            cfg = {}
-        pytools.merge_dict(self.cfg, cfg, True)
+        pytools.load_json_cfg(self.cfg, cfg_f)
         basefontsize = self.cfg["setting"]["fontsize"]
         fontsizes = self.cfg["setting"]["fontsizes"]
         if fontsizes["sections"]["autocontrol"]:

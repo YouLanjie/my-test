@@ -19,6 +19,9 @@ import os
 import urllib.request
 import urllib.error
 
+DISABLE_AUPD = False
+DISABLE_LOCK = False
+DISABLE_PYW  = False
 EXE = Path(sys.argv[0]).resolve()
 logger = logging.getLogger(__name__)
 
@@ -91,6 +94,8 @@ def download_file(urls:list, savefile) -> bytes:
 
 def auto_update(protect: "Protect"):
     """自动更新函数"""
+    if DISABLE_AUPD:
+        return
     if time.time() - EXE.stat().st_mtime < 60*60:
         return
     local_content = EXE.read_bytes()
@@ -113,12 +118,19 @@ def auto_update(protect: "Protect"):
     return
 
 def run_python(cmd:list):
+    """运行子进程"""
     python = Path(sys.executable)
-    if os.name == "nt":
+    if os.name == "nt" and not DISABLE_PYW:
         python = Path(sys.executable).parent/"pythonw.exe"
         if not python.is_file():
             python = Path(sys.executable)
-    subprocess.Popen([python]+cmd)
+    cmd = [python]+cmd
+    logger.debug("运行命令：%s", cmd)
+    try:
+        subprocess.Popen(cmd)
+    except (FileNotFoundError, subprocess.CalledProcessError) as e:
+        logger.error("运行命令时遇到错误：%s", e)
+        raise e
 
 def check_file(f:Path, count=1000, timeout:int|float=3) -> bool:
     """持续一段时间检测文件是否存在过"""
@@ -136,11 +148,16 @@ class ProgramLock:
     tempdir = Path(tempfile.gettempdir())
     locks = [tempdir/f"{EXE.stem}_lock1.lock",
              tempdir/f"{EXE.stem}_lock2.lock"]
-    def __init__(self, is_sub = False) -> None:
+    def __init__(self, enable = True, is_sub = False) -> None:
+        enable = enable and not DISABLE_LOCK
+        self.enable = enable
         self.is_sub = bool(is_sub)
         self.flag = True
         self.now = self.locks[is_sub]
         self.another = self.locks[not is_sub]
+
+        if not enable:
+            return
 
         if check_file(self.now):
             logger.warning("[%s进程] 互斥锁存在，退出程序",
@@ -150,6 +167,9 @@ class ProgramLock:
         self.pth.start()
     def lock(self):
         """创建并保持锁文件存在"""
+        if not self.enable:
+            logger.info("锁被禁用，上锁取消")
+            return
         def _check(f:Path) -> bool:
             try:
                 if f.is_file() and f.stat().st_size != 0:
@@ -178,9 +198,13 @@ class ProgramLock:
     def stop(self):
         """退出"""
         self.flag = False
+        if not self.enable:
+            return
         self.pth.join()
     def exec(self):
         """保活"""
+        if not self.enable:
+            return
         logger.info("[%s进程] 启动%s进程",
                     "主副"[self.is_sub], "副主"[self.is_sub])
         if self.is_sub:
@@ -200,7 +224,7 @@ class FileObject:
 
 class Protect:
     """文件保护系统"""
-    def __init__(self, cfg=EXE.parent/"filelist.txt") -> None:
+    def __init__(self, cfg=EXE.parent/"filelist.json") -> None:
         self.cfg = {
                 "maxsize":1024*1024*200,
                 "filelist": {
@@ -228,7 +252,7 @@ class Protect:
 
         self._read_cfg()
         self.update_filelist()
-        logger.info("程序初始化")
+        logger.info("保护系统初始化完成")
     def _read_cfg(self):
         if not self.cfg_f or not self.cfg_f.is_file():
             return
@@ -389,14 +413,16 @@ def parse_arguments() -> argparse.Namespace:
     """解释参数"""
     workdir = EXE.parent
     parser = argparse.ArgumentParser(description='python')
-    parser.add_argument('-i', '--input', type=Path, default=workdir/"filelist.txt", help='config文件')
+    parser.add_argument('-i', '--input', type=Path, default=workdir/"filelist.json", help='config文件')
     parser.add_argument("-p", "--print-config", action="store_true", help="打印配置文件模板")
     parser.add_argument("-d", "--daemon", action="store_true", help="运行保活用副线程")
-    parser.add_argument("-v", "--verbose", action="store_true", help="print debug info")
+    parser.add_argument("-n", "--no-lock", action="store_true", help="无锁")
+    parser.add_argument("-v", "--verbose", action="store_true", help="打印调试信息")
     args = parser.parse_args()
     return args
 
 def config_logging(file_name:Path,console_level:int=logging.INFO, file_level:int=logging.DEBUG):
+    """定义日志配置"""
     file_handler = logging.FileHandler(file_name, mode='a', encoding="utf8")
     file_handler.setFormatter(logging.Formatter(
         '[%(asctime)s %(levelname)s] [PID:%(process)d] [%(module)s:%(lineno)d %(funcName)s] %(message)s',
@@ -412,7 +438,8 @@ def config_logging(file_name:Path,console_level:int=logging.INFO, file_level:int
     console_handler.setLevel(console_level)
 
     handlers : list = [file_handler]
-    if sys.stdout.isatty():
+    # fixed: 'NoneType' object has no attribute 'isatty'
+    if sys.stdout and sys.stdout.isatty():
         handlers.append(console_handler)
 
     logging.basicConfig(
@@ -423,13 +450,15 @@ def config_logging(file_name:Path,console_level:int=logging.INFO, file_level:int
 def main():
     """主函数"""
     args = parse_arguments()
-    if os.name == "nt" and not sys.executable.endswith("pythonw.exe"):
+    if os.name == "nt" and not sys.executable.endswith("pythonw.exe") and not DISABLE_PYW:
         run_python(sys.argv)
         return
     config_logging(file_name=EXE.parent/"message.log",
                    console_level=logging.DEBUG if args.verbose else logging.INFO)
+    logger.debug("程序启动(后台:%s)", args.daemon)
 
-    lock = ProgramLock(args.daemon)
+    lock = ProgramLock(not args.no_lock, args.daemon)
+    # 副线程
     if args.daemon:
         while lock.flag:
             try:
@@ -439,6 +468,7 @@ def main():
                                "主副"[args.daemon], e)
         return
 
+    # 主线程
     protect = Protect(args.input)
     if args.print_config:
         protect.print_config_template()
