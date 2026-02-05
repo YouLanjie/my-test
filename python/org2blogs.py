@@ -106,7 +106,7 @@ class Args:
         self.run = False
         self.verbose = False
         self.print_config = False
-        self.watch = False
+        self.watch = 0.0
         self.emacs = False
         if __name__ == "__main__":
             pytools.merge_dict(self.__dict__, self._get_args())
