@@ -9,7 +9,7 @@
  */
 
 
-#include "include/tools.h"
+#include "tools.h"
 #include <math.h>
 
 #define Pop 50

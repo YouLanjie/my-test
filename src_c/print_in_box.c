@@ -9,7 +9,7 @@
  */
 
 
-#include "include/tools.h"
+#include "tools.h"
 
 static int _print_in_box(char *ch, int x_start, int y_start, int width, int heigh, int hide, int focus, char *color_code, int flag_hl)
 {

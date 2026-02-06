@@ -9,7 +9,7 @@
  */
 
 
-#include "include/tools.h"
+#include "tools.h"
 
 #define INPUT_FILE_NAME "./res/history_note_input.txt"
 #define OUTPUT_FILE_NAME "./res/history_note_output.txt"

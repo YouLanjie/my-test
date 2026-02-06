@@ -9,12 +9,14 @@
  */
 
 
-#include "include/tools.h"
+#include "tools.h"
 
 #define SECOND 1000000
 #define TPS    SECOND / 20
 
 #define Max 22
+
+char exit_flag = 1;
 
 void *input(void*);
 void *logic(void*);
@@ -109,14 +111,18 @@ RUN:
 	printf("\033[%dB", Max + 1);
 	printf("\033[?25h");
 	if (flag_win) printf("You did it!You Win!\n");
+	exit_flag = 0;
+	usleep(SECOND/20);
+#ifdef pthread_cancel
 	pthread_cancel(pid);
 	pthread_cancel(pid2);
+#endif
 	return 0;
 }/*}}}*/
 
 void *input(void *p)
 {/*{{{*/
-	while (inp != 'q') {
+	while (inp != 'q' && exit_flag) {
 		inp = _getch();
 	}
 	pthread_exit(NULL);
@@ -125,7 +131,7 @@ void *input(void *p)
 
 void *logic(void *p)
 {/*{{{*/
-	while (inp != 'q') {
+	while (inp != 'q' && exit_flag) {
 		usleep(TPS);
 		switch (inp) {
 		case 'w':
