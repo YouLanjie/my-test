@@ -47,21 +47,13 @@ git submodule init
 git submodule update
 #+end_src
 
-请在 =src_c= 目录运行以下命令编译所有程序（注：该脚本需要使用zsh）：
+在 =src_c= 目录运行以下命令编译所有程序：
 
 #+begin_src shell
-cd ./src_c
-./build.sh
+cmake .
+make
 #+end_src
 
-更多帮助内容请使用 =./build.sh -h= 查看
-
-或者使用以下命令编译大部分程序
-
-#+begin_src shell
-  cd ./src_c
-  ls -1|grep ".c$"|sed "/build.c\|gtk.c/d"|sed "s/^\(.*\).c$/gcc \1\.c $(find ./include/lib -name "*.c"|sed ":a;N;s/\n/ /g;b a"|sed 's/\//\\\//g') -lncurses -lm -o bin\/\1/"|sh
-#+end_src
 ** COMMENT 补充说明
 - script-helper.c 脚本文件格式要求
   #+begin_src

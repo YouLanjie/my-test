@@ -31,9 +31,21 @@ class ExportVisitor(ABC):
     def visit_footnotes(self, node: "Footnotes") -> str:
         del node
         return ""
+    def visit_block(self, node: "Block") -> str:
+        cond = not node.opt["printable"]
+        last = node.document.root.search(node, "last")
+        cond = cond and not last
+        if cond:
+            return ""
+        text = ""
+        for i in node.child:
+            text += i.accept(self)
+        return text
     def visit_blockcomment(self, node: "BlockComment") -> str:
         del node
         return ""
+    def visit_blockproperties(self, node: "BlockProperties") -> str:
+        return self.visit_block(node)
 
     @abstractmethod
     def visit_strings(self, node: 'Strings', li: list) -> str:
@@ -78,9 +90,6 @@ class ExportVisitor(ABC):
     def visit_blockcenter(self, node: "BlockCenter") -> str:
         return ""
     @abstractmethod
-    def visit_blockproperties(self, node: "BlockProperties") -> str:
-        return ""
-    @abstractmethod
     def visit_table(self, node: "Table") -> str:
         return ""
     @abstractmethod
@@ -113,6 +122,8 @@ class Strings:
             ("bold", _get_strings_pattern(r"\*"), "*"),
             ("del", _get_strings_pattern(r"\+"), "+"),
             ("underline", _get_strings_pattern("_"), "_"),
+            ("radio_link", re.compile(r"<<([^<>]+)>>"), "<"),
+            ("radio_link_auto", re.compile(r"<<<([^<>]+)>>>"), "<"),
             ]
     img_exts=["png", "jpg", "jpeg", "gif", "webp", "svg", "avif"]
     rules = {"code":("<code>","</code>"),
@@ -238,6 +249,8 @@ class Strings:
             elif current_pattern[0] == "code":
                 li.append([current_pattern[0], [ret.group(1)]])
             elif current_pattern[0] == "fn":
+                li.append([current_pattern[0], ret.group(1)])
+            elif current_pattern[0] in ("radio_link", "radio_link_auto"):
                 li.append([current_pattern[0], ret.group(1)])
             else:
                 # 其他杂项并嵌套调用
@@ -527,8 +540,8 @@ class Meta(Root):
                     s = []
                 args[":lines"] = s
                 i += 1
-            elif li[i][1] == "src":
-                args["block"] = ["src"]
+            elif li[i][1] in ("src", "export"):
+                args["block"] = [li[i][1]]
                 if i+1 < len(li) and (li[i+1][0] or not li[i+1][1].startswith(":")):
                     args["block"] += [li[i+1][1]]
             elif li[i][1] == "quote":
@@ -872,19 +885,26 @@ class List(Root):
 
 class Block(Root):
     """Block共同空类"""
-    re_match = re.compile("")
-    re_end = None
+    re_match = re.compile(r"^ *#\+begin_([^ ]+)(?:[ ]+(.*))?", re.I)
+    def __init__(self, document, match: re.Match | None = None) -> None:
+        super().__init__(document, match)
+        self.end_offset = 1
+        if not match:
+            return
+        groups = match.groups()
+        if len(groups) != 2:
+            return
+        self.re_end = re.compile(r"^ *#\+end_"+groups[0]+"$", re.I)
 
 class BlockCode(Block):
     """代码块"""
     re_match = re.compile(r"^ *#\+begin_src(?:[ ]+(.*))?", re.I)
-    re_end = re.compile(r"^ *#\+end_src", re.I)
+    re_end = re.compile(r"^ *#\+end_src$", re.I)
     def __init__(self, document, match: re.Match | None = None) -> None:
         super().__init__(document, match)
         self.opt["breakable"] = False
         self.line = self.document.lines
         self.number = 0
-        self.end_offset = 1
         self.baise = -1
         self.document.status["is_in_src"].append(self.start)
         if self.match is None:
@@ -929,12 +949,12 @@ class BlockCode(Block):
 class BlockExport(BlockCode):
     """对应语言导出块"""
     re_match = re.compile(r"^ *#\+begin_export(?:[ ]+(.*))?", re.I)
-    re_end = re.compile(r"^ *#\+end_export", re.I)
+    re_end = re.compile(r"^ *#\+end_export$", re.I)
 
 class BlockComment(BlockCode):
     """注释块"""
     re_match = re.compile(r"^ *#\+begin_comment(?:[ ]+(.*))?", re.I)
-    re_end = re.compile(r"^ *#\+end_comment", re.I)
+    re_end = re.compile(r"^ *#\+end_comment$", re.I)
     def __init__(self, document, match: re.Match | None = None) -> None:
         super().__init__(document, match)
         self.opt["printable"] = False
@@ -942,12 +962,12 @@ class BlockComment(BlockCode):
 class BlockExample(BlockCode):
     """代码块"""
     re_match = re.compile(r"^ *#\+begin_example(?:[ ]+(.*))?", re.I)
-    re_end = re.compile(r"^ *#\+end_example", re.I)
+    re_end = re.compile(r"^ *#\+end_example\s?$", re.I)
 
 class BlockVerse(BlockCode):
     """参照原样输出(不合并行)"""
     re_match = re.compile(r"^ *#\+begin_verse(?:[ ]+(.*))?", re.I)
-    re_end = re.compile(r"^ *#\+end_verse", re.I)
+    re_end = re.compile(r"^ *#\+end_verse\s?$", re.I)
     def add(self, obj, flag=True):
         super().add(obj)
         if flag:
@@ -959,11 +979,10 @@ class BlockVerse(BlockCode):
 class BlockQuote(Block):
     """引用块"""
     re_match = re.compile(r"^ *#\+begin_quote", re.I)
-    re_end = re.compile(r"^ *#\+end_quote", re.I)
+    re_end = re.compile(r"^ *#\+end_quote\s?$", re.I)
     def __init__(self, document, match: re.Match | None = None) -> None:
         super().__init__(document, match)
         self.opt["breakable"] = False
-        self.end_offset = 1
         self.document.status["is_in_src"].append(self.start)
     def end(self, i: int, is_normal_end: bool) -> int:
         ret = super().end(i, is_normal_end)
@@ -979,7 +998,7 @@ class BlockQuote(Block):
 class BlockCenter(BlockQuote):
     """居中块"""
     re_match = re.compile(r"^ *#\+begin_center", re.I)
-    re_end = re.compile(r"^ *#\+end_center", re.I)
+    re_end = re.compile(r"^ *#\+end_center\s?$", re.I)
 
 class BlockProperties(BlockQuote):
     """属性块"""
@@ -995,6 +1014,7 @@ class BlockProperties(BlockQuote):
         if not self.is_printable.match(line):
             self.log(str((line)), "DEBUG")
             self.opt["printable"] = True
+
 class Table(TextBase):
     """表格"""
     re_match = re.compile(r"^ *\|", re.I)
@@ -1178,7 +1198,8 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
         rules = [
                 Meta, Footnotes, TitleOutline,
                 BlockCode, BlockExport, BlockQuote, BlockCenter,
-                BlockComment, BlockExample, BlockVerse, BlockProperties,
+                BlockComment, BlockExample, BlockVerse,
+                Block, BlockProperties,
                 Comment, List, Table, Footnote,
                 Text, Root, ListItem, Title]
         last = -1
@@ -1369,8 +1390,6 @@ class TextExportVisitor(ExportVisitor):
         ret += "\n".join(f"| {i}" for i in node.line.accept(self).splitlines())
         ret += "`===="
         return ret
-    def visit_blockproperties(self, node) -> str:
-        return ""
     def visit_list(self, node) -> str:
         text = ""
         index = 0
@@ -1471,6 +1490,8 @@ class TextExportVisitor(ExportVisitor):
                 ret += f"""{node.rules[i[0]][0]}{self.visit_strings(node, i[1])}{node.rules[i[0]][1]} """
                 ret += last_stat
                 last_stat = ""
+            elif i[0] == "radio_link":
+                pass
             else:
                 last_stat = " "
                 ret += str(i)
@@ -1526,6 +1547,8 @@ class TexExportVisitor(ExportVisitor):
                 ret += f"""{self.rules[i[0]][0]}{self.visit_strings(node, i[1])}{self.rules[i[0]][1]}"""
                 ret += last_stat
                 last_stat = ""
+            elif i[0] == "radio_link":
+                pass
             else:
                 last_stat = " "
                 ret += str(i)
@@ -1624,16 +1647,6 @@ class TexExportVisitor(ExportVisitor):
         text = "\\begin{center}\n"
         text +="\n".join([i.accept(self) for i in node.child])
         text += "\n\\end{center}"
-        return text
-    def visit_blockproperties(self, node) -> str:
-        cond = not node.opt["printable"]
-        last = node.document.root.search(node, "last")
-        cond = cond and not last
-        if cond:
-            return ""
-        text = ""
-        for i in node.child:
-            text += i.accept(self)
         return text
     def visit_table(self, node) -> str:
         skip_list = [i[0] for i in node.control_line if i[1] == "align"]
@@ -1954,16 +1967,6 @@ ${postamble}
             ret += f"{Strings(i, node).accept(self)}<br/>"
         ret += "</p>"
         return ret
-    def visit_blockproperties(self, node: BlockProperties) -> str:
-        cond = not node.opt["printable"]
-        last = node.document.root.search(node, "last")
-        cond = cond and not last
-        if cond:
-            return ""
-        text = ""
-        for i in node.child:
-            text += i.accept(self)
-        return text
     def visit_list(self, node) -> str:
         text = f"<{node.type} class=\"org-{node.type}\">\n"
         for i in node.child:
@@ -2165,6 +2168,8 @@ ${postamble}
                 ret += f"""{node.rules[i[0]][0]}{self.visit_strings(node, i[1])}{node.rules[i[0]][1]}"""
                 ret += last_stat
                 last_stat = ""
+            elif i[0] == "radio_link":
+                pass
             else:
                 last_stat = " "
                 ret += str(i)
@@ -2269,7 +2274,20 @@ def run_main() -> Document|str|None:
         print(f"INFO output file: '{output_f}'")
         output_f.write_text(configs[args.mode][1](), encoding="utf8")
     else:
-        print(configs[args.mode][1]())
+        print_func = print
+        if args.rich:
+            try:
+                print_func = importlib.import_module("rich").print
+            except ModuleNotFoundError:
+                pass
+        try:
+            s = configs[args.mode][1]()
+            if args.number:
+                s = str(s).splitlines()
+                s = "\n".join(s[:args.number])
+            print_func(s)
+        except BrokenPipeError:
+            pass
     return ret
 
 def parse_arguments():
@@ -2285,6 +2303,8 @@ def parse_arguments():
     parser.add_argument('-v', '--verbose', action="store_true", help='显示更verbose msg')
     parser.add_argument('--pygments-css', action="store_true", help='内置pygments生产的css文件')
     parser.add_argument('--feature-info', action="store_true", help='查看特性信息')
+    parser.add_argument('--rich', action="store_true", help='try print with rich')
+    parser.add_argument('--number', type=int, default=0, help='print to')
     try:
         importlib.import_module("argcomplete").autocomplete(parser)
     except ModuleNotFoundError:
@@ -2294,7 +2314,7 @@ def parse_arguments():
 
 def main():
     """对外提供主函数"""
-    run_main()
+    return run_main()
 
 if __name__ == "__main__":
     main()

@@ -18,6 +18,7 @@ def parse_arg() -> argparse.Namespace:
     parser.add_argument("-c", "-i", "--config", type=Path, default=Path("config.json"),
                         help="指定配置文件")
     parser.add_argument("-C", "--print-config", action="store_true", help="打印配置文件模板")
+    parser.add_argument("-n", "--dry-run", action="store_true", help="不输出文件")
     return parser.parse_args()
 
 def get_same(li1:list, li2:list) -> list:
@@ -133,7 +134,8 @@ def main():
         if outf.is_dir():
             continue
         s = "\n\n".join([i for i in content if i])
-        outf.write_text(f"""\
+        if not args.dry_run:
+            outf.write_text(f"""\
 #+title: {cfg['title']} {h1}
 #+setupfile: {cfg['setupfile']}
 """ + s)

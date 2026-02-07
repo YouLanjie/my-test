@@ -617,7 +617,7 @@ ${usercard}
     <div class="form-group">
     <input type="text" name="keyid" value="${keyid}" style="display:none;">
     <label for="message">在下面修改消息:</label>
-    <textarea name="message" rows="10" required>${content}</textarea>
+    <textarea name="message" rows="10" placeholder="${placeholder}" required>${content}</textarea>
     </div>
     <button type="submit">提交修改</button>
   </form>
@@ -1245,20 +1245,23 @@ class System:
             elif now_page > all_pages:
                 now_page = all_pages
 
-            userlist = {u.id:u.name for u in self.users}
+            userlist = {u.id:u for u in self.users}
             s = ""
             messages_len = len(messages)
             for m in messages[(now_page-1)*limit:now_page*limit]:
-                name = userlist.get(m.owner)
-                if name is None:
+                u = userlist.get(m.owner)
+                if u is None:
                     name = "<未知用户>"
+                else:
+                    name = u.name
                 msg_id = ' id="last_msg"' if m == self.messages[-1] else ''
                 msg = self.render_html(m.content, m.id)
                 if limit == 1 or messages_len == 1:
                     msg_id += ' style="max-height:100%;"'
-                    if datetime.now().timestamp() - m.timestamp < 60*10 or\
+                    if (datetime.now().timestamp() - m.timestamp < 60*10 and\
+                            u and self.now_user.get(ip) == u) or\
                             self.now_user.get(ip) == self.system:
-                        msg += "<a href='/edit?id="+m.id+"'><button>编辑留言</button></a>"
+                        msg += "<br/><a href='/edit?id="+m.id+"'><button>编辑留言</button></a>"
                 s += Rescourses.get("msg_data", {
                     "id":msg_id,
                     "msgid":m.id,
@@ -1339,13 +1342,15 @@ class System:
         elif tag == "edit":
             title = "消息重编辑页面"
             data = {
-                    "content":"未选中有效消息",
+                    "placeholder":"未选中有效消息",
+                    "content":"",
                     "keyid":""
                     }
             msgs = [i for i in self.messages if i.id == str(querys.get("id"))]
             if msgs:
                 data["keyid"] = msgs[0].id
                 data["content"] = escape(msgs[0].content)
+                data["placeholder"] = "请填写修改后的消息"
         elif tag == "userlist":
             for u in self.users:
                 s += Rescourses.get(

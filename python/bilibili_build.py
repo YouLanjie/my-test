@@ -15,7 +15,11 @@ from pathlib import Path
 import json
 import shlex
 import re
+import threading
 from functools import lru_cache
+from importlib import import_module
+
+import pytools
 
 try:
     import readline
@@ -23,20 +27,25 @@ try:
 except ModuleNotFoundError:
     pass
 
-try:
-    from pypinyin import lazy_pinyin
-except ModuleNotFoundError:
-    lazy_pinyin = None
+class Pinyin:
+    def __init__(self) -> None:
+        self.lazy_pinyin = None
+    def import_pinyin(self):
+        try:
+            pypinyin = import_module("pypinyin")
+        except ModuleNotFoundError:
+            return
+        self.lazy_pinyin = pypinyin.lazy_pinyin
+    @lru_cache(maxsize=2048)
+    def get_pinyin(self, s:str) -> str:
+        if not self.lazy_pinyin:
+            self.import_pinyin()
+        if self.lazy_pinyin:
+            return s + " " + "".join(self.lazy_pinyin(s))
+        else:
+            return s
 
-@lru_cache(maxsize=1024)
-def get_pinyin(s:str) -> str:
-    if lazy_pinyin:
-        return s + " " + "".join(lazy_pinyin(s))
-    else:
-        return s
-
-import pytools
-
+pinyin = Pinyin()
 userlist = {}
 
 class Video():
@@ -337,9 +346,9 @@ class Ui():
         key = key.lower()
         if key.startswith("owner:"):
             key = key[6:]
-            flag = lambda x:get_pinyin(str(x[0].owner))
+            flag = lambda x:pinyin.get_pinyin(str(x[0].owner))
         else:
-            flag = lambda x:get_pinyin(x[0].title)
+            flag = lambda x:pinyin.get_pinyin(x[0].title)
         if not key:
             return self.content
         try:
@@ -427,7 +436,7 @@ class Ui():
                 print("$ 输入`owner:xxx`以匹配up")
                 print("$ 支持正则表达式")
                 print("$ 留白表示清除搜索结果")
-                if lazy_pinyin:
+                if pinyin.lazy_pinyin:
                     print("$ 支持简单的拼音搜索")
                 _search_key = input("请输入搜索关键词:")
                 if not self.videos_filter(_search_key):

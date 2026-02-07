@@ -1,4 +1,10 @@
+bin
+.vscode
+Lang/en_US/LC_MESSAGES/socket.mo
+tags
+build
 *.cmake
 CMake*
 Makefile
-build
+build.ninja
+.ninja_*
