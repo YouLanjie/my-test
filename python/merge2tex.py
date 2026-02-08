@@ -278,7 +278,7 @@ class Config:
         print(json.dumps(self.cfg_template, ensure_ascii=False, indent='\t'))
     def get_filelist(self) -> tuple[list,dict[str,list[int]]]:
         """获取文件列表"""
-        filelist = set()
+        filelist = {}
         whitelist = {}
         home = self.cfg_f.parent
         for inp_dir in self.cfg["filelist"]:
@@ -288,25 +288,17 @@ class Config:
                 wl = pytools.process_filelist(self.cfg["filelist"][inp_dir]["add"])
                 bl = {home/inp_dir/i for i in self.cfg["filelist"][inp_dir]["ignore"]}
                 whitelist.update({(home/inp_dir/i).resolve():j for i,j in wl.items()})
-                wl = {home/inp_dir/i for i in wl}
+                wl = set({home/inp_dir/i for i in wl})
             else:
                 print(f"[INFO] adding '{home/inp_dir}'")
                 wl = pytools.process_filelist([home/inp_dir])
                 fl = set()
                 bl = set()
-                whitelist.update({((home/inp_dir).parent/i).resolve():j for i,j in wl.items()})
-                wl = {(home/inp_dir).parent/i for i in wl}
-            filelist |= {i.resolve() for i in ((fl-bl)|wl)}
-        filelist = mysorted(filelist)
-        return filelist, whitelist
-    def _count_top_char(self, c:str, n:int = 10) -> str:
-        t = {}
-        for i in c:
-            if i not in t:
-                t[i] = 0
-            t[i] += 1
-        s = set(c) - set("，。？！,.?!—…")
-        return "".join(sorted(s, key=lambda x:t[x], reverse=True))[:n]
+                whitelist.update({((home/inp_dir).parent/i).resolve():j for i,j in wl.items()\
+                        if ((home/inp_dir).parent/i).is_file() })
+                wl = {(home/inp_dir).parent/i for i in whitelist}
+            filelist |= {i.resolve():None for i in mysorted((fl-bl)|wl)}
+        return list(filelist), whitelist
     def get_merged(self) -> tuple[str,str]:
         """生成org文件内容"""
         filelist, whitelist = self.get_filelist()
@@ -329,6 +321,7 @@ class Config:
                     s = s[nums[0]:nums[1]]
                 print("         > "+"\n         > ".join(s[:5]))
             s = "\n".join(s)
+            s = re.sub("[　]+", " ", s)
             li = re.findall(r"^(\*+) (.*)", s, re.M)
             levels = sorted({len(i[0]) for i in li})
             if levels and min(levels) > 1 and max(levels) < 4:
@@ -343,7 +336,7 @@ class Config:
         return (f"字数：{len([i for i in content if i not in " \t\n\r\\{}[]"])/1000}k,\n"
                 f"中文字符数：{len([i for i in content if len(i.encode()) > 1])/1000}k,\n"
                 f"行数：{len([i for i in content.splitlines() if i])},\n"
-                f"覆盖字符数：{len(set(content))}【{self._count_top_char(content)}】,\n",
+                f"覆盖字符数：{len(set(content))},\n",
                 content)
     def generate_template_dict(self, words = "None") -> dict:
         """生成用于模板的词典"""
@@ -404,7 +397,8 @@ def main():
             config.cfg["author"] = args.author
         for i in args.filelist:
             config.cfg["filelist"][i] = {}
-        return
+        if not (args.title or args.author or args.filelist):
+            return
     print("[INFO] Config:")
     __import__('pprint').pprint(config.cfg)
     w,c = config.get_merged()

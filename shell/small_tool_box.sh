@@ -141,6 +141,24 @@ git_smaller() {
 	cd "$cwd"
 }
 
+expand_short_url() {
+	printf "URL: "
+	read url
+	url=$(echo "$url"|sed 's|.*\(https\?://[0-9A-Za-z./]*\)|\1|')
+	if [[ "$url" == "" ]];then
+		echo "Err caused by sed?"
+		return
+	fi
+	echo "Extracted url: $url"
+	ret=$(curl -I "$url")
+	if [[ "$ret" == "" ]];then
+		echo "curl err"
+		return
+	fi
+	ret=$(echo "$ret"|grep "location:"|sed 's|[ ]*location: \([^?]*\)?.*|\1|')
+	echo "RESULT:$ret"
+}
+
 if [[ $1 != "" ]];then
 	if echo "$choices"|grep -q "^$1\$";then
 		args=("$@")

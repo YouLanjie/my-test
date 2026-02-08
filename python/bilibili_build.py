@@ -256,17 +256,20 @@ class Ui():
         curses.endwin()
         print("\n>>>>>>>> RUN:\n"+"\n".join(["$ "+i for i in cmd.splitlines()]))
         print("<<<<<<<<")
-        if os.name == "posix":
-            os.system(cmd)
-        else:
-            # 针对windows做的尝试性优化处理
-            for i in cmd.splitlines():
-                if i.startswith("#"):
-                    continue
-                c = shlex.split(i)
-                if not c:
-                    continue
-                subprocess.run(shlex.split(i), check=False)
+        try:
+            if os.name == "posix":
+                os.system(cmd)
+            else:
+                # 针对windows做的尝试性优化处理
+                for i in cmd.splitlines():
+                    if i.startswith("#"):
+                        continue
+                    c = shlex.split(i)
+                    if not c:
+                        continue
+                    subprocess.run(shlex.split(i), check=False)
+        except (KeyboardInterrupt, EOFError):
+            pytools.print_err("[INFO] Quit by C-c")
         input("按下回车返回")
         curses.reset_prog_mode()
     def setting(self):
@@ -667,4 +670,10 @@ CONFIG = {"player":"mpv", "outputd":"", "vfat_name":True,
           "album":"", "cover":"", "prefix":""}
 if __name__ == "__main__":
     video_list = run_main()
-    curses.wrapper(lambda stdscr: Ui(stdscr, video_list).main())
+    while True:
+        try:
+            curses.wrapper(lambda stdscr: Ui(stdscr, video_list).main())
+            break
+        except curses.error as e:
+            pytools.print_err(f"[ERROR] curses err: {e}")
+            pytools.print_err(f"[INFO] restart ui")

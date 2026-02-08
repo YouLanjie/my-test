@@ -96,7 +96,7 @@ class Doc:
 class Args:
     """Arg class"""
     def __init__(self) -> None:
-        cfgname = "config.json"
+        cfgname = "BlogConfig.json"
         self.config = Path(cfgname)
         self.add : None|str = None
         self.ignore_time = False
@@ -120,7 +120,7 @@ class Args:
         self.project_dir = self.config.parent
     def _get_args(self):
         parser=argparse.ArgumentParser(description="构建博客用脚本")
-        parser.add_argument("-c", "--config", type=Path, default="config.json",
+        parser.add_argument("-c", "--config", type=Path, default="BlogConfig.json",
                             help="配置文件")
         parser.add_argument("-a", "--add",type=str, help="模板建立一个指定的org文件")
         parser.add_argument("-I", "--ignore-time", action="store_true", help="忽略时间强制更新")
