@@ -215,18 +215,33 @@ def process_unicode(s: str):
             return ""
     return re.sub(r'&#(\d+);', sub, s)
 
+def simple_process(filename:str):
+    file = Path(filename)
+    if not file.is_file():
+        pytools.print_err(f"[WARN] 文件不存在:{file}")
+        return
+    s = pytools.read_text(file)
+    s = s.splitlines()
+    s = "\n\n".join([i for i in s if i])
+    s = process_unicode(s)
+    file.write_text(s, encoding="utf8")
+
 def parse_arg() -> argparse.Namespace:
     """解释参数"""
     parser=argparse.ArgumentParser(description="分割全一卷的txt小说文件")
     parser.add_argument("-c", "-i", "--config", type=Path, default=Path("config.json"),
                         help="指定配置文件")
     parser.add_argument("-C", "--print-config", action="store_true", help="打印配置文件模板")
+    parser.add_argument("-s", "--simple", help="只执行简单处理")
     parser.add_argument("-n", "--dry-run", action="store_true", help="不输出文件")
     return parser.parse_args()
 
 def main():
     """主函数"""
     args = parse_arg()
+    if args.simple:
+        simple_process(args.simple)
+        return
     cfg_f = args.config
     default_pattern = r"^[　]*(第.*卷.*)"
     default_pattern2 = r"插图"

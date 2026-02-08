@@ -98,7 +98,7 @@ class Args:
     def __init__(self) -> None:
         cfgname = "BlogConfig.json"
         self.config = Path(cfgname)
-        self.add : None|str = None
+        self.add : str = ""
         self.ignore_time = False
         self.no_build_home = False
         self.touch = False

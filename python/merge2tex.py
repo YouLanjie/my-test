@@ -119,7 +119,9 @@ class Config:
 \usepackage{titlesec}  % 控制标题格式
 \usepackage{enumitem}  % 控制列表格式
 \usepackage{tcolorbox} % 自定义quote环境格式用
-\usepackage{listings}  % 自定义src环境格式用#${template.ruler}
+\usepackage{listings}  % 自定义src环境格式用
+\usepackage{endnotes}  % 以章末注代替脚注节约空间
+#${template.ruler}
 
 % 多栏设置
 \setlength{\columnsep}{#${setting.col_gap}}
@@ -128,13 +130,17 @@ class Config:
 % 如果固定为0会导致每页底部无法对齐很难看
 \setlength{\parskip}{0ex plus 0.00001ex}
 
-% 脚注设置
-\setlength{\footnotesep}{0.5\footnotesep} % 减少脚注之间的间距
-\setlength{\skip\footins}{0.5\skip\footins} % 减少脚注与正文的间距
-\renewcommand{\footnote}[1]{{【脚注：#1】}} % 替换原生脚注
-
 % 字体大小设置
 #${template.setfont}
+
+% 脚注设置(已被\endnote代替而弃用)
+% \setlength{\footnotesep}{0.5\footnotesep} % 减少脚注之间的间距
+% \setlength{\skip\footins}{0.5\skip\footins} % 减少脚注与正文的间距
+% \renewcommand{\footnote}[1]{{【脚注：#1】}} % 替换原生脚注
+\let\footnote=\endnote
+% 重新定义显示方式
+\renewcommand{\enoteformat}{\setsmallf{#${setting.fontsize}}(\theenmark.)}
+\def\enoteheading{\section*{【尾注】}}
 
 % 使用 titlesec 重新定义标题格式，保持目录功能
 \titleformat{\section}
@@ -233,6 +239,7 @@ class Config:
 
 #${template.body}
 
+\theendnotes
 \end{multicols}
 \end{document}
 """
@@ -256,8 +263,7 @@ class Config:
     \fi
 }
 """
-    latex_template_setfont = [r"""
-\setmainfont{#${setting.fontname}}
+    latex_template_setfont = [r"""\setmainfont{#${setting.fontname}}
 \newcommand{\setsmallf}[1]{\fontsize{#1pt}{#${setting.fontsizes.skip}}\selectfont\CJKfontspec{#${setting.fontname}}}
 """,r"""
 \newcommand{\setsmallf}[1]{\fontsize{#1pt}{#${setting.fontsizes.skip}}\selectfont}
