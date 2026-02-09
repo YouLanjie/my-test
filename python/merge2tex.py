@@ -109,7 +109,7 @@ class Config:
 % \usepackage{footmisc}
 % \usepackage{dblfnote}
 % \usepackage{titling}   % 保留title等变量
-\usepackage{fontspec}
+\usepackage{fontspec}  % \setmainfont
 \usepackage[hidelinks]{hyperref}
 \usepackage{multicol}
 \usepackage[UTF8]{ctex}
@@ -401,8 +401,10 @@ def main():
             config.cfg["title"] = args.title
         if args.author:
             config.cfg["author"] = args.author
+        if not args.filelist:
+            return
         for i in args.filelist:
-            config.cfg["filelist"][i] = {}
+            config.cfg["filelist"][i] = {"add":[],"ignore":[]}
         if not (args.title or args.author or args.filelist):
             return
     print("[INFO] Config:")

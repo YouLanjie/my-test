@@ -507,6 +507,7 @@ def cmd_genal(li, mode) -> str:
                 replacement = ["\\/:*?\"<>", "＼／∶＊？＂〈〉｜"]
             for k,l in zip(list(replacement[0]), list(replacement[1])):
                 output=output.replace(k, l)
+            output = "".join(i for i in output if i.isprintable() or i in "\r\n\t")
             output = CONFIG["outputd"]+CONFIG["prefix"]+output
             if output[0] == "-":
                 output = "./"+output
