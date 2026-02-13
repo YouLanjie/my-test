@@ -4,7 +4,7 @@
  *   文件名称：count_input.c
  *   创 建 者：u0_a221
  *   创建日期：2026年02月09日
- *   描    述：
+ *   描    述：测试执行速度（针对python同名程序）
  *
  */
 
@@ -16,13 +16,13 @@
 
 int LOCK = 1;
 
-void quit() {
+void quit(int i) {
 	LOCK = 0;
 }
 
 int main()
 {
-	if (isatty(fileno(stdin))) {
+	if (isatty(STDIN_FILENO)) {
 		printf("Not allow stdin is a tty\n");
 		return 0;
 	}

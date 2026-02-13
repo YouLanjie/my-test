@@ -26,7 +26,7 @@
 #define FLG_PLYARG (1 << 3)    /* 播放终端传入参数 */
 #define FLG_FADE (1 << 4)	/* 淡入淡出 */
 #define FLG_HARMONICS (1<<5)	/* 泛音 */
-#define FLG_SMMOTH_GLIDE (1<<6)
+#define FLG_SMOOTH_PORTAMENTO (1<<6)
 #define FLG_PRINT (1<<7)
 #define FLG_PRINT_CSTYLE (1<<8)
 #define FLG_PLYARG_WITH_CONTROL (1<<9)
@@ -160,11 +160,11 @@ double adsr_envelope(int current, int total)
  * end: 目标频率
  * x: 0-1
  * */
-double get_glide_freq(double start, double end, double x)
+double get_portamento_freq(double start, double end, double x)
 {
 	/* s:获取前后两个波形的音量占比
 	 * x=0.5附近从0平滑跃变为1 || y=kx */
-	double s = status&FLG_SMMOTH_GLIDE ? x : sigmoid(20*(x-0.5));
+	double s = status&FLG_SMOOTH_PORTAMENTO ? x : sigmoid(20*(x-0.5));
 	/* 对数和指数计算让音调“均匀”变化 */
 	double ret = log(start) + (log(end)-log(start))*s;
 	return exp(ret);
@@ -174,8 +174,8 @@ struct Note {
 	double freq;
 	double amplitude;
 	int duration;    /* base on sample point */
-	int enable_glide;    /* 连音符(跳变) */
-	int enable_slide;    /* 滑动频率(滑动) */
+	int enable_glide;    /* 连音符(跳变)legato */
+	int enable_slide;    /* 滑音(频率y=x滑动)portamento */
 	int use_right_side;
 };
 
@@ -211,6 +211,7 @@ short *create_note_wave(const char *note, double type, int base, double speed, d
 	}
 
 	for (const char *p = note; *p != '\0' && counter < 20; p++) {
+		if ((int)*p >= 256 || (int)*p < 0) continue;
 		if (!note_freq[(int)*p] && !current_note->freq)
 			continue;
 		if (note_freq[(int)*p]) {
@@ -219,6 +220,9 @@ short *create_note_wave(const char *note, double type, int base, double speed, d
 			current_note->freq = note_freq[(int)*p];
 			current_note->duration = SAMPLE_RATE*(base/type)*(60/speed);
 			current_note->amplitude = *amplitude;
+			current_note->enable_glide = 0;
+			current_note->enable_slide = 0;
+			current_note->use_right_side = 0;
 			counter++;
 		} else if (*p == '/')
 			current_note->duration /= 2;
@@ -291,7 +295,7 @@ short *create_note_wave(const char *note, double type, int base, double speed, d
 		for (int i = 0; i < buffer_frames; i++) {    /* 生成每个采样点的声波 */
 			double env = adsr_envelope(i - (p->enable_glide || enable_glide ? 0 : enable_glide),
 						   (p->enable_glide || enable_glide) ? buffer_frames : p->duration)*p->amplitude;
-			double freq = flag_slide ? get_glide_freq(flag_slide, p->freq, (double)i/p->duration) : p->freq;
+			double freq = flag_slide ? get_portamento_freq(flag_slide, p->freq, (double)i/p->duration) : p->freq;
 			num = (short)wave((double)i/SAMPLE_RATE, env, freq);
 			if (p->enable_glide)    /* 若当前频率也启用连音 */
 				num *= sigmoid((double)(p->duration+enable_glide-i)/800);
@@ -703,7 +707,7 @@ int main(int argc, char *argv[])
 			status &= ~FLG_FADE;
 			break;
 		case 'm':
-			status |= FLG_SMMOTH_GLIDE;
+			status |= FLG_SMOOTH_PORTAMENTO;
 			break;
 		case 'H':
 			status &= ~FLG_HARMONICS;
