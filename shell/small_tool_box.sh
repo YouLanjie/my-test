@@ -22,9 +22,12 @@ get_mem_by_grep() {
 		tag="msedge"
 	fi
 	echo "TAG:     '$tag'"
-	for i in $(ps aux|grep "$tag"|awk '{print $2}')
+	pslist=$(ps aux)
+	pslist=$(echo "$pslist"|grep "$tag")
+	for i in $(echo "$pslist"|awk '{print $2}')
 	do
 		if [[ ! -f "/proc/$i/status" ]];then continue;fi
+		if [[ $i == $$ ]];then continue;fi
 		cat /proc/$i/status|grep 'Swap\|RSS'
 	done|awk '{type[$1]+=$2;type["Total:"]+=$2}END{for (t in type) printf "%-8s %s MB\n",t,type[t]/1024}'
 }

@@ -15,8 +15,8 @@ char *i2b(long data, int len)
 {
 	static char s[41] = "";
 	memset(s, 0, 41);
-	for (int i = 0; i < len*4; ++i) {
-		s[i] = data & (1 << (len*4-i-1)) ? '1' : '0';
+	for (int i = 0; i < len*8; ++i) {
+		s[i] = data & (1 << (len*8-i-1)) ? '1' : '0';
 	}
 	return s;
 }
@@ -31,7 +31,7 @@ int main(void)
 		printf("ch[\033[1;33m%3d\033[0m]: "
 		       "\033[1;32m0x\033[1;33m%02x\033[0m: "
 		       "\033[1;32m0b\033[1;33m%s\033[0m",
-		       i, ch[i] & 0xff, i2b(ch[i] & 0xff, 2));
+		       i, ch[i] & 0xff, i2b(ch[i] & 0xff, 1));
 		if (ch[i] < '!') {
 			printf("\n");
 		} else {

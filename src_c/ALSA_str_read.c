@@ -10,9 +10,7 @@
 
 
 #include "tools.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <limits.h>
 
 #define BUFFSIZE 2048
 #define SCR_HEIGHT 8
@@ -23,11 +21,13 @@
 #define NFLG_LEGATO (1 << 2)
 #define NFLG_PORTAMENTO (1 << 3)
 
+unsigned int SAMPLE_RATE = 44100;
+
 struct Note {
 	double freq;
 	double amplitude;
 	double fade;
-	int duration;
+	unsigned long duration;
 	int flag;
 	short *pwav;
 	struct Note *pNext;
@@ -37,7 +37,7 @@ struct Note *create_note(double freq)
 {
 	struct Note *p = malloc(sizeof(struct Note));
 	if (!p) return NULL;
-	*p = (struct Note){freq, 0.5, 0, 1,
+	*p = (struct Note){freq, 0.5, 0, INT_MAX,
 		NFLG_LEFT|NFLG_RIGHT, NULL, NULL};
 	return p;
 }
@@ -46,8 +46,8 @@ char *i2b(long data, int len)
 {
 	static char s[41] = "";
 	memset(s, 0, 41);
-	for (int i = 0; i < len*4; ++i) {
-		s[i] = data & (1 << (len*4-i-1)) ? '1' : '0';
+	for (int i = 0; i < len*8; ++i) {
+		s[i] = data & (1 << (len*8-i-1)) ? '1' : '0';
 	}
 	return s;
 }
@@ -80,11 +80,12 @@ int main(int argc, char *argv[])
 			sprintf(scr,
 				"Typ:%d;Base:%d;SPD:%d;TRAC:%d\n"
 				"KEY: '%s'  VALUE: '%s'\n"
-				"Freq: %5.1lf  Amp: %lf\nduration: %d (%d)\n"
+				"Freq: %5.1lf  Amp: %lf\nduration: %ld (%d)\n"
 				"fadeout: %lf\nLEGATO: %d\nPORTAMENTO: %d\n"
 				"LR: %d,%d (flg:%s)",
 				type, base, speed, track, key, value,
-				p->freq, p->amplitude, p->duration, (int)(1/p->duration),
+				p->freq, p->amplitude, p->duration,
+				(int)(INT_MAX/(p->duration?p->duration:INT_MAX)),
 				p->fade, p->flag&NFLG_LEGATO, p->flag&NFLG_PORTAMENTO,
 				p->flag&NFLG_LEFT, p->flag&NFLG_RIGHT, i2b(p->flag, 2));
 		} else sprintf(scr,
@@ -126,8 +127,13 @@ int main(int argc, char *argv[])
 		}
 
 		if (note_freq[c]) {
-			if (p) free(p);
+			struct Note *p2 = p;
 			p = create_note(note_freq[c]);
+			p->duration = SAMPLE_RATE*(base/type)*(60/speed);
+			if (p2) {
+				if (!pH) pH = p2;
+				p2->pNext = p;
+			}
 		} else if (c == ':') {
 			setting_mode = 1;
 		} else if (!p) continue;
@@ -199,8 +205,22 @@ int main(int argc, char *argv[])
 			break;
 		}
 	}
-	if (p) free(p);
-	printf("\e[%d;%dH\nQuit\n", get_winsize_row()-1, 0);
+	printf("\e[%d;%dH\n====Quit====\n", get_winsize_row()-1, 0);
+
+	p = pH;
+	struct Note *p2 = p;
+	while (p) {
+		printf("Freq: %5.1lf  Amp: %lf\nduration: %ld (%d)\n"
+		       "fadeout: %lf\nLEGATO: %d\nPORTAMENTO: %d\n"
+		       "LR: %d,%d (flg:%s)\n=============\n",
+		       p->freq, p->amplitude, p->duration,
+		       (int)(INT_MAX/(p->duration?p->duration:INT_MAX)),
+		       p->fade, p->flag&NFLG_LEGATO, p->flag&NFLG_PORTAMENTO,
+		       p->flag&NFLG_LEFT, p->flag&NFLG_RIGHT, i2b(p->flag, 2));
+		p = p->pNext;
+		free(p2);
+		p2 = p;
+	}
 	return 0;
 }
 

@@ -164,8 +164,9 @@ int main(int argc, char *argv[])
 	char path[PATH_MAX] = "";
 	strcpy(path, argv[0]);
 #ifdef __linux__
-	sprintf(path, "/proc/%d/exe", getpid());
-	if (!readlink(path, path, PATH_MAX))
+	char path2[PATH_MAX] = "";
+	sprintf(path2, "/proc/%d/exe", getpid());
+	if (!readlink(path, path2, PATH_MAX))
 		strcpy(path, argv[0]);
 #endif
 	read_config(path);
