@@ -91,14 +91,17 @@ make
   #+begin_src bash
     # 切换到src_c/res/目录
     cd res
-    # 将当前目录的所有`ALSA_OneLastKiss_`开头的txt文件转换成对应的wav文件(需要点时间)
-    ls ALSA_OneLastKiss_*.txt|sed 's/\.txt$//'|while read i;do ../ALSA -C "$(cat "$i.txt")" -S 112 -so "$i.wav";done
-    # 如果使用的mpv播放器，使用以下命令播放
-    mpv ALSA_OneLastKiss_part_a.wav;mpv ALSA_OneLastKiss_part_b1.wav & ;mpv ALSA_OneLastKiss_part_b2.wav;mpv ALSA_OneLastKiss_part_c.wav
-    # 总之就是先播放ALSA_OneLastKiss_part_a.wav
-    # 再同时播放ALSA_OneLastKiss_part_b1.wav和ALSA_OneLastKiss_part_b2.wav
-    # 最后再播放ALSA_OneLastKiss_part_c.wav
+    ../bin/ALSA -so "OneLastKiss.wav" -C "$(cat ./ALSA_OneLastKiss.txt)"
+    # 新版内部支持了多声轨，可直接执行以下命令
+    # 旧版办法
+    # # 将当前目录的所有`ALSA_OneLastKiss_`开头的txt文件转换成对应的wav文件(需要点时间)
+    # ls ALSA_OneLastKiss_*.txt|sed 's/\.txt$//'|while read i;do ../ALSA -C "$(cat "$i.txt")" -S 112 -so "$i.wav";done
+    # # 如果使用的mpv播放器，使用以下命令播放
+    # mpv ALSA_OneLastKiss_part_a.wav;mpv ALSA_OneLastKiss_part_b1.wav & ;mpv ALSA_OneLastKiss_part_b2.wav;mpv ALSA_OneLastKiss_part_c.wav
+    # # 总之就是先播放ALSA_OneLastKiss_part_a.wav
+    # # 再同时播放ALSA_OneLastKiss_part_b1.wav和ALSA_OneLastKiss_part_b2.wav
+    # # 最后再播放ALSA_OneLastKiss_part_c.wav
 
-    # 有实力的可以用ffmpeg合并了再播放，下面的命令抄ai的
-    ffmpeg -i ALSA_OneLastKiss_part_a.wav -i ALSA_OneLastKiss_part_b1.wav -i ALSA_OneLastKiss_part_b2.wav -i ALSA_OneLastKiss_part_c.wav -filter_complex "[1][2]amix=inputs=2[bc];[0][bc][3]concat=n=3:v=0:a=1[out]" -map "[out]" output.mp3
+    # # 有实力的可以用ffmpeg合并了再播放，下面的命令抄ai的
+    # ffmpeg -i ALSA_OneLastKiss_part_a.wav -i ALSA_OneLastKiss_part_b1.wav -i ALSA_OneLastKiss_part_b2.wav -i ALSA_OneLastKiss_part_c.wav -filter_complex "[1][2]amix=inputs=2[bc];[0][bc][3]concat=n=3:v=0:a=1[out]" -map "[out]" output.mp3
   #+end_src

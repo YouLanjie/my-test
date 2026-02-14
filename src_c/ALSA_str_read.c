@@ -101,9 +101,9 @@ struct Note *parse_notes()
 		if (istty) {
 			if (p) {
 				sprintf(scr2,
-					"[%d/%d %dbpm:%d] 1/%.2lf %5.1lfHz (%0.4lf%%) [%s]\n",
+					"[%d/%d %dbpm:%d] 1/%-3.2lg %5.1lfHz (%0.4lg%%) [%s]\n",
 					p->notes,p->beates,p->speed,p->track,p->type,
-					p->freq, p->amplitude, i2b(p->flag, 1, buf, 30));
+					p->freq, p->amplitude*100, i2b(p->flag, 1, buf, 30));
 			} else sprintf(scr2, "No Note was created.\n");
 			sprintf(scr,
 				"[%d/%d %dbpm:%d] 1/%d  || fade:%lf\n"
@@ -152,6 +152,7 @@ struct Note *parse_notes()
 			/*p->duration = SAMPLE_RATE*((double)base/4)*((double)60/speed);*/
 			p->type = type;
 			p->track = track;
+			p->speed = speed;
 			if (!pH) pH = p;
 			if (p2) {
 				p2->pNext = p;
@@ -239,12 +240,12 @@ int main(int argc, char *argv[])
 	struct Note *pH = NULL,
 		    *p = NULL,
 		    *p2 = NULL;
-	char buf[20] = "";
+	char buf[30] = "";
 	p2 = p = pH = parse_notes();
 	while (p) {
-		printf("[%d/%d %dbpm:%d] 1/%-3.2lg %5.1lfHz (%0.4lf%%) [%s]\n",
+		printf("[%d/%d %dbpm:%d] 1/%-3.2lg %5.1lfHz (%0.4lg%%) [%s]\n",
 		       p->notes,p->beates,p->speed,p->track,p->type,
-		       p->freq, p->amplitude, i2b(p->flag, 1, buf, 30));
+		       p->freq, p->amplitude*100, i2b(p->flag, 1, buf, 30));
 		p = p->pNext;
 		count++;
 		free(p2);
