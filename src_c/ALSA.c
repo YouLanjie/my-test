@@ -110,25 +110,94 @@ void create_wav_header(WavHeader *header, float duration)
 	 * data_size,header->file_size,header->file_size-data_size);*/
 }
 
+/**
+ * 方波函数（占空比50%）
+ * 周期 T，幅值 A
+ * 在 [0, T/2) 输出 A，[T/2, T) 输出 -A
+ */
+double square_wave(double t)
+{
+	const static double T = M_PI, A = 1;
+	// 将 t 映射到 [0, T) 区间
+	double x = fmod(t, T);
+	if (x < 0)
+		x += T;
+	return (x < T / 2.0) ? A : -A;
+}
+
+/**
+ * 三角波函数（对称，峰峰值 2A）
+ * 周期 T，幅值 A
+ * 线性上升：0 → T/2 时从 -A → A
+ * 线性下降：T/2 → T 时从 A → -A
+ */
+double triangle_wave(double t)
+{
+	const static double T = M_PI, A = 1;
+	double x = fmod(t, T);
+	if (x < 0)
+		x += T;
+	double u = 2.0 * x / T;	// 归一化到 [0, 2)
+	if (u < 1.0) {
+		return 2.0 * A * u - A;	// 上升段：-A 到 A
+	} else {
+		return 2.0 * A * (2.0 - u) - A;	// 下降段：A 到 -A
+	}
+}
+
+/**
+ * 锯齿波（上升沿，峰峰值 2A）
+ * 周期 T，幅值 A
+ * 从 t=0 时 -A 线性上升到 t=T 时 A（不包含端点）
+ */
+double sawtooth_wave(double t)
+{
+	const static double T = M_PI, A = 1;
+	double x = fmod(t, T);
+	if (x < 0)
+		x += T;
+	return 2.0 * A * (x / T) - A;	// 线性映射
+}
+
+#define INSTRUMENT_MAX 5
+#define WAVEFUNC_MAX 4
 /* 
  * 生成固定声波
- * volume: 0% ~ 100%
+ * volume: 0% ~ 100% (通常取 0.0 ~ 1.0)
  * 数学模型: f(x) = A*sin(ω*x)
- * x: f(x)的x值 (单位:sec)
- * f: 频率ω
- * */
-double gen_wave(double x, double volume, double f)
+ * x: 时间 (秒)
+ * f: 基频频率 (Hz)
+ * 返回值: 16位线性PCM样本值（已乘以 INT16_MAX 和 volume）
+ */
+double gen_wave(double x, double volume, double f,
+		uint8_t instrument, uint8_t wave_func)
 {
-	if (f < 0) return 0;
-	static const double harmonicsp[15] = {
-		1,0.340,0.102,0.085,0.070,0.065,0.028,0.085,0.011,0.030,0.010,0.014,0.012,0.013,0.004
+	instrument %= INSTRUMENT_MAX;    /* 0<=6 */
+	wave_func %= WAVEFUNC_MAX;
+	// 各乐器前15次谐波幅度（包含基频）
+	// 指针数组，方便通过枚举索引获取对应数组
+	static const double instrument_amps[INSTRUMENT_MAX][15] = {
+		{1,0.340,0.102,0.085,0.070,0.065,0.028,0.085,
+			0.011,0.030,0.010,0.014,0.012,0.013,0.004},
+		{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+		{1.000, 0.100, 0.800, 0.100, 0.600, 0.100, 0.400, 0.100,
+			0.200, 0.050, 0.100, 0.020, 0.050, 0.010, 0.020},
+		{1,0.8,0.1,0.6,0.1,0.4,0.1,0.2,0.05,0.1,0.02,0.05,0.01,0.02,0},
+		{1,0.9,0.9,0.8,0.8,0.7,0.7,0.2,0.2,0.1,0.1,0.05,0.05,0.01,0.01},
 	};
+	static double (*wave_funcs[WAVEFUNC_MAX])(double) = {
+		sin, square_wave, triangle_wave, sawtooth_wave,
+	};
+	if (f < 0)
+		return 0;
+	const double *harmonicsp = instrument_amps[instrument];
 	double value = 0.0;
-	// 基频 + 14个泛音（振幅递减）
+	// 基频 + 14个泛音
 	for (int i = 0; i < 15; i++) {
-		value += harmonicsp[i] * sin(2 * M_PI * (i+1) * f * x);	// 基频
-		if (!(status&FLG_HARMONICS))
-			break;
+		if (harmonicsp[i])
+			value += harmonicsp[i] * wave_funcs[wave_func](2 * M_PI * (i + 1) * f * x);
+		if (!(status & FLG_HARMONICS))
+			break;    // 若禁止泛音，只使用基频
 	}
 	return INT16_MAX * volume * value;
 }
@@ -178,6 +247,8 @@ double get_portamento_freq(double start, double end, double x)
 #define NFLG_BE_LEGATO (1 << 4)
 
 struct Note {
+	char ch;
+	int  ind;
 	double freq;
 	double amplitude;
 	double   type;		/* type分音符 */
@@ -187,23 +258,11 @@ struct Note {
 	uint64_t duration;
 	uint8_t  track;
 	uint8_t  flag;		/* NFLG_* flags */
+	uint8_t  instrument;
+	uint8_t  wave_func;
 	int16_t *pwav;
 	struct Note *pNext;
 };
-
-struct Note *create_note(double freq)
-{
-	struct Note *p = malloc(sizeof(struct Note));
-	if (!p) return NULL;
-	*p = (struct Note){
-		freq, .amplitude=0.5,
-		.type=4, .notes=4, .beates=4,
-		.speed=120, .duration=0, .track=0,
-		.flag=NFLG_LEFT|NFLG_RIGHT,
-		.pwav=NULL, NULL
-	};
-	return p;
-}
 
 char *i2b(unsigned long data, int bytes, char *buf, size_t buf_size)
 {
@@ -219,6 +278,58 @@ char *i2b(unsigned long data, int bytes, char *buf, size_t buf_size)
 	}
 	buf[bits] = '\0';
 	return buf;
+}
+
+void print_note(struct Note *p)
+{
+	if (!p) return;
+	char buf[30] = "";
+	fprintf(stderr,
+		"[%d/%d %dbpm:%d] 1/%-3.2lg %5.1lfHz (%0.4lg%%) [%s] (%d:'%c')\n",
+		p->notes,p->beates,p->speed,p->track,p->type,
+		p->freq, p->amplitude*100, i2b(p->flag, 1, buf, 30),
+		p->ind, p->ch);
+}
+
+void check_notes(struct Note *p)
+{
+	if (!(status & FLG_PRINT)) return;
+	char *colors[2][2] = { {"", ""}, {"\e[31m", "\e[0m"} };
+	int istty = isatty(STDERR_FILENO);
+	int istty2 = isatty(STDOUT_FILENO);
+	double counter = 0;
+	int track = p->track;
+	for (; p ; p = p->pNext) {
+		if (track!=p->track) {
+			track = p->track;
+			printf("\n:%strack=%d%s;\n", colors[istty2][0],
+			       track, colors[istty2][1]);
+		}
+		printf("%c", p->ch);
+		for (double i=p->type; i && i>4; i/=2) printf("/");
+		for (double i=p->type; i && i<4; i*=2) printf("*");
+		for (double i=p->type; i!=floor(i); i*=3) printf(".");
+		if (p->flag&NFLG_LEGATO) printf("~");
+		else if (p->flag&NFLG_PORTAMENTO) printf("s");
+		else printf(" ");
+		counter += p->notes/p->type;
+		if (counter < p->beates) continue;
+		if (counter > p->beates) {
+			printf("%s%s<<%s", istty2 ? "\e[7m" : "",
+			       colors[istty2][0], colors[istty2][1]);
+			fprintf(stderr, "[%sWARN%s] 不合拍%g: ",
+				colors[istty][0], colors[istty][1],
+				counter);
+			print_note(p);
+		}
+		/*printf("%s(%f)| %s", colors[istty][0], tempo_counter, colors[istty][1]); */
+		printf("%s|%s\n", colors[istty2][0], colors[istty2][1]);
+		counter = 0;
+		fflush(stderr);
+		fflush(stdout);
+	}
+	printf("\n");
+	return;
 }
 
 /* 解读字符串形式的音符并产生解析好的音符串struct */
@@ -238,12 +349,14 @@ struct Note *parse_notes(const char *str, double amplitude)
 	     key[40] = "",
 	     value[40] = "";
 	double fade = 0;
-	uint8_t track = 0, setting_mode = 0;
+	uint8_t track = 0, setting_mode = 0,
+		instrument = 0, wave_func = 0;
 	int beates = 4, /* 每小节type拍(重置计数器用) */
 	    notes = 4,  /* 以几分音符为一拍 */
 	    type = 4,   /* 默认type分音符 */
 	    speed = 120,
-	    c = 0;
+	    c = 0,
+	    count = 0;
 	struct Note *pH = NULL, *p = NULL;
 	while (c != EOF) {
 		if (str) {
@@ -267,9 +380,12 @@ struct Note *parse_notes(const char *str, double amplitude)
 #define ifin(str, fmt, var, check) if (strcmp(key, str) == 0) {sscanf(value, fmt, &var); check;} else
 				ifin("track", "%hhd", track, )
 				ifin("speed", "%d", speed, if(speed<1) speed=120)
+				ifin("amp", "%lf", amplitude, if(amplitude<0||amplitude>=0.8)amplitude=0.2);
 				ifin("beates", "%d", beates, if(beates<1) )
 				ifin("notes", "%d", notes, if(notes%4!=0||notes<1) notes=4)
 				ifin("type", "%d", type, if(type%4!=0||type<1)type=4);
+				ifin("inst", "%hhu", instrument, instrument%=INSTRUMENT_MAX);
+				ifin("wfunc", "%hhu", wave_func, wave_func%=WAVEFUNC_MAX);
 #undef ifin
 				memset(key, 0, 40);
 				memset(value, 0, 40);
@@ -283,12 +399,21 @@ struct Note *parse_notes(const char *str, double amplitude)
 
 		if (note_freq[c]) {
 			struct Note *p2 = p;
-			p = create_note(note_freq[c]);
-			/*p->duration = SAMPLE_RATE*((double)base/4)*((double)60/speed);*/
-			p->amplitude = amplitude;
-			p->type = type;
-			p->track = track;
-			p->speed = speed;
+			p = malloc(sizeof(struct Note));
+			if (!p) return NULL;
+			count++;
+			*p = (struct Note){
+				.ch=c, .ind=count,
+				.freq=note_freq[c], .amplitude=amplitude,
+				.type=type, .notes=4, .beates=beates,
+				.speed=speed,
+				.duration=0,
+				.track=track,
+				.flag=NFLG_LEFT|NFLG_RIGHT,
+				.instrument=instrument,
+				.wave_func=wave_func,
+				.pwav=NULL, NULL
+			};
 			if (!pH) pH = p;
 			if (p2) {
 				p2->pNext = p;
@@ -366,6 +491,7 @@ struct Note *parse_notes(const char *str, double amplitude)
 			break;
 		}
 	}
+	check_notes(pH);
 	return pH;
 }
 
@@ -416,7 +542,8 @@ int create_note_wave(struct Note **pp)
 		for (int i = 0; i < sample_num; i++) {    /* 生成每个采样点声波的相位 */
 			double env = adsr_envelope(i, sample_num)*p->amplitude;
 			double freq = flag_slide ? get_portamento_freq(flag_slide, p->freq, (double)i/sample_num) : p->freq;
-			phase = (int16_t)gen_wave((double)i/SAMPLE_RATE, env, freq);
+			phase = (int16_t)gen_wave((double)i/SAMPLE_RATE, env, freq,
+						  p->instrument, p->wave_func);
 			if (p->flag&NFLG_BE_LEGATO)    /* fade in */
 				phase *= sigmoid((int32_t)(i-duration_offset)/((double)SAMPLE_RATE/100));
 			if (p->flag&NFLG_LEGATO)    /* fade out */
@@ -575,7 +702,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 
 		":beates=6;"
 		":notes=8;"
-		":speed=180;"
+		":speed=120;"
 		"1/ 2/ 3/ 2/ 1/ A/ B/ A./ E// G.~G."
 		"1/ 2/ 3/ 2/ 1/ A/ B/ G./ E// A.~A."
 		"G/ F/ E/ D. b/ a/ g/ E.  F.  D  C/  C.~C."
@@ -679,7 +806,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 
 		if (p->track == 0 && sizes[0] == 0) {
 			size+=(double)duration/SAMPLE_RATE;
-			if (status & FLG_SAVE) fwrite(p->pwav, sizeof(int), duration, wav_file);
+			if (status & FLG_SAVE) fwrite(p->pwav, sizeof(int16_t)*2, duration, wav_file);
 #ifdef ENABLE_ALSA
 			if (status & FLG_PLAY) play_wav(pcm_handle, p->pwav, duration);
 #endif
@@ -697,7 +824,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 			tracks[0] = p;
 			merge_tracks(tracks, duration, size*SAMPLE_RATE-sizes[1]);
 			size+=(double)duration/SAMPLE_RATE;
-			if (status & FLG_SAVE) fwrite(p->pwav, sizeof(int), duration, wav_file);
+			if (status & FLG_SAVE) fwrite(p->pwav, sizeof(int16_t)*2, duration, wav_file);
 #ifdef ENABLE_ALSA
 			if (status & FLG_PLAY) play_wav(pcm_handle, p->pwav, duration);
 #endif
