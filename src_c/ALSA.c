@@ -13,6 +13,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include <limits.h>
 #include <stdint.h>
@@ -29,8 +30,9 @@
 #define FLG_HARMONICS (1<<5)	/* 泛音 */
 #define FLG_SMOOTH_PORTAMENTO (1<<6)
 #define FLG_PRINT (1<<7)
+#define FLG_PRINT_DEBUG (1<<8)
 
-int status = FLG_FADE|FLG_HARMONICS;
+uint16_t status = FLG_FADE|FLG_HARMONICS;
 /* 采样率（Hz） */
 unsigned int SAMPLE_RATE = 44100;
 
@@ -88,7 +90,7 @@ typedef struct {
 	uint32_t data_size;	// 音频数据大小
 } WavHeader;
 
-void create_wav_header(WavHeader *header, float duration)
+void create_wav_header(WavHeader *header, uint32_t duration)
 {
 	memcpy(header->RIFF, "RIFF", 4);
 	memcpy(header->WAVE, "WAVE", 4);
@@ -103,11 +105,11 @@ void create_wav_header(WavHeader *header, float duration)
 	header->block_align = header->channels * header->bits_per_sample / 8;
 	header->byte_rate = SAMPLE_RATE * header->block_align;
 
-	int data_size = SAMPLE_RATE * duration * header->block_align;
+	int data_size = duration * header->block_align;
 	header->data_size = data_size;
 	header->file_size = data_size + sizeof(WavHeader) - 8;
-	/*printf("DATA_SIZE:%d\nFILE_SIZE:%d\nDELTER:%d\n",
-	 * data_size,header->file_size,header->file_size-data_size);*/
+	/*printf("DATA_SIZE:%d\nFILE_SIZE:%d\nDELTER:%d\n",*/
+	 /*data_size,header->file_size,header->file_size-data_size);*/
 }
 
 /**
@@ -249,6 +251,7 @@ double get_portamento_freq(double start, double end, double x)
 struct Note {
 	char ch;
 	int  ind;
+	int  line;
 	double freq;
 	double amplitude;
 	double   type;		/* type分音符 */
@@ -285,10 +288,10 @@ void print_note(struct Note *p)
 	if (!p) return;
 	char buf[30] = "";
 	fprintf(stderr,
-		"[%d/%d %dbpm:%d] 1/%-3.2lg %5.1lfHz (%0.4lg%%) [%s] (%d:'%c')\n",
+		"[%d/%d %dbpm:%d] 1/%-3.2lg %5.1lfHz (%0.4lg%%) [%s] (%d:%d:'%c')\n",
 		p->notes,p->beates,p->speed,p->track,p->type,
 		p->freq, p->amplitude*100, i2b(p->flag, 1, buf, 30),
-		p->ind, p->ch);
+		p->line, p->ind, p->ch);
 }
 
 void check_notes(struct Note *p)
@@ -298,12 +301,13 @@ void check_notes(struct Note *p)
 	int istty = isatty(STDERR_FILENO);
 	int istty2 = isatty(STDOUT_FILENO);
 	double counter = 0;
-	int track = p->track;
+	int track = 0;
 	for (; p ; p = p->pNext) {
 		if (track!=p->track) {
 			track = p->track;
 			printf("\n:%strack=%d%s;\n", colors[istty2][0],
 			       track, colors[istty2][1]);
+			counter = 0;
 		}
 		printf("%c", p->ch);
 		for (double i=p->type; i && i>4; i/=2) printf("/");
@@ -332,6 +336,7 @@ void check_notes(struct Note *p)
 	return;
 }
 
+#define KEYVALUE_BUF_SIZE 40
 /* 解读字符串形式的音符并产生解析好的音符串struct */
 struct Note *parse_notes(const char *str, double amplitude)
 {
@@ -343,11 +348,8 @@ struct Note *parse_notes(const char *str, double amplitude)
 		['1'] = 523.2, ['2'] = 587.3, ['3'] = 659.2, ['4'] = 698.5,
 		['5'] = 784.0, ['6'] = 880.0, ['7'] = 987.8, ['0'] = -1,
 		['{'] = 20, ['}'] = 20000};
-	char scr[BUFSIZ] = "",
-	     scr2[BUFSIZ] = "",
-	     buf[30] = "",
-	     key[40] = "",
-	     value[40] = "";
+	char key[KEYVALUE_BUF_SIZE] = "",
+	     value[KEYVALUE_BUF_SIZE] = "";
 	double fade = 0;
 	uint8_t track = 0, setting_mode = 0,
 		instrument = 0, wave_func = 0;
@@ -356,7 +358,8 @@ struct Note *parse_notes(const char *str, double amplitude)
 	    type = 4,   /* 默认type分音符 */
 	    speed = 120,
 	    c = 0,
-	    count = 0;
+	    count = 1,
+	    countline = 1;
 	struct Note *pH = NULL, *p = NULL;
 	while (c != EOF) {
 		if (str) {
@@ -365,35 +368,43 @@ struct Note *parse_notes(const char *str, double amplitude)
 			str++;
 		} else c=getchar();
 		if (c==EOF) break;
+		if (c=='\n') {
+			count=0;
+			countline++;
+		} else count++;
 		if (c >= 256 || c < 0) continue;
 
 		if (setting_mode == 0) {
-		} else if (setting_mode <= 40) {
-			if (c != '=') key[setting_mode-1] = c;
-			else setting_mode = 40;
+		} else if (setting_mode <= KEYVALUE_BUF_SIZE) {
+			if (c == '=' || setting_mode==KEYVALUE_BUF_SIZE-1)
+				setting_mode = KEYVALUE_BUF_SIZE;
+			else if (c == ';') setting_mode=KEYVALUE_BUF_SIZE*2;
+			else key[setting_mode-1] = c;
 			setting_mode++;
 			continue;
-		} else if (setting_mode <= 40+40) {
-			if (c != ';') value[setting_mode-41] = c;
-			else {
-				setting_mode = 0;
-#define ifin(str, fmt, var, check) if (strcmp(key, str) == 0) {sscanf(value, fmt, &var); check;} else
-				ifin("track", "%hhd", track, )
-				ifin("speed", "%d", speed, if(speed<1) speed=120)
-				ifin("amp", "%lf", amplitude, if(amplitude<0||amplitude>=0.8)amplitude=0.2);
-				ifin("beates", "%d", beates, if(beates<1) )
-				ifin("notes", "%d", notes, if(notes%4!=0||notes<1) notes=4)
-				ifin("type", "%d", type, if(type%4!=0||type<1)type=4);
-				ifin("inst", "%hhu", instrument, instrument%=INSTRUMENT_MAX);
-				ifin("wfunc", "%hhu", wave_func, wave_func%=WAVEFUNC_MAX);
-#undef ifin
-				memset(key, 0, 40);
-				memset(value, 0, 40);
+		} else if (setting_mode <= KEYVALUE_BUF_SIZE*2-1) {
+			if (c != ';') {
+				value[setting_mode-KEYVALUE_BUF_SIZE-1] = c;
+				setting_mode++;
 				continue;
 			}
-			setting_mode++;
+			setting_mode = 0;
+#define ifin(str, fmt, var, check) if (strcmp(key, str) == 0) {sscanf(value, fmt, &var); check;} else
+			ifin("track", "%hhd", track, )
+			ifin("speed", "%d", speed, if(speed<1) speed=120)
+			ifin("amp", "%lf", amplitude, if(amplitude<0||amplitude>=0.8)amplitude=0.2);
+			ifin("beates", "%d", beates, if(beates<1) )
+			ifin("notes", "%d", notes, if(notes%4!=0||notes<1) notes=4)
+			ifin("type", "%d", type, if(type%4!=0||type<1)type=4);
+			ifin("inst", "%hhu", instrument, instrument%=INSTRUMENT_MAX);
+			ifin("wfunc", "%hhu", wave_func, wave_func%=WAVEFUNC_MAX);
+#undef ifin
+			memset(key, 0, KEYVALUE_BUF_SIZE);
+			memset(value, 0, KEYVALUE_BUF_SIZE);
 			continue;
 		} else {
+			memset(key, 0, KEYVALUE_BUF_SIZE);
+			memset(value, 0, KEYVALUE_BUF_SIZE);
 			setting_mode = 0;
 		}
 
@@ -401,9 +412,8 @@ struct Note *parse_notes(const char *str, double amplitude)
 			struct Note *p2 = p;
 			p = malloc(sizeof(struct Note));
 			if (!p) return NULL;
-			count++;
 			*p = (struct Note){
-				.ch=c, .ind=count,
+				.ch=c, .ind=count, .line=countline,
 				.freq=note_freq[c], .amplitude=amplitude,
 				.type=type, .notes=4, .beates=beates,
 				.speed=speed,
@@ -425,16 +435,6 @@ struct Note *parse_notes(const char *str, double amplitude)
 		} else if (!p) continue;
 
 		switch (c) {
-		case '|':
-		case ';':
-		case ' ':
-		case '\r':
-		case '\n':
-		case '\t':
-			/*if (p) free(p);*/
-			/*p = NULL;*/
-			c = 0;
-			break;
 		case '/':
 			p->type *= 2;
 			break;
@@ -558,13 +558,12 @@ int create_note_wave(struct Note **pp)
 	if (!p) return -4;
 	p->duration = sample_num;
 	p->pwav = buffer;
-	/*if (status&FLG_PRINT) {*/
-		/*char buf[30] = "";*/
-		/*printf("[%d/%d %dbpm:%d] 1/%-3.2lg %5.1lfHz (%0.4lg%%) [%s] [%p(%d)]\n",*/
-		       /*p->notes,p->beates,p->speed,p->track,p->type,*/
-		       /*p->freq, p->amplitude*100, i2b(p->flag, 1, buf, 30),*/
-		       /*p->pwav, sample_num);*/
-	/*}*/
+	if (status&FLG_PRINT_DEBUG)
+		print_note(p);
+	/*printf("[%d/%d %dbpm:%d] 1/%-3.2lg %5.1lfHz (%0.4lg%%) [%s] [%p(%d)]\n",*/
+	       /*p->notes,p->beates,p->speed,p->track,p->type,*/
+	       /*p->freq, p->amplitude*100, i2b(p->flag, 1, buf, 30),*/
+	       /*p->pwav, sample_num);*/
 	return sample_num;
 }
 
@@ -593,15 +592,22 @@ void merge_tracks(struct Note *tracks[UINT8_MAX], int duration, uint64_t offset)
 	if (offset%2 != 0) offset++;
 	int16_t *pwav = tracks[0]->pwav;	// 主轨道缓冲区，长度 2*duration
 
+	if (status&FLG_PRINT_DEBUG)
+		fprintf(stderr, "> merge: duration:%d, offset:%ld\n", duration, offset);
 	for (uint8_t i = 1; i < UINT8_MAX; i++) {
 		if (!tracks[i])
 			continue;
 		struct Note *p = tracks[i];
-		int len = 0;	// 已处理的样本数（时间）
+		struct Note *now_merge = NULL;
+		if (status&FLG_PRINT_DEBUG){
+			fprintf(stderr, "> H[%d] ", i);
+			print_note(p);
+		}
+		uint64_t len = 0;	// 已处理的样本数（时间）
 		for (int j = 0; j < duration; j++) { // 找到覆盖当前时间 offset+j 的音符
 			while (p) { // 跳过无音频数据的音符，并累加其持续时间
 				if (!p->pwav) {
-					len += p->duration;
+					/*len += p->duration;*/
 					p = p->pNext;
 					continue;
 				}
@@ -615,6 +621,17 @@ void merge_tracks(struct Note *tracks[UINT8_MAX], int duration, uint64_t offset)
 				p = p->pNext;
 			}
 			if (!p) break;	// 轨道已无音符，剩余样本不叠加
+			if (status&FLG_PRINT_DEBUG && now_merge != p) {
+				now_merge = p;
+				fprintf(stderr, "> ");
+				print_note(p);
+			}
+			if (offset + j < len) {
+				fprintf(stderr, "合并声轨时产生未知错误: %ld < %ld\n",
+					offset + j, len);
+				print_note(p);
+				break;
+			}
 			int note_offset = (offset + j) - len;	// 在当前音符内的偏移（样本数）
 			// 叠加左右声道
 			pwav[2 * j] += p->pwav[2 * note_offset];
@@ -624,17 +641,23 @@ void merge_tracks(struct Note *tracks[UINT8_MAX], int duration, uint64_t offset)
 }
 
 /* free space of pwav */
-void clean_tracks_wav(struct Note *(*tracks)[UINT8_MAX])
+void clean_tracks_wav(struct Note *(*tracks)[UINT8_MAX], uint8_t print)
 {
 	if (!tracks || !*tracks) return;
-	struct Note *p2 = NULL;
+	if (print)
+		fprintf(stderr, "[INFO] CLEANUP TRACKS\n");
 	for(uint8_t i=1; i < UINT8_MAX; i++) {
-		if (!*tracks[i]) continue;
-		for(struct Note *p = *tracks[i]; p && p->track == i; p2 = p, p = p->pNext) {
-			if (!p2 || !p2->pwav) continue;
-			free(p2->pwav);
+		if (!(*tracks)[i]) continue;
+		if (print)
+			print_note((*tracks)[i]);
+		for(struct Note *p = (*tracks)[i]; p && p->track == i; p = p->pNext) {
+			if (!p->pwav) continue;
+			free(p->pwav);
+			p->pwav = NULL;
 		}
+		(*tracks)[i] = NULL;
 	}
+	*tracks[0] = 0;
 	return;
 }
 
@@ -768,7 +791,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 
 	FILE *wav_file = NULL;
 	WavHeader wav_header;
-	double size = 0;
+	uint64_t size = 0;
 	if (status & FLG_SAVE) {
 		wav_file =  fopen(filename, "wb");
 		 /* 创建并写入WAV文件头 */
@@ -788,14 +811,13 @@ int melody(int id, char *filename, double amplitude, char *input)
 #endif
 
 	struct Note *pH = parse_notes(status&FLG_PLYARG ? input : note[id], amplitude),
-		    *p = pH, *p2 = NULL,
+		    *p = pH,
 		    *tracks[UINT8_MAX] = {NULL};
-	uint64_t sizes[UINT8_MAX] = {0};
+	int64_t sizes[UINT8_MAX] = {0};
 	int count = 0;
 	for (; p ; p = p->pNext) {
 		if (!p) break;
 		count++;
-		p2 = p;
 		int duration = create_note_wave(&p);
 		if (!p) break;
 		if (duration <= 10) {
@@ -805,7 +827,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 		}
 
 		if (p->track == 0 && sizes[0] == 0) {
-			size+=(double)duration/SAMPLE_RATE;
+			size+=duration;
 			if (status & FLG_SAVE) fwrite(p->pwav, sizeof(int16_t)*2, duration, wav_file);
 #ifdef ENABLE_ALSA
 			if (status & FLG_PLAY) play_wav(pcm_handle, p->pwav, duration);
@@ -817,26 +839,33 @@ int melody(int id, char *filename, double amplitude, char *input)
 				sizes[0] = 0;
 				for(uint8_t i=1; i < UINT8_MAX; i++) {
 					if(sizes[i]>sizes[0]) sizes[0]=sizes[i];
-					sizes[i] = 0;
+					sizes[i] = 0;    /* max size */
 				}
-				sizes[1] = size*SAMPLE_RATE;
+				sizes[1] = size;    /* size have played */
 			}
 			tracks[0] = p;
-			merge_tracks(tracks, duration, size*SAMPLE_RATE-sizes[1]);
-			size+=(double)duration/SAMPLE_RATE;
+			merge_tracks(tracks, duration, size-sizes[1]);
+			size+=duration;
 			if (status & FLG_SAVE) fwrite(p->pwav, sizeof(int16_t)*2, duration, wav_file);
 #ifdef ENABLE_ALSA
 			if (status & FLG_PLAY) play_wav(pcm_handle, p->pwav, duration);
 #endif
 			free(p->pwav);
 			p->pwav = NULL;
-			if (size*SAMPLE_RATE-sizes[1] > sizes[0]) {
+			if (size-sizes[1] > sizes[0]) {
 				// exit clean up
-				clean_tracks_wav(&tracks);
+				clean_tracks_wav(&tracks, 0);
 				sizes[0] = 0;
 				sizes[1] = 0;
 			}
 		} else {
+			if (sizes[0] > 0) {
+				fprintf(stderr, "[WARN] 非零轨道比主轨道长(%lf - %lf <= %lf)\n",
+					(double)size/SAMPLE_RATE, (double)sizes[1]/SAMPLE_RATE, (double)sizes[0]/SAMPLE_RATE);
+				clean_tracks_wav(&tracks, 1);
+				sizes[0] = 0;
+				sizes[1] = 0;
+			}
 			if (!tracks[p->track]) tracks[p->track] = p;
 			sizes[p->track] += duration;
 			sizes[0] = -1;
@@ -849,6 +878,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 		free(p2);
 	}
 	if (status & FLG_SAVE) {
+		printf("Length: %lfsec\n", (double)size/SAMPLE_RATE);
 		fseek(wav_file, 0, SEEK_SET);
 		create_wav_header(&wav_header, size);	// 重新生成准确的头信息
 		fwrite(&wav_header, 1, sizeof(wav_header), wav_file);
@@ -927,7 +957,7 @@ int main(int argc, char *argv[])
 	double amplitude = 0.2;
 	char filename[125] = "output.wav",
 	     *notes = NULL;
-	while ((ch = getopt(argc, argv, "hi:psnmHo:r:C:PA:")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "hi:psnmHo:r:C:PxA:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -943,6 +973,7 @@ int main(int argc, char *argv[])
 			       "    -r <FILE> 输入文件（启用后其他选项无效）\n"
 			       "    -C <STR>  额外指定音符(用`|`或` `分割)\n"
 			       "    -P        打印音符(格式化)\n"
+			       "    -x        打印调试信息\n"
 			       "    -A <NUM>  基本音量(0~1,默认0.2)\n"
 			       "    -h        显示帮助\n"
 			       "  NUM: 0: 小星星\n"
@@ -999,6 +1030,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'P':
 			status |= FLG_PRINT;
+			break;
+		case 'x':
+			status |= FLG_PRINT_DEBUG;
 			break;
 		default:
 			break;
