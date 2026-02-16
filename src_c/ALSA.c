@@ -321,9 +321,9 @@ void check_notes(struct Note *p)
 		if (counter > p->beates) {
 			printf("%s%s<<%s", istty2 ? "\e[7m" : "",
 			       colors[istty2][0], colors[istty2][1]);
-			fprintf(stderr, "[%sWARN%s] 不合拍%g: ",
+			fprintf(stderr, "[%sWARN%s] 不合拍(%g/%d): ",
 				colors[istty][0], colors[istty][1],
-				counter);
+				counter, p->beates);
 			print_note(p);
 		}
 		/*printf("%s(%f)| %s", colors[istty][0], tempo_counter, colors[istty][1]); */
@@ -860,8 +860,10 @@ int melody(int id, char *filename, double amplitude, char *input)
 			}
 		} else {
 			if (sizes[0] > 0) {
-				fprintf(stderr, "[WARN] 非零轨道比主轨道长(%lf - %lf <= %lf)\n",
-					(double)size/SAMPLE_RATE, (double)sizes[1]/SAMPLE_RATE, (double)sizes[0]/SAMPLE_RATE);
+				fprintf(stderr, "[WARN] 非零轨道比主轨道长(%lf - %lf = %lf <= %lf)\n",
+					(double)size/SAMPLE_RATE, (double)sizes[1]/SAMPLE_RATE,
+					(double)(size-sizes[1])/SAMPLE_RATE,
+					(double)sizes[0]/SAMPLE_RATE);
 				clean_tracks_wav(&tracks, 1);
 				sizes[0] = 0;
 				sizes[1] = 0;
