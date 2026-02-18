@@ -160,7 +160,7 @@ def main():
                         help="db file search path")
     parser.add_argument("-f","--file",type=Path, help="读写的pickle文件")
     parser.add_argument("-s","--search", help="搜索")
-    parser.add_argument("-r","--recount", help="recount pkg")
+    parser.add_argument("-r","--recount", action="store_true", help="recount pkg")
     parser.add_argument("-t","--top", type=int, default=100, help="top 100")
     parser.add_argument("-d","--diret-deps", action="store_true", help="仅计算直接依赖")
     args = parser.parse_args()

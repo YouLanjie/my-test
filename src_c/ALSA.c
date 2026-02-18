@@ -10,6 +10,7 @@
  */
 
 #define ENABLE_ALSA
+#define ENABLE_OMP
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,6 +21,10 @@
 #include <math.h>
 #ifdef ENABLE_ALSA
 #include <alsa/asoundlib.h>
+#endif
+
+#ifdef ENABLE_OMP
+#include <omp.h>
 #endif
 
 #define FLG_PLAY (1 << 0)
@@ -193,13 +198,17 @@ double gen_wave(double x, double volume, double f,
 	if (f < 0)
 		return 0;
 	const double *harmonicsp = instrument_amps[instrument];
-	double value = 0.0;
+	double value = harmonicsp[0] * wave_funcs[wave_func](2 * M_PI * f * x);
 	// 基频 + 14个泛音
-	for (int i = 0; i < 15; i++) {
-		if (harmonicsp[i])
-			value += harmonicsp[i] * wave_funcs[wave_func](2 * M_PI * (i + 1) * f * x);
-		if (!(status & FLG_HARMONICS))
-			break;    // 若禁止泛音，只使用基频
+	if (!(status & FLG_HARMONICS))    // 若禁止泛音，只使用基频
+		return INT16_MAX * volume * value;
+	double (*func)(double) = wave_funcs[wave_func];
+	/* 需使用 -fopenmp 编译参数 */
+#ifdef ENABLE_OMP
+#pragma omp simd reduction(+:value)
+#endif
+	for (int i = 1; i < 15; i++) {
+		value += harmonicsp[i] * func(2 * M_PI * (i + 1) * f * x);
 	}
 	return INT16_MAX * volume * value;
 }
@@ -533,17 +542,19 @@ int create_note_wave(struct Note **pp)
 	int flag_slide = 0;    /* 启用滑音时的初始频率 */
 	int duration_offset = 0;
 	for (; p ; p = p->pNext) {
-		int16_t phase = 0;
 		if (p->flag&NFLG_PORTAMENTO) {    /* 滑音 != 连音 */
 			flag_slide = p->freq;
 			continue;
 		}
 		uint32_t duration = pduration(p);
+#ifdef ENABLE_OMP
+#pragma omp parallel for
+#endif
 		for (int i = 0; i < sample_num; i++) {    /* 生成每个采样点声波的相位 */
 			double env = adsr_envelope(i, sample_num)*p->amplitude;
 			double freq = flag_slide ? get_portamento_freq(flag_slide, p->freq, (double)i/sample_num) : p->freq;
-			phase = (int16_t)gen_wave((double)i/SAMPLE_RATE, env, freq,
-						  p->instrument, p->wave_func);
+			int16_t phase = (int16_t)gen_wave((double)i/SAMPLE_RATE, env, freq,
+							  p->instrument, p->wave_func);
 			if (p->flag&NFLG_BE_LEGATO)    /* fade in */
 				phase *= sigmoid((int32_t)(i-duration_offset)/((double)SAMPLE_RATE/100));
 			if (p->flag&NFLG_LEGATO)    /* fade out */
