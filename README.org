@@ -86,7 +86,7 @@ make
     # 将《小星星》保存到指定文件(自己用文件管理器或者播放器打开)
     ./ALSA -so "小星星.wav" -i 0
   #+end_src
-  在src_c/res/中存有《One Last Kiss》的简谱（自定义格式），（[[https://www.bilibili.com/opus/912109641895247925][来源在这]]），如果要
+  在src_c/res/中存有《One Last Kiss》的简谱（自定义格式），（[[https://www.bilibili.com/read/cv26055182][来源在这]]），如果要
   食用请执行以下命令
   #+begin_src bash
     # 切换到src_c/res/目录

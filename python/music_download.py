@@ -124,6 +124,7 @@ class Song:
         command += ["-metadata", f"album={repr(self.album)}",
                     "-metadata", f"artist={repr(self.artist)}",
                     "-metadata", f"title={repr(self.name)}",
+                    "-metadata", f"comment='SongId: {self.id}'",
                     "-metadata:s:v", "title='Album cover'",
                     "-metadata:s:v", "comment='Cover (Front)'"]
         command += [repr(str(outputf.resolve())), "&&",

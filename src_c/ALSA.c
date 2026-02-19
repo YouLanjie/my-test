@@ -35,7 +35,7 @@
 #define FLG_HARMONICS (1<<5)	/* 泛音 */
 #define FLG_SMOOTH_PORTAMENTO (1<<6)
 #define FLG_PRINT (1<<7)
-#define FLG_PRINT_DEBUG (1<<8)
+#define FLG_PRINT_DEBUG (1<<9)
 
 uint16_t status = FLG_FADE|FLG_HARMONICS;
 /* 采样率（Hz） */
@@ -305,7 +305,6 @@ void print_note(struct Note *p)
 
 void check_notes(struct Note *p)
 {
-	if (!(status & FLG_PRINT)) return;
 	char *colors[2][2] = { {"", ""}, {"\e[31m", "\e[0m"} };
 	int istty = isatty(STDERR_FILENO);
 	int istty2 = isatty(STDOUT_FILENO);
@@ -314,29 +313,34 @@ void check_notes(struct Note *p)
 	for (; p ; p = p->pNext) {
 		if (track!=p->track) {
 			track = p->track;
-			printf("\n:%strack=%d%s;\n", colors[istty2][0],
-			       track, colors[istty2][1]);
+			if (status & FLG_PRINT)
+				printf("\n:%strack=%d%s;\n", colors[istty2][0],
+				       track, colors[istty2][1]);
 			counter = 0;
 		}
-		printf("%c", p->ch);
-		for (double i=p->type; i && i>4; i/=2) printf("/");
-		for (double i=p->type; i && i<4; i*=2) printf("*");
-		for (double i=p->type; i!=floor(i); i*=3) printf(".");
-		if (p->flag&NFLG_LEGATO) printf("~");
-		else if (p->flag&NFLG_PORTAMENTO) printf("s");
-		else printf(" ");
+		if (status & FLG_PRINT) {
+			printf("%c", p->ch);
+			for (double i=p->type; i && i>4; i/=2) printf("/");
+			for (double i=p->type; i && i<4; i*=2) printf("*");
+			for (double i=p->type; i!=floor(i); i*=3) printf(".");
+			if (p->flag&NFLG_LEGATO) printf("~");
+			else if (p->flag&NFLG_PORTAMENTO) printf("s");
+			else printf(" ");
+		}
 		counter += p->notes/p->type;
 		if (counter < p->beates) continue;
 		if (counter > p->beates) {
-			printf("%s%s<<%s", istty2 ? "\e[7m" : "",
-			       colors[istty2][0], colors[istty2][1]);
+			if (status & FLG_PRINT)
+				printf("%s%s<<%s", istty2 ? "\e[7m" : "",
+				       colors[istty2][0], colors[istty2][1]);
 			fprintf(stderr, "[%sWARN%s] 不合拍(%g/%d): ",
 				colors[istty][0], colors[istty][1],
 				counter, p->beates);
 			print_note(p);
 		}
 		/*printf("%s(%f)| %s", colors[istty][0], tempo_counter, colors[istty][1]); */
-		printf("%s|%s\n", colors[istty2][0], colors[istty2][1]);
+		if (status & FLG_PRINT)
+			printf("%s|%s\n", colors[istty2][0], colors[istty2][1]);
 		counter = 0;
 		fflush(stderr);
 		fflush(stdout);
@@ -357,6 +361,7 @@ struct Note *parse_notes(const char *str, double amplitude)
 		['1'] = 523.2, ['2'] = 587.3, ['3'] = 659.2, ['4'] = 698.5,
 		['5'] = 784.0, ['6'] = 880.0, ['7'] = 987.8, ['0'] = -1,
 		['{'] = 20, ['}'] = 20000};
+	const double change_freq = exp2(1/12.0);
 	char key[KEYVALUE_BUF_SIZE] = "",
 	     value[KEYVALUE_BUF_SIZE] = "";
 	double fade = 0;
@@ -465,14 +470,14 @@ struct Note *parse_notes(const char *str, double amplitude)
 		case '-':
 			p->amplitude -= p->amplitude - 0.1 >= 0 ? 0.1 : 0;
 			break;
-		case 'l':
-			p->freq-=10;
+		case 'l':    /* 跨半音 */
+			p->freq/=change_freq;
 			break;
-		case 'L':
+		case 'L':    /* 跨八度 */
 			p->freq/=2;
 			break;
 		case 'u':
-			p->freq+=10;
+			p->freq*=change_freq;
 			break;
 		case 'U':
 			p->freq*=2;
@@ -825,15 +830,17 @@ int melody(int id, char *filename, double amplitude, char *input)
 		    *p = pH,
 		    *tracks[UINT8_MAX] = {NULL};
 	int64_t sizes[UINT8_MAX] = {0};
-	int count = 0;
+	char *colors[2][2] = { {"", ""}, {"\e[31m", "\e[0m"} };
+	int istty = isatty(STDERR_FILENO);
+	if (!(status & (FLG_PLAY|FLG_SAVE))) return 0;
 	for (; p ; p = p->pNext) {
 		if (!p) break;
-		count++;
 		int duration = create_note_wave(&p);
 		if (!p) break;
 		if (duration <= 10) {
-			fprintf(stderr,"波形为空,Code:[%d], ind:%d\n",
-			       duration, count);
+			fprintf(stderr,"[%sWARN%s] 波形为空(Code[%d]): ",
+				colors[istty][0], colors[istty][1], duration);
+			print_note(p);
 			continue;
 		}
 
@@ -863,7 +870,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 #endif
 			free(p->pwav);
 			p->pwav = NULL;
-			if (size-sizes[1] > sizes[0]) {
+			if (size-sizes[1] >= sizes[0]) {
 				// exit clean up
 				clean_tracks_wav(&tracks, 0);
 				sizes[0] = 0;
@@ -871,7 +878,8 @@ int melody(int id, char *filename, double amplitude, char *input)
 			}
 		} else {
 			if (sizes[0] > 0) {
-				fprintf(stderr, "[WARN] 非零轨道比主轨道长(%lf - %lf = %lf <= %lf)\n",
+				fprintf(stderr, "[%sWARN%s] 非零轨道比主轨道长(%lf - %lf = %lf < %lf)\n",
+					colors[istty][0], colors[istty][1],
 					(double)size/SAMPLE_RATE, (double)sizes[1]/SAMPLE_RATE,
 					(double)(size-sizes[1])/SAMPLE_RATE,
 					(double)sizes[0]/SAMPLE_RATE);
@@ -891,7 +899,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 		free(p2);
 	}
 	if (status & FLG_SAVE) {
-		printf("Length: %lfsec\n", (double)size/SAMPLE_RATE);
+		printf("Saved Total Length: %lfsec\n", (double)size/SAMPLE_RATE);
 		fseek(wav_file, 0, SEEK_SET);
 		create_wav_header(&wav_header, size);	// 重新生成准确的头信息
 		fwrite(&wav_header, 1, sizeof(wav_header), wav_file);

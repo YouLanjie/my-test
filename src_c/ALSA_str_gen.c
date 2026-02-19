@@ -31,28 +31,28 @@ int main()
 		['+'] = 1, ['-'] = 1,
 		['~'] = 1, ['S'] = 's',
 	};
-	printf("type your music below(str will be printed by stderr when exit)\n"
+	printf("type your music below(str will be printed in stderr when exit)\n"
 	       "----------------------------------\n");
 	/*printf("\e[7");*/
 	printf("\n\n\n\n\n\n");
-	while (inp != 'Q') {
+	while (inp != 'q') {
 		sprintf(info, "MODE:%d (press 'l' 'm' 'h' to switch)", mode);
 		print_in_box(info, 0, get_winsize_row()-6, -1, 1, 0, 0, NULL, 1);
 		print_in_box(str, 0, get_winsize_row()-5, -1, 5, 0, 0, NULL, 1);
 		inp = _getch();
-		inp = (inp >= 'a' && inp <= 'z') ? inp - 32 : inp;
-		if (inp == 'L') mode = 0;
-		else if (inp == 'M') mode = 1;
-		else if (inp == 'H') mode = 2;
+		/*inp = (inp >= 'a' && inp <= 'z') ? inp - 32 : inp;*/
+		if (inp == 'l') mode = 0;
+		else if (inp == 'm') mode = 1;
+		else if (inp == 'h') mode = 2;
 		else if (othre_allowed[(int)inp]) {
 			str[index] = othre_allowed[(int)inp] == 1 ? inp : othre_allowed[(int)inp];
 			index++;
 		} else if (inp >= '0' && inp <= '7') {
 			str[index] = ' ';
 			str[index+1] = key_table[mode][(int)inp];
-			index +=2 ;
+			index += 2;
 		} else if (inp == 127 && index >= 0) {
-			index -- ;
+			index--;
 			str[index] = 0;
 		}
 	}
