@@ -261,15 +261,15 @@ class Blog:
         """将文件列表转为org字符串"""
         ret = ""
         for dirname,obj in tree.items():
+            spacing = "  "*(level-titlv-1)
             if isinstance(obj, dict):
                 if titlv >= level:
                     ret += "*"*level+f" {dirname}\n"
                 else:
-                    ret += "  "*(level-1)+f"- {dirname}\n"
+                    ret += spacing+f"- {dirname}\n"
                 ret += self.tree2str(obj, titlv, level+1, hide_time)+"\n"
                 continue
             time_format = f" /[{obj.date or "NULL"}]/" if not hide_time else ""
-            spacing = "  "*level
             ret += spacing+f"- [[./{obj.link}][*{obj.title}*]]{time_format}"
             ret += ("\\\\\n"+spacing+f"  {obj.desc}\n") if obj.desc else "\n"
         return ret
@@ -281,7 +281,7 @@ class Blog:
                                hide_time=not self.cfg["settings"]["tree_time"])
         # content_index = index_template+re.sub(r"^\- ", "** ", list_to_str(tree,True), flags=re.M)
         timeline = pytools.squash_dict(self.tree, split='/')
-        timeline = {k:v for k,v in sorted(timeline.items(), key=lambda x:x[1].date, reverse=True)}
+        timeline = dict(sorted(timeline.items(), key=lambda x:x[1].date, reverse=True))
         s_timeline = self.tree2str(timeline)
         content_timeline = [i[2:] for i in s_timeline.splitlines()]
         for i in range(2000, 2100):

@@ -10,7 +10,8 @@ set(LIB_REQUIRE_M
 	sin
 	input
 	neuro
-	social)
+	social
+	libav_test)
 
 
 file(GLOB APP_SOURCES "./*.c")
@@ -42,6 +43,8 @@ foreach(SOURCE ${APP_SOURCES})
 		list(APPEND EXE_LIBS SDL2_mixer)
 	elseif(${EXE_NAME} STREQUAL "history_note")
 		list(APPEND EXE_LIBS cmenu ncurses)
+	elseif(${EXE_NAME} STREQUAL "libav_test")
+		list(APPEND EXE_LIBS avcodec avformat avformat avutil swresample)
 	endif()
 
 	#message("增加目标文件: ${EXE_NAME} (${EXE_LIBS})")
