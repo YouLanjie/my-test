@@ -117,19 +117,106 @@ void create_wav_header(WavHeader *header, uint32_t duration)
 	 /*data_size,header->file_size,header->file_size-data_size);*/
 }
 
+
+/*
+ * 技巧（From ioccc 2024/straadt）
+ * · 底鼓来自正弦波，提高音调以产生通鼓。
+ * · Roland TR-808 风格的踩镲（一堆高通滤波的方波）。
+ * · SID/C64 风格的小军鼓（在噪声和方波之间振荡）。
+ * · 贝斯中使用了 FM 合成。
+ * · 施罗德混响器，类似 Freeverb。同样的构建模块也用于回声效果。
+ * · 使用 tanh(x) 进行波形塑形/过载，哦也..
+ * */
+
+/* 滤波器结构体 */
+typedef struct {
+	double b0, b1, b2;   // 前向系数（分子）
+	double a1, a2;       // 反馈系数（分母，注意差分方程中为 -a1, -a2）
+	double x1, x2;       // 前两个输入样本
+	double y1, y2;       // 前两个输出样本
+} Biquad;
+enum BiquadType { BQ_LP=1, BQ_HP, BQ_BP, BQ_MAX};
+
+/* 创建并初始化双二阶滤波器
+ * p    : 滤波器结构体指针
+ * type : 滤波器类型（低通/高通/带通）
+ * fc   : 中心频率/截止频率 (Hz)
+ * bw   : 带宽 (Hz)，仅对带通有效，其他类型可传0使用默认Q
+ */
+void create_biquad(Biquad *p, enum BiquadType type, double fc, double bw)
+{
+	if (!p) return;
+	if (!fc) {
+		static const double def_f[BQ_MAX] = {0, 150, 8000, 4000};
+		fc = def_f[type];
+	}
+	double w0 = 2 * M_PI * fc / SAMPLE_RATE;
+	double cosw0 = cos(w0);
+	double sinw0 = sin(w0);
+	double Q = (type == BQ_BP && bw > 0) ? fc / bw : 0.707;	// Butterworth Q
+	double alpha = sinw0 / (2 * Q);
+
+	double a0 = 1 + alpha;
+	double a1_norm = -2 * cosw0 / a0;	// 归一化后的 a1'
+	double a2_norm = (1 - alpha) / a0;	// 归一化后的 a2'
+
+	double b0, b1, b2;
+
+	switch (type) {
+	case BQ_LP:		// 低通
+		b0 = (1 - cosw0) / 2;
+		b1 = 1 - cosw0;
+		b2 = b0;
+		break;
+	case BQ_HP:		// 高通
+		b0 = (1 + cosw0) / 2;
+		b1 = -(1 + cosw0);
+		b2 = b0;
+		break;
+	case BQ_BP:		// 带通（常增益峰值）
+		b0 = alpha;
+		b1 = 0;
+		b2 = -alpha;
+		break;
+	default:
+		*p = (Biquad){};
+		return;		// 未知类型
+	}
+
+	// 归一化系数
+	*p = (Biquad){
+		.b0 = b0 / a0,
+		.b1 = b1 / a0,
+		.b2 = b2 / a0,
+		.a1 = a1_norm,
+		.a2 = a2_norm,
+		// x1, x2, y1, y2 自动初始化为 0
+	};
+}
+
+/* 应用滤波器
+ * x：相位 */
+double apply_biquad(Biquad *f, double x)
+{
+	double y = f->b0*x + f->b1*f->x1 + f->b2*f->x2 \
+		   - f->a1*f->y1 - f->a2*f->y2;
+	// 更新延迟单元
+	f->x2 = f->x1;
+	f->x1 = x;
+	f->y2 = f->y1;
+	f->y1 = y;
+	return y;
+}
+
 /**
  * 方波函数（占空比50%）
  * 周期 T，幅值 A
- * 在 [0, T/2) 输出 A，[T/2, T) 输出 -A
+ * 在 [0, T/2) 输出 A，[-T/2, 0) 输出 -A
  */
 double square_wave(double t)
 {
-	const static double T = M_PI, A = 1;
-	// 将 t 映射到 [0, T) 区间
-	double x = fmod(t, T);
-	if (x < 0)
-		x += T;
-	return (x < T / 2.0) ? A : -A;
+	double x = fmod(t, M_PI) - M_PI/2;
+	return x >= 0 ? 1 : -1;
 }
 
 /**
@@ -153,21 +240,58 @@ double triangle_wave(double t)
 }
 
 /**
- * 锯齿波（上升沿，峰峰值 2A）
- * 周期 T，幅值 A
- * 从 t=0 时 -A 线性上升到 t=T 时 A（不包含端点）
+ * 锯齿波（上升沿）
+ * x: [-pi/2, pi/2) -> [-1, 1) (线性上升)
  */
 double sawtooth_wave(double t)
 {
-	const static double T = M_PI, A = 1;
-	double x = fmod(t, T);
-	if (x < 0)
-		x += T;
-	return 2.0 * A * (x / T) - A;	// 线性映射
+	double x = fmod(t, M_PI) - M_PI/2;
+	return 2.0 * (x/M_PI - floor(x/M_PI+0.5));
 }
 
-#define INSTRUMENT_MAX 5
-#define WAVEFUNC_MAX 4
+double noise_wave(double t)
+{
+	return 2*(double)rand()/RAND_MAX-1;
+}
+
+/* 音符数据 */
+struct Note {
+	char ch;
+	int  ind;
+	int  line;
+	double freq;
+	double amplitude;
+	double   type;		/* type分音符 */
+	uint8_t  notes;		/* 以notes分音符为一拍 */
+	uint8_t  beates;	/* 每小节beates拍 */
+	uint16_t speed;		/* 速度，n拍/分钟 */
+	uint64_t duration;
+	uint8_t  track;
+	uint8_t  flag;		/* NFLG_* flags */
+	int8_t  instrument;
+	int8_t  wave_func;
+	int8_t  bq;
+	double   bq_freq;
+	int8_t   harmonics;
+	int16_t *pwav;
+	struct Note *pNext;
+};
+
+enum Instruments {
+	INST_SIN, INST_DRUM, INST_HIHAT, INST_MAX
+};
+enum Harmonics {
+	HAR_PIANO, HAR_NONE,
+	HAR_3, HAR_4, HAR_5,
+	HAR_MAX, HAR_NOSET=-1
+};
+enum WaveFuncs {
+	WF_SIN, WF_SQUARE,
+	WF_TRIANGLE,
+	WF_SAWTOOTH, WF_NOISE,
+	WF_MAX
+};
+
 /* 
  * 生成固定声波
  * volume: 0% ~ 100% (通常取 0.0 ~ 1.0)
@@ -177,13 +301,11 @@ double sawtooth_wave(double t)
  * 返回值: 16位线性PCM样本值（已乘以 INT16_MAX 和 volume）
  */
 double gen_wave(double x, double volume, double f,
-		uint8_t instrument, uint8_t wave_func)
+		struct Note *p)
 {
-	instrument %= INSTRUMENT_MAX;    /* 0<=6 */
-	wave_func %= WAVEFUNC_MAX;
 	// 各乐器前15次谐波幅度（包含基频）
 	// 指针数组，方便通过枚举索引获取对应数组
-	static const double instrument_amps[INSTRUMENT_MAX][15] = {
+	static const double har_amps[HAR_MAX][15] = {
 		{1,0.340,0.102,0.085,0.070,0.065,0.028,0.085,
 			0.011,0.030,0.010,0.014,0.012,0.013,0.004},
 		{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -192,13 +314,47 @@ double gen_wave(double x, double volume, double f,
 		{1,0.8,0.1,0.6,0.1,0.4,0.1,0.2,0.05,0.1,0.02,0.05,0.01,0.02,0},
 		{1,0.9,0.9,0.8,0.8,0.7,0.7,0.2,0.2,0.1,0.1,0.05,0.05,0.01,0.01},
 	};
-	static double (*wave_funcs[WAVEFUNC_MAX])(double) = {
+	static double (*wave_funcs[WF_MAX])(double) = {
 		sin, square_wave, triangle_wave, sawtooth_wave,
+		noise_wave,
 	};
+
 	if (f < 0)
 		return 0;
-	const double *harmonicsp = instrument_amps[instrument];
-	double value = harmonicsp[0] * wave_funcs[wave_func](2 * M_PI * f * x);
+
+	int8_t instrument = p->instrument;
+	int8_t wave_func = p->wave_func;
+	int8_t harmonics = p->harmonics;
+	double value = 0;
+	switch (instrument) {
+	case INST_SIN:
+		if (harmonics == HAR_NOSET) harmonics = HAR_PIANO;
+		break;
+	case INST_DRUM:
+		f = f / (10*x + 1);
+		if (harmonics == HAR_NOSET) harmonics = HAR_NONE;
+		break;
+	case INST_HIHAT:
+		/* 未完成 */
+		wave_func = WF_SQUARE;
+		if (harmonics == HAR_NOSET) harmonics = HAR_NONE;
+		if (!p->bq) p->bq = BQ_HP;
+		double (*func)(double) = wave_funcs[wave_func];
+		double f2 = f;
+		for (int i = 1; i < 8; ++i) {
+			value += har_amps[HAR_PIANO][i] * func(2 * M_PI * f2 * x);
+			f2 += rand() % 50;
+		}
+		value = tanh(value);
+		break;
+	}
+	if (harmonics == HAR_NOSET) harmonics = HAR_PIANO;
+	instrument %= INST_MAX;
+	wave_func %= WF_MAX;
+	harmonics %= HAR_MAX;
+
+	const double *harmonicsp = har_amps[harmonics];
+	value += harmonicsp[0] * wave_funcs[wave_func](2 * M_PI * f * x);
 	// 基频 + 14个泛音
 	if (!(status & FLG_HARMONICS))    // 若禁止泛音，只使用基频
 		return INT16_MAX * volume * value;
@@ -256,25 +412,6 @@ double get_portamento_freq(double start, double end, double x)
 #define NFLG_LEGATO (1 << 2)
 #define NFLG_PORTAMENTO (1 << 3)
 #define NFLG_BE_LEGATO (1 << 4)
-
-struct Note {
-	char ch;
-	int  ind;
-	int  line;
-	double freq;
-	double amplitude;
-	double   type;		/* type分音符 */
-	uint8_t  notes;		/* 以notes分音符为一拍 */
-	uint8_t  beates;	/* 每小节beates拍 */
-	uint16_t speed;		/* 速度，n拍/分钟 */
-	uint64_t duration;
-	uint8_t  track;
-	uint8_t  flag;		/* NFLG_* flags */
-	uint8_t  instrument;
-	uint8_t  wave_func;
-	int16_t *pwav;
-	struct Note *pNext;
-};
 
 char *i2b(unsigned long data, int bytes, char *buf, size_t buf_size)
 {
@@ -364,9 +501,11 @@ struct Note *parse_notes(const char *str, double amplitude)
 	const double change_freq = exp2(1/12.0);
 	char key[KEYVALUE_BUF_SIZE] = "",
 	     value[KEYVALUE_BUF_SIZE] = "";
-	double fade = 0;
+	double fade = 0, bq_freq = 0;
 	uint8_t track = 0, setting_mode = 0,
-		instrument = 0, wave_func = 0;
+		instrument = 0, wave_func = 0,
+		bq = 0;
+	int8_t  harmonics = HAR_NOSET;
 	int beates = 4, /* 每小节type拍(重置计数器用) */
 	    notes = 4,  /* 以几分音符为一拍 */
 	    type = 4,   /* 默认type分音符 */
@@ -400,6 +539,8 @@ struct Note *parse_notes(const char *str, double amplitude)
 			if (c != ';') {
 				value[setting_mode-KEYVALUE_BUF_SIZE-1] = c;
 				setting_mode++;
+				if (setting_mode >= KEYVALUE_BUF_SIZE*2)
+					setting_mode--;
 				continue;
 			}
 			setting_mode = 0;
@@ -410,8 +551,11 @@ struct Note *parse_notes(const char *str, double amplitude)
 			ifin("beates", "%d", beates, if(beates<1) )
 			ifin("notes", "%d", notes, if(notes%4!=0||notes<1) notes=4)
 			ifin("type", "%d", type, if(type%4!=0||type<1)type=4);
-			ifin("inst", "%hhu", instrument, instrument%=INSTRUMENT_MAX);
-			ifin("wfunc", "%hhu", wave_func, wave_func%=WAVEFUNC_MAX);
+			ifin("inst", "%hhu", instrument, instrument%=INST_MAX);
+			ifin("wfunc", "%hhu", wave_func, wave_func%=WF_MAX);
+			ifin("bq", "%hhu", bq, bq%=BQ_MAX);
+			ifin("bq_freq", "%lf", bq_freq, if(bq_freq<0)bq_freq=0);
+			ifin("har", "%hhd", harmonics,);
 #undef ifin
 			memset(key, 0, KEYVALUE_BUF_SIZE);
 			memset(value, 0, KEYVALUE_BUF_SIZE);
@@ -436,6 +580,9 @@ struct Note *parse_notes(const char *str, double amplitude)
 				.flag=NFLG_LEFT|NFLG_RIGHT,
 				.instrument=instrument,
 				.wave_func=wave_func,
+				.harmonics=harmonics,
+				.bq=bq,
+				.bq_freq=bq_freq,
 				.pwav=NULL, NULL
 			};
 			if (!pH) pH = p;
@@ -558,14 +705,22 @@ int create_note_wave(struct Note **pp)
 		for (int i = 0; i < sample_num; i++) {    /* 生成每个采样点声波的相位 */
 			double env = adsr_envelope(i, sample_num)*p->amplitude;
 			double freq = flag_slide ? get_portamento_freq(flag_slide, p->freq, (double)i/sample_num) : p->freq;
-			int16_t phase = (int16_t)gen_wave((double)i/SAMPLE_RATE, env, freq,
-							  p->instrument, p->wave_func);
+			int16_t phase = (int16_t)gen_wave((double)i/SAMPLE_RATE, env, freq, p);
 			if (p->flag&NFLG_BE_LEGATO)    /* fade in */
 				phase *= sigmoid((int32_t)(i-duration_offset)/((double)SAMPLE_RATE/100));
 			if (p->flag&NFLG_LEGATO)    /* fade out */
 				phase *= sigmoid((int32_t)(duration_offset+duration-i)/((double)SAMPLE_RATE/100));
 			if (p->flag&NFLG_LEFT)  buffer[i * 2] += phase;    /* 左声道 */
 			if (p->flag&NFLG_RIGHT) buffer[i*2+1] += phase;    /* 左声道 */
+		}
+		if (p->bq) {
+			Biquad bq_l = {}, bq_r = {};
+			create_biquad(&bq_l, p->bq, p->bq_freq, 0);
+			create_biquad(&bq_r, p->bq, p->bq_freq, 0);
+			for (int i = 0; i < sample_num; i++) {
+				buffer[i * 2] = apply_biquad(&bq_l, buffer[i * 2]);
+				buffer[i*2+1] = apply_biquad(&bq_r, buffer[i*2+1]);
+			}
 		}
 		duration_offset += duration;
 		if (!p) continue;

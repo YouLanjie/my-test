@@ -9,6 +9,8 @@ syn keyword tkey notes contained
 syn keyword tkey type contained
 syn keyword tkey inst contained
 syn keyword tkey wfunc contained
+syn keyword tkey bq contained
+syn keyword tkey bq_freq contained
 hi tkey guifg=cyan
 
 syn match tctrl '[\*/.<>=~0]'
