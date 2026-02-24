@@ -109,48 +109,52 @@ class Counter:
             print("无法满足的依赖:")
             pprint.pp(pkg_not_found)
         self.is_counted = True
+    def _count_all_depend(self, pkg:Package,
+                          pkg_not_found:dict[str,list[str]]|None = None,
+                          visit_stack:list[str]|None = None,
+                          accced:set[str]|None = None):
+        if visit_stack is None:
+            visit_stack = []
+        if pkg_not_found is None:
+            pkg_not_found={}
+        if accced is None:
+            accced = set()
 
+        if f"{pkg.repo}/{pkg.name}" in accced:
+            return
+        accced.add(f"{pkg.repo}/{pkg.name}")
 
-def _count_all_depend(pkg:Package,
-                      provides_list:dict[str, list[Package]],
-                      pkg_not_found:dict[str,list[str]]|None = None,
-                      visit_stack:list[str]|None = None,
-                      accced:set[str]|None = None):
-    if visit_stack is None:
-        visit_stack = []
-    if pkg_not_found is None:
-        pkg_not_found={}
-    if accced is None:
-        accced = set()
-
-    if f"{pkg.repo}/{pkg.name}" in accced:
-        return
-    accced.add(f"{pkg.repo}/{pkg.name}")
-
-    for depend in pkg.depends:
-        depend = "|".join(re.split(r"[>=<]+", depend)[:1])
-        if depend not in provides_list:
-            name = f"{pkg.repo}/{pkg.name}"
-            if name not in pkg_not_found:
-                pkg_not_found[name] = []
-            pkg_not_found[name].append(depend)
-            continue
-        for p in provides_list[depend]:
-            if set([p.name]+list(p.provides)) & set(visit_stack):
+        for depend in pkg.depends:
+            depend = "|".join(re.split(r"[>=<]+", depend)[:1])
+            if depend not in self.provides_list:
+                name = f"{pkg.repo}/{pkg.name}"
+                if name not in pkg_not_found:
+                    pkg_not_found[name] = []
+                pkg_not_found[name].append(depend)
                 continue
-            _count_all_depend(p, provides_list, pkg_not_found,
-                              visit_stack+[pkg.name], accced)
-            p.count+=1
-    return
-
-def count_all_depend(counter: Counter):
-    """包括间接依赖的依赖计数"""
-    pkg_not_found : dict[str,list[str]] = {}
-    for p in tqdm.tqdm(counter.pkg_list, desc="依赖计算") if tqdm else counter.pkg_list:
-        _count_all_depend(p, counter.provides_list, pkg_not_found=pkg_not_found)
-    if pkg_not_found:
-        print("无法满足的依赖:")
-        pprint.pp(pkg_not_found)
+            for p in self.provides_list[depend]:
+                if set([p.name]+list(p.provides)) & set(visit_stack):
+                    continue
+                self._count_all_depend(p, pkg_not_found, visit_stack+[pkg.name], accced)
+                p.count+=1
+        return
+    def count_all_depend(self):
+        """包括间接依赖的依赖计数"""
+        pkg_not_found : dict[str,list[str]] = {}
+        self.count_diret_depend()
+        pkg_list = [i for i in self.pkg_list if i.count == 0]
+        self.clear_count()
+        for p in tqdm.tqdm(pkg_list, desc="依赖计算") if tqdm else pkg_list:
+            self._count_all_depend(p, pkg_not_found=pkg_not_found)
+        if pkg_not_found:
+            print("无法满足的依赖:")
+            pprint.pp(pkg_not_found)
+        self.is_counted = True
+    def clear_count(self):
+        """清除计数结果"""
+        for i in self.pkg_list:
+            i.count = 0
+        self.is_counted = False
 
 def main():
     """主函数"""
@@ -172,9 +176,7 @@ def main():
             print("[WARN] 非法的pickle文件")
             raise AttributeError
         if args.recount:
-            for i in database.pkg_list:
-                i.count = 0
-            database.is_counted = False
+            database.clear_count()
     except (AttributeError,
             FileNotFoundError, IsADirectoryError,
             PermissionError, pickle.UnpicklingError) as e:
@@ -197,8 +199,7 @@ def main():
             print("[INFO] 仅计算直接依赖")
             database.count_diret_depend()
         else:
-            count_all_depend(database)
-            database.is_counted = True
+            database.count_all_depend()
 
         if args.file and not args.file.is_dir():
             args.file.write_bytes(pickle.dumps(database))
@@ -224,12 +225,12 @@ def main():
         return
     print("[INFO] C: 被直接或间接依赖的次数")
     print("[INFO] Repo: "+", ".join({p.repo for p in database.pkg_list}))
-    table = rich.table.Table(title=f"PKG LIST Top{top}",
+    table = rich.table.Table(title=f"PKG LIST Top{top}", expand=True,
                              row_styles=["", "dim"])
-    table.add_column("C")
-    table.add_column("Repo",max_width=5)
-    table.add_column("Name", style="green", max_width=12)
-    table.add_column("Description", style="italic")
+    table.add_column("C", min_width=5)
+    table.add_column("Repo", ratio=1)
+    table.add_column("Name", style="green", ratio=2)
+    table.add_column("Description", style="italic", ratio=10)
     for i in all_pkgs[:top]:
         table.add_row(str(i.count), i.repo, i.name, i.desc)
     rich.print(table)

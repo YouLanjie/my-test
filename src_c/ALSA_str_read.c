@@ -84,7 +84,7 @@ struct Note *parse_notes()
 		['5'] = 784.0, ['6'] = 880.0, ['7'] = 987.8, ['0'] = -1,
 		['{'] = 20, ['}'] = 20000};
 	char scr[BUFSIZ] = "",
-	     scr2[BUFSIZ] = "",
+	     scr2[BUFSIZ-200] = "",
 	     buf[30] = "",
 	     key[40] = "",
 	     value[40] = "";

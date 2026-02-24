@@ -392,7 +392,7 @@ extern char *get_map_info()
 	int dtime = difftime(game_time2, game_time1);
 	sprintf(header, "%d,%d,%d,%d, ",map.line, map.score, map.f, dtime);
 	for (int i = 0; i <= 6; i++) {
-		char temp[5] = "";
+		char temp[7] = "";
 		int ind = map.list_num + i > 6 ? map.list_num + i - 7 : map.list_num + i;
 		sprintf(temp, "%d,", map.list[ind]);
 		strcat(header, temp);
@@ -402,7 +402,7 @@ extern char *get_map_info()
 	char map_str[map_info.size * 3];
 	memset(map_str, 0, map_info.size*3);
 	for (int i = 0; i < map_info.size; i++) {
-		char temp[5] = "";
+		char temp[7] = "";
 		sprintf(temp, "%d,", map.map[i]);
 		strcat(map_str, temp);
 	}
