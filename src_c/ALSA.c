@@ -36,6 +36,7 @@
 #define FLG_SMOOTH_PORTAMENTO (1<<6)
 #define FLG_PRINT (1<<7)
 #define FLG_PRINT_DEBUG (1<<9)
+#define FLG_PRINT_PHA (1<<10)
 
 uint16_t status = FLG_FADE|FLG_HARMONICS;
 /* 采样率（Hz） */
@@ -739,7 +740,8 @@ int create_note_wave(struct Note **pp)
 }
 
 #ifdef ENABLE_ALSA
-int play_wav(snd_pcm_t *pcm_handle, short *wave, int size) {
+int play_wav(snd_pcm_t *pcm_handle, int16_t *wave, int size)
+{
 	if (!pcm_handle)
 		return 1;
 	// 写入音频数据
@@ -748,6 +750,13 @@ int play_wav(snd_pcm_t *pcm_handle, short *wave, int size) {
 	if (frames_written < 0) {
 		fprintf(stderr, "写入错误: %s\n", snd_strerror(frames_written));
 		return 1;
+	}
+	static int64_t count = 0;
+	if (status & FLG_PRINT_PHA) {
+		if (!count) fprintf(stderr, "t,L,R\n");
+		for (int i = 0; i < size; ++i, ++count) {
+			fprintf(stderr, "%ld,%d,%d\n", count, wave[i*2], wave[i*2+1]);
+		}
 	}
 	return 0;
 }
@@ -1111,13 +1120,13 @@ int read_play_wave(char *filename)
 	printf("channels:%d\nsample_rate:%d\nbyte_rate:%d\nblock_align:%d\n"
 	       "bits_per_sample:%d\ndata_size:%d\nfile_size:%d\n",
 	       header.channels, header.sample_rate, header.byte_rate, header.block_align,
-	       header.bits_per_sample, header.data_size, header.file_size);
+	       header.bits_per_sample, header.data_size/header.block_align, header.file_size);
 
 #ifdef ENABLE_ALSA
 	snd_pcm_t *pcm_handle = init();
 	if (! pcm_handle) return 2;
 
-	play_wav(pcm_handle, (short*)(p+8), header.data_size);
+	play_wav(pcm_handle, (int16_t*)(p+8), header.data_size/header.block_align);
 
 	snd_pcm_drain(pcm_handle);
 	snd_pcm_close(pcm_handle);
@@ -1133,7 +1142,7 @@ int main(int argc, char *argv[])
 	double amplitude = 0.2;
 	char filename[125] = "output.wav",
 	     *notes = NULL;
-	while ((ch = getopt(argc, argv, "hi:psnmHo:r:C:PxA:")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "hi:psnmHo:r:C:PxA:X")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -1150,6 +1159,7 @@ int main(int argc, char *argv[])
 			       "    -C <STR>  额外指定音符(用`|`或` `分割)\n"
 			       "    -P        打印音符(格式化)\n"
 			       "    -x        打印调试信息\n"
+			       "    -X        打印相位\n"
 			       "    -A <NUM>  基本音量(0~1,默认0.2)\n"
 			       "    -h        显示帮助\n"
 			       "  NUM: 0: 小星星\n"
@@ -1209,6 +1219,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'x':
 			status |= FLG_PRINT_DEBUG;
+			break;
+		case 'X':
+			status |= FLG_PRINT_PHA;
 			break;
 		default:
 			break;

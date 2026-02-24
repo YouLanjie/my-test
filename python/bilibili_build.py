@@ -15,7 +15,6 @@ from pathlib import Path
 import json
 import shlex
 import re
-import threading
 from functools import lru_cache
 from importlib import import_module
 
@@ -76,14 +75,14 @@ class Video():
         self.is_ep = data.get("page_data") is None
         page_data = data.get("page_data") or data.get("ep") or {}
         # 分P排序
-        self.page = page_data.get("page")
+        self.page : int = page_data.get("page") or 0
         # 分P分标题/合集总标题
         self.part = str(page_data.get("part"))
         # 分P总+分标题
         self.subtitle = str(page_data.get("download_subtitle"))
         # 未知键值对
         self.indextitle = str(page_data.get("index_title"))
-        self.index = page_data.get("index")
+        self.index = page_data.get("index") or self.page
         if self.index is None:
             self.index = 0
         try:
@@ -98,29 +97,27 @@ class Video():
     def getlist(self):
         """返回视频的信息列表"""
         return [self.owner, self.title, "AV"+self.avid, self.bvid, self.dir_self]
-    def reset_title(self, mode="auto"):
+    def reset_title(self, mode="auto", ind_width=0):
         """根据给出模式重新设置总标题"""
         if mode == "maintitle":
             self.title = self.maintitle
         elif mode == "part":
             self.title = self.part
-        elif mode == "auto_reverse":
-            self.title = self.maintitle
-            if self.part not in ("None", "", self.maintitle) and \
-                    not self.part.startswith(("Video_", "studio_video_")):
-                self.title = f"{self.part} - {self.title}"
-            if self.subtitle not in ("None", "", self.maintitle, f"{self.maintitle} {self.part}"):
-                self.title = f"{self.subtitle} - {self.title}"
         else:
             self.title = self.maintitle
+            ind_str = ""
+            if ind_width and CONFIG["index_name"]:
+                ind_str = f"[P{self.index:0{ind_width}d}] "
             if self.part not in ("None", "", self.maintitle) and \
                     not self.part.startswith(("Video_", "studio_video_")):
-                self.title = f"{self.title} - {self.part}"
+                self.title = f"{self.part} - {self.title}" if mode == "auto_reverse" \
+                        else f"{self.title} - {ind_str}{self.part}"
             if self.subtitle not in ("None", "", self.maintitle, f"{self.maintitle} {self.part}"):
-                self.title = f"{self.title} - {self.subtitle}"
+                self.title = f"{self.subtitle} - {self.title}" if mode == "auto_reverse" \
+                        else f"{self.title} - {self.subtitle}"
 
-        if self.is_ep:
-            self.title = f"{self.title} - {self.index:02d}"
+        if self.is_ep and ind_width:
+            self.title = f"{self.title} - {self.index:0{ind_width}d}"
             if self.indextitle not in ("None", ""):
                 self.title = f"{self.title} {self.indextitle}"
 
@@ -343,22 +340,29 @@ class Ui():
             CONFIG["name_format"] = "auto"
         for i in self.content:
             for j in i:
-                j.reset_title(CONFIG["name_format"])
+                j.reset_title(CONFIG["name_format"],
+                              ind_width=len(str(len(i))) if len(i)>1 else 0)
+        for i,vid in enumerate(self.content):
+            self.content[i] = sorted(vid, key=lambda x:x.page, reverse=not CONFIG["sort_reverse"])
     def videos_filter(self, key:str) -> list[list[Video]]:
         """获取过滤后的视频列表"""
         key = key.lower()
+        li = self.content
+        if key.startswith("mp:"):
+            key = key[3:]
+            li = [i for i in li if len(i) > 1]
         if key.startswith("owner:"):
             key = key[6:]
             flag = lambda x:pinyin.get_pinyin(str(x[0].owner))
         else:
             flag = lambda x:pinyin.get_pinyin(x[0].title)
         if not key:
-            return self.content
+            return li
         try:
             pattern = re.compile(key, re.I)
-            li = [i for i in self.content if pattern.search(flag(i))]
+            li = [i for i in li if pattern.search(flag(i))]
         except re.error:
-            li = self.content
+            pass
         return li
     def main(self):
         """ui主程序"""
@@ -589,13 +593,15 @@ def run_main() -> list[list[Video]]:
     parser.add_argument('-p', '--player', default="mpv", help='设置默认播放器')
     parser.add_argument('-m', '--mode', default="mp3", choices=["mp3", "mp4", "m4a", "3gp", "play"],
                         help='设置脚本输出类型(mp3默认,m4a仅复制)')
-    parser.add_argument('-s', '--sort', default="auto", choices=["cf_time", "uf_time", "f_time", "owner"],
+    parser.add_argument('-s', '--sort', default="auto",
+                        choices=["cf_time", "uf_time", "f_time", "owner"],
                         help='设置排序方式')
     parser.add_argument('-H', '--help-key', action="store_true", help='内部按键帮助')
     parser.add_argument('--album', default="b站", help='设置专辑')
     parser.add_argument('--cover', default="", help='设置封面')
     parser.add_argument('--title', action="store_true", help='是否设置标题')
     parser.add_argument('--prefix', default="V_", help='输出文件prefix')
+    parser.add_argument('--no-index-name', action="store_true", help='不在多p视频的命名中增加分p数')
     try:
         __import__("argcomplete").autocomplete(parser)
     except ModuleNotFoundError:
@@ -614,6 +620,7 @@ def run_main() -> list[list[Video]]:
     CONFIG["album"] = args.album
     CONFIG["cover"] = args.cover
     CONFIG["prefix"] = args.prefix
+    CONFIG["index_name"] = not args.no_index_name
     if args.input_dir:
         inputd=args.input_dir
 
@@ -630,7 +637,8 @@ def run_main() -> list[list[Video]]:
             li[-1].append(v)
         else:
             li.append([v])
-        li[-1] = sorted(li[-1], key=lambda x:x.page, reverse=not CONFIG["sort_reverse"])
+    for i,vid in enumerate(li):
+        li[i] = sorted(vid, key=lambda x:x.page, reverse=not CONFIG["sort_reverse"])
     for i in li:
         for j in i:
             if not j.owner is None or j.owner_id not in userlist:
@@ -668,7 +676,8 @@ CONFIG = {"player":"mpv", "outputd":"", "vfat_name":True,
           "genass":False, "sort_type":"cf_time",
           "sort_reverse":True,
           "name_format":"auto",
-          "album":"", "cover":"", "prefix":""}
+          "album":"", "cover":"", "prefix":"",
+          "index_name":True}
 if __name__ == "__main__":
     video_list = run_main()
     while True:
