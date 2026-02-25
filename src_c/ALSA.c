@@ -320,8 +320,7 @@ double gen_wave(double x, double volume, double f,
 		noise_wave,
 	};
 
-	if (f < 0)
-		return 0;
+	if (f < 0) return 0;
 
 	int8_t instrument = p->instrument;
 	int8_t wave_func = p->wave_func;
@@ -357,6 +356,7 @@ double gen_wave(double x, double volume, double f,
 	const double *harmonicsp = har_amps[harmonics];
 	value += harmonicsp[0] * wave_funcs[wave_func](2 * M_PI * f * x);
 	// 基频 + 14个泛音
+	// 44100 / 2 = 22050 (No Check)
 	if (!(status & FLG_HARMONICS))    // 若禁止泛音，只使用基频
 		return INT16_MAX * volume * value;
 	double (*func)(double) = wave_funcs[wave_func];
@@ -397,12 +397,16 @@ double adsr_envelope(int current, int total)
  * */
 double get_portamento_freq(double start, double end, double x)
 {
-	/* s:获取前后两个波形的音量占比
-	 * x=0.5附近从0平滑跃变为1 || y=kx */
-	double s = status&FLG_SMOOTH_PORTAMENTO ? x : sigmoid(20*(x-0.5));
-	/* 对数和指数计算让音调“均匀”变化 */
-	double ret = log(start) + (log(end)-log(start))*s;
-	return exp(ret);
+	if (status&FLG_SMOOTH_PORTAMENTO) {
+		/* 对数和指数计算让音调“均匀”变化 */
+		/* f: e^{lnA+(lnB-lnA)*x} == A^{1-x} * B^{x}
+		 * f->\int f: (A^{1-x} * B^{x})/ln(B/A)
+		 * -> S f(x)/x */
+		return pow(start, 1-x) * pow(end, x) / log(end/start) / x;
+	}
+	/* x=0.5附近从start跃变为end (provide by ai) */
+	double k = 20;
+	return start + log(1+exp(k*(x-0.5))) * (end-start)/(k*x);
 }
 
 #define BUFFSIZE 2048
@@ -701,6 +705,7 @@ int create_note_wave(struct Note **pp)
 		}
 		uint32_t duration = pduration(p);
 #ifdef ENABLE_OMP
+/* 需使用 -fopenmp 编译参数 */
 #pragma omp parallel for
 #endif
 		for (int i = 0; i < sample_num; i++) {    /* 生成每个采样点声波的相位 */
