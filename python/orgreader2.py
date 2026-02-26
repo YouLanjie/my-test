@@ -11,6 +11,7 @@ import gzip
 import importlib
 import threading
 import subprocess
+from typing import Literal
 from html import escape
 from abc import ABC, abstractmethod
 from string import Template
@@ -400,7 +401,9 @@ class Root:
             return getattr(visitor, method_name)(self)
         # 默认返回空字符串（适配未实现的节点类型）
         return ""
-    def search(self, key:"int|Root", opt="father") -> "Root|None":
+    def search(self, key:"int|Root",
+               opt: Literal["father", "last", "next"]="father"
+               ) -> "Root|None":
         """
         搜索节点
         Args:

@@ -5,11 +5,13 @@
 
 from string import Template
 from pathlib import Path
+from collections import Counter
 import time
 import json
 import argparse
 import re
 import subprocess
+import unicodedata
 
 import pytools
 import orgreader2 as org2
@@ -34,14 +36,60 @@ class TexExport(org2.TexExportVisitor):
              "underline":(r"\uline{", "}"), # ulem
              "timestamp":(r"\textit{", "}")}
     def visit_blockcode(self, node: org2.BlockCode) -> str:
-        ret = r"\begin{lstlisting}"
-        # 可能导致latex编译错误
-        # if node.lang.lower() in ("c", "python", "java"):
-            # ret += f"[language={node.lang.lower()}]"
-        ret += "\n"
-        if isinstance(node.line, org2.Strings):
-            ret += node.line.s
-        ret += "\\end{lstlisting}"
+        if not isinstance(node.line, org2.Strings):
+            return ""
+        if len(node.line.s) > 1000:
+            return "\\noindent \n"+"\\\\{}\n".join(
+                    org2.tex_escape(i) for i in node.line.s.splitlines()
+                    )
+        ret = "\\begin{lstlisting}\n"+node.line.s+"\\end{lstlisting}"
+        return ret
+    def visit_strings(self, node: org2.Strings, li: list) -> str:
+        """输出行内文本(LaTex)"""
+        if not li:
+            return ""
+        ret = ""
+        last_stat = ""
+        i : str | list = ""
+        for i in li:
+            if isinstance(i, str):
+                i = org2.tex_escape(i)
+                ret+=i
+                continue
+            i = [org2.tex_escape(i) if isinstance(i, str) else i for i in i]
+            if i[0] == "link":
+                alt = self.visit_strings(node, i[2])
+                if i[1] == alt:
+                    ret += r"\url{%s}" % i[1]
+                else:
+                    ret += r"\href{%s}{%s}" % (i[1], alt)
+            elif i[0] == "img":
+                ret += f"""[IMG:{org2.tex_escape(i[1])}]"""
+            elif i[0] == "figure":
+                ret += f"""[IMG:{i[1]}][DESC:{self.visit_strings(node, i[2])}]"""
+            elif i[0] == "fn":
+                fns : dict = node.upward.document.status["footnotes"]
+                if not fns.get(i[1]):
+                    node.log(f"引用没有定义的脚注'{i[1]}'", "ERROR")
+                    continue
+                fn : org2.Footnote = fns[i[1]]
+                is_intitle = isinstance(node.upward, org2.Title)
+                if is_intitle:
+                    ret += "}"
+                ret += "\\footnote{%s}" % fn.accept(self)
+                if is_intitle:
+                    ret += "%"
+            elif i[0] in self.rules:
+                ret += f"""{self.rules[i[0]][0]}{self.visit_strings(node, i[1])}{self.rules[i[0]][1]}"""
+                ret += last_stat
+                last_stat = ""
+            elif i[0] == "radio_link":
+                pass
+            else:
+                last_stat = " "
+                ret += str(i)
+        if ret and ret[0] == "\n":
+            ret = ret[1:]
         return ret
     def visit_document(self, node: org2.Document) -> str:
         return node.root.accept(self)
@@ -282,10 +330,10 @@ class Config:
     def print_config_template(self):
         """打印模板json"""
         print(json.dumps(self.cfg_template, ensure_ascii=False, indent='\t'))
-    def get_filelist(self) -> tuple[list,dict[str,list[int]]]:
+    def get_filelist(self):
         """获取文件列表"""
-        filelist = {}
-        whitelist = {}
+        filelist : dict[Path, None] = {}  # 单纯是为了作有序的集合
+        whitelist : dict[Path, list[int]] = {}  # 单独添加的文件
         home = self.cfg_f.parent
         for inp_dir in self.cfg["filelist"]:
             if (home/inp_dir).is_dir():
@@ -300,9 +348,8 @@ class Config:
                 wl = pytools.process_filelist([home/inp_dir])
                 fl = set()
                 bl = set()
-                whitelist.update({((home/inp_dir).parent/i).resolve():j for i,j in wl.items()\
-                        if ((home/inp_dir).parent/i).is_file() })
-                wl = {(home/inp_dir).parent/i for i in whitelist}
+                whitelist.update({(home/i).resolve():j for i,j in wl.items() if (home/i).is_file()})
+                wl = {home/i for i in whitelist}
             filelist |= {i.resolve():None for i in mysorted((fl-bl)|wl)}
         return list(filelist), whitelist
     def get_merged(self) -> tuple[str,str]:
@@ -318,7 +365,7 @@ class Config:
             if i in whitelist and whitelist[i]:
                 filename += f" {whitelist[i]}"
             print(f"       - {filename}")
-            s = i.read_text(encoding="utf-8").splitlines()
+            s = pytools.read_text(i).splitlines()
             if i in whitelist:
                 nums = whitelist[i]
                 if len(nums) == 1:
@@ -328,12 +375,17 @@ class Config:
                 print("         > "+"\n         > ".join(s[:5]))
             s = "\n".join(s)
             s = re.sub("[　]+", " ", s)
+            # 处理标题层级问题
             li = re.findall(r"^(\*+) (.*)", s, re.M)
             levels = sorted({len(i[0]) for i in li})
-            if levels and min(levels) > 1 and max(levels) < 4:
+            if levels and max(levels) - min(levels) <= 1 and \
+                    Counter(len(i[0]) for i in li if i[1] != "Footnotes").get(min(levels)) != 1:
+                s = re.sub(r"^(\*+)(\s+.*)",
+                           lambda x,lv=min(levels): (len(x.group(1))-lv+2)*"*"+x.group(2),
+                           s, flags=re.M)
                 s = f"* {i.name}\n" + s
             s = s.splitlines()
-            s = ["#+begin_quote", f"FILE:【{filename}】","#+end_quote",""] + s
+            s = ["#+begin_quote", f"FILE:【{filename.replace("/", "/ ")}】","#+end_quote",""] + s
             doc = org2.Document(
                     s,
                     file_name=str(file),
@@ -367,33 +419,97 @@ class Config:
                 self.latex_template_setfont[0 if k["setting.fontname"] != "CTEX_DEFAULT" else 1]
                 ).safe_substitute(k)
         return k
-    def gen_toc_str(self, content:str) -> str:
-        "手动生成填充空间用的目录文件（减少一次xelatex编译）"
-        tocs = re.findall(r"\\((?:sub){0,2}section){(.*)}", content)
-        if not tocs:
-            return ""
-        dic = ["section","subsection","subsubsection"]
-        counter = [0, 0, 0]
-        s = ""
-        for i in tocs:
-            counter[dic.index(i[0])] += 1
-            for j in range(dic.index(i[0])+1,3):
-                counter[j] = 0
-            ind = ".".join([str(j) for j in counter if j])
-            s += "\\contentsline {%s}{\\numberline {%s}%s}{1}{%s.%s}%%\n" % \
-                    (i[0], ind, i[1], i[0], ind)
-        return s
+
+def gen_toc_str(content:str) -> str:
+    "手动生成填充空间用的目录文件（减少一次xelatex编译）"
+    tocs = re.findall(r"\\((?:sub){0,2}section){(.*)}", content)
+    if not tocs:
+        return ""
+    dic = ["section","subsection","subsubsection"]
+    counter = [0, 0, 0]
+    s = ""
+    for i in tocs:
+        counter[dic.index(i[0])] += 1
+        for j in range(dic.index(i[0])+1,3):
+            counter[j] = 0
+        ind = ".".join([str(j) for j in counter if j])
+        s += "\\contentsline {%s}{\\numberline {%s}%s}{1}{%s.%s}%%\n" % \
+                (i[0], ind, i[1], i[0], ind)
+    return s
+
+def analyse_texlog(s:str, source:str=""):
+    """分析latex日志"""
+    if "Missing character" in s:
+        pytools.print_err("[WARN] 字体字符缺失:")
+        for i in set(re.findall(
+            r"Missing character: There is no (.*?U\+([^)]+).*?) in font (.*)", s)):
+            try:
+                hint = unicodedata.name(chr(int(i[1], 16))).lower()
+                hint = f" ({hint})"
+            except ValueError:
+                hint = ""
+            pytools.print_err(f"({i[2]}): {i[0]}{hint}")
+    if "Overfull" in s:
+        pytools.print_err("[WARN] 存在字符串越界警告（无具体项目则没大事）")
+        sg = source.splitlines()
+        reported = []
+        for i in re.findall(r"(Overfull).*? at lines (\d+)--(\d+)", s):
+            try:
+                i1 = int(i[1])
+                i2 = int(i[2])
+            except ValueError:
+                i1,i2 = 0, 0
+            if i2 - i1 < 1:
+                continue
+            if i1 in reported:
+                continue
+            reported.append(i1)
+            # pytools.print_err(f"{i[0]}: LINE {i1}")
+            if 0 <= i1-1 < len(sg):
+                pytools.print_err(f"{i[0]}: L.{i1}> {sg[i1-1][:20]}")
+
+def build_tex(config, outputf, tex):
+    """运行xelatex编译tex文件"""
+    print(f"[INFO] 自动构建'{outputf}'")
+    try:
+        if config.cfg["setting"]["mktoc"]:
+            subprocess.run(["xelatex", outputf], check=True)
+        subprocess.run(["xelatex", outputf], check=True)
+        logfile = outputf.parent/(outputf.stem+".log")
+        if logfile.is_file():
+            s = logfile.read_text()
+            analyse_texlog(s, tex)
+    except KeyError as e:
+        pytools.print_err(f"[WARN] KeyError: {e}")
+    except (FileNotFoundError, subprocess.CalledProcessError) as e:
+        pytools.print_err(f"[WARN] 执行命令出现错误：{e}")
+
+def handle_args(config: Config, args) -> bool:
+    """处理参数"""
+    if args.print_config:
+        config.print_config_template()
+        return True
+    if args.print_template:
+        print(Template2(config.latex_template).safe_substitute(
+            config.generate_template_dict()))
+        return True
+    if isinstance(args.gen_toc, Path) and args.gen_toc.is_file():
+        tex = pytools.read_text(args.gen_toc)
+        print(gen_toc_str(tex))
+        return True
+    if isinstance(args.analyse_log, Path) and args.analyse_log.is_file():
+        log = pytools.read_text(args.analyse_log)
+        texfile = args.analyse_log.parent/(args.analyse_log.stem+".tex")
+        tex = pytools.read_text(texfile) if texfile.is_file() else ""
+        analyse_texlog(log, tex)
+        return True
+    return False
 
 def main():
     """主函数"""
     args = parse_arg()
     config = Config(args.config)
-    if args.print_config:
-        config.print_config_template()
-        return
-    if args.print_template:
-        print(Template2(config.latex_template).safe_substitute(
-            config.generate_template_dict()))
+    if handle_args(config, args):
         return
     if not config.cfg_f.is_file():
         pytools.print_err(f"[WARN] 配置文件 '{config.cfg_f}' 不存在")
@@ -417,27 +533,12 @@ def main():
     c = Template2(config.latex_template).safe_substitute(temp_dict)
     outputf.write_text(c, encoding="utf8")
     print(f"[INFO] 输出文件为'{outputf}'")
+    if (args.run and config.cfg["setting"]["mktoc"]) or args.gen_toc:
+        toc_outputf = outputf.parent/(outputf.stem+".toc")
+        toc_outputf.write_text(gen_toc_str(c))
     if not args.run:
         return
-    print(f"[INFO] 自动构建'{outputf}'")
-    try:
-        if config.cfg["setting"]["mktoc"]:
-            toc_outputf = outputf.parent/(outputf.stem+".toc")
-            toc_outputf.write_text(config.gen_toc_str(c))
-            subprocess.run(["xelatex", outputf], check=True)
-        subprocess.run(["xelatex", outputf], check=True)
-        logfile = outputf.parent/(outputf.stem+".log")
-        if logfile.is_file():
-            s = logfile.read_text()
-            if "Missing character" in s:
-                pytools.print_err("[WARN] 字体字符缺失:")
-                for i in set(re.findall(
-                    r"Missing character: There is no (.*?) in font (.*)", s)):
-                    pytools.print_err(f"({i[1]}): {i[0]}")
-    except KeyError as e:
-        pytools.print_err(f"[WARN] KeyError: {e}")
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
-        pytools.print_err(f"[WARN] 执行命令出现错误：{e}")
+    build_tex(config, outputf, c)
 
 def parse_arg() -> argparse.Namespace:
     """解释参数"""
@@ -450,6 +551,9 @@ def parse_arg() -> argparse.Namespace:
     parser.add_argument("-t", "--title", type=str, help="指定标题")
     parser.add_argument("-a", "--author", type=str, help="指定作者")
     parser.add_argument("-f", "--filelist", action="append", help="增设文件列表")
+    parser.add_argument("--gen-toc", default=False, nargs='?', const=True,
+                        type=Path, help="generate toc file")
+    parser.add_argument("--analyse-log", type=Path, help="generate toc file")
     return parser.parse_args()
 
 if __name__ == "__main__":
