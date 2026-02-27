@@ -8,6 +8,7 @@
 import re
 import argparse
 import json
+import html
 from pathlib import Path
 
 import pytools
@@ -208,14 +209,16 @@ def to_tree(groups:dict[tuple, list[str]],
 
 def process_unicode(s: str):
     """处理unicode转义"""
-    def sub(match: re.Match):
-        try:
-            return chr(int(match.group(1)))
-        except ValueError:
-            return ""
-    return re.sub(r'&#(\d+);', sub, s)
+    #def sub(match: re.Match):
+    #    try:
+    #        return chr(int(match.group(1)))
+    #    except ValueError:
+    #        return ""
+    #return re.sub(r'&#(\d+);', sub, s)
+    return html.unescape(s)
 
 def simple_process(filename:str):
+    """不分卷"""
     file = Path(filename)
     if not file.is_file():
         pytools.print_err(f"[WARN] 文件不存在:{file}")
@@ -224,7 +227,7 @@ def simple_process(filename:str):
     s = s.splitlines()
     s = "\n\n".join([i for i in s if i])
     s = process_unicode(s)
-    file.write_text(s, encoding="utf8")
+    print(s)
 
 def parse_arg() -> argparse.Namespace:
     """解释参数"""
@@ -279,7 +282,7 @@ def main():
         content = process_unicode(content)
 
     for w1,w2 in cfg["words"]:
-        print(f"替换 '{w1}' 为 '{w2}' : 共计{len(re.findall(w1, content))}处")
+        pytools.print_err(f"替换 '{w1}' 为 '{w2}' : 共计{len(re.findall(w1, content))}处")
         content = re.sub(w1, w2, content)
 
     content = "\n".join(content.splitlines())
@@ -306,7 +309,7 @@ def main():
             outf.write_text(f"""\
 #+title: {cfg['title']} {h1}
 #+setupfile: {cfg['setupfile']}
-""" + s)
+""" + s, encoding="utf8")
     if args.dry_run:
         print("(Dry Run)")
 
