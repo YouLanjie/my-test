@@ -115,14 +115,6 @@ def save_file(f:Path, s:str, progress:str = ""):
         pytools.print_err(f"WARN 覆盖文件 - {f}")
     f.write_text(s, encoding="utf8")
 
-def calculate_relative(p1:Path, p2:Path) -> Path:
-    """计算相对目录，根据长度选择reslove和absolute(可能存在bug)"""
-    reslove = pytools.calculate_relative(p1, p2)
-    absolute = pytools.calculate_relative2(p1, p2)
-    if len(str(reslove)) <= len(str(absolute)):
-        return reslove
-    return absolute
-
 class Sites:
     """转换网页临时数据结构"""
     def __init__(self, dir_list:list[Path], output_d:Path, title:str, args:argparse.Namespace) -> None:
@@ -141,7 +133,7 @@ class Sites:
         lastdir = Path(f"{self.dir_list[index-1]}.html") if index > 0 else None
         dirs = self.dir_list[index]
         nextdir = Path(f"{self.dir_list[index+1]}.html") if index+1 < len(self.dir_list) else None
-        file_list = [calculate_relative(i, self.output_d)
+        file_list = [pytools.calculate_relative3(i, self.output_d)
                 for i in dirs.iterdir()
                 if i.is_file() and self.pattern.match(i.name)]
         file_list = natsort.natsorted(file_list, key=lambda x:get_sort_key(x.name))

@@ -1491,6 +1491,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
                 li[name].login_record.append(datetime.now().timestamp())
                 s += """<p>欢迎回来！</p>"""
                 s += f"""<p>{escape(name)}</p>"""
+                url_ref = "/?p=last_msg#last_msg"
             else:
                 s += """<p>很抱歉，登录失败了，也许你的密码输错了？</p>"""
                 data["meta"], url_ref = "2", f"/login?id={li[name].id}"
@@ -1774,7 +1775,7 @@ def main(port = 8000):
     print("[INFO] 使用 help 加回车获取命令列表")
     print("[INFO] 使用命令进行操作时记得切下输入法")
     threading.Thread(target=run_server, args=(port,)).start()
-    for i in range(100):
+    for _ in range(100):
         time.sleep(0.01)
         if SYSTEM.httpd:
             break

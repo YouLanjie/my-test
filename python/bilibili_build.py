@@ -11,10 +11,10 @@ import sys
 import subprocess
 import curses
 import argparse
-from pathlib import Path
 import json
 import shlex
 import re
+from pathlib import Path
 from functools import lru_cache
 from importlib import import_module
 
@@ -27,9 +27,10 @@ except ModuleNotFoundError:
     pass
 
 class Pinyin:
+    """Provide Opt Pinyin server"""
     def __init__(self) -> None:
         self.lazy_pinyin = None
-    def import_pinyin(self):
+    def _import_pinyin(self):
         try:
             pypinyin = import_module("pypinyin")
         except ModuleNotFoundError:
@@ -37,19 +38,18 @@ class Pinyin:
         self.lazy_pinyin = pypinyin.lazy_pinyin
     @lru_cache(maxsize=2048)
     def get_pinyin(self, s:str) -> str:
+        """获取带有拼音的字符串或者是原字符"""
         if not self.lazy_pinyin:
-            self.import_pinyin()
+            self._import_pinyin()
         if self.lazy_pinyin:
             return s + " " + "".join(self.lazy_pinyin(s))
-        else:
-            return s
+        return s
 
 pinyin = Pinyin()
-userlist = {}
 
 class Video():
     """存储单个视频信息"""
-    def __init__(self, file:Path):
+    def __init__(self, file:Path, userlist:dict):
         if file.is_file() is False:
             print(f"`{str(file)}`不是文件")
             sys.exit(1)
@@ -60,8 +60,9 @@ class Video():
         self.dir_parent = str(file.parents[1])
         content = file.read_text()
         data = json.loads(content)
-        self.avid = str(data.get("avid")) #"AV"+
-        self.bvid = str(data.get("bvid")) #[]
+        self.avid = str(data.get("avid")) # int()
+        self.bvid = str(data.get("bvid")) # str("BV...")
+        self.seid = str(data.get("season_id"))  # 番剧 int()
         # 时间戳设置
         self.timestamp = data.get("time_create_stamp")
         self.u_timestamp = data.get("time_update_stamp")
@@ -72,15 +73,21 @@ class Video():
         self.owner = data.get("owner_name")
         if not self.owner is None:
             userlist[self.owner_id] = self.owner
+        self.danmaku = str(file.parent/"danmaku.xml")
+        self.size = data.get("total_bytes")
+        self.quality = data.get("quality_pithy_description")
         self.is_ep = data.get("page_data") is None
+
         page_data = data.get("page_data") or data.get("ep") or {}
+        self.cid = page_data.get("cid") # int()
         # 分P排序
         self.page : int = page_data.get("page") or 0
         # 分P分标题/合集总标题
         self.part = str(page_data.get("part"))
         # 分P总+分标题
         self.subtitle = str(page_data.get("download_subtitle"))
-        # 未知键值对
+        # 番剧index处理
+        self.epid = page_data.get("episode_id")
         self.indextitle = str(page_data.get("index_title"))
         self.index = page_data.get("index") or self.page
         if self.index is None:
@@ -89,8 +96,6 @@ class Video():
             self.index = int(self.index)
         except ValueError:
             self.index = 0
-        self.danmaku = file.parent/"danmaku.xml"
-        self.size = data.get("total_bytes")
         # set final title
         self.reset_title()
         # __import__("pprint").pprint(vars(self))
@@ -120,18 +125,113 @@ class Video():
             self.title = f"{self.title} - {self.index:0{ind_width}d}"
             if self.indextitle not in ("None", ""):
                 self.title = f"{self.title} {self.indextitle}"
+    @property
+    def tag(self):
+        """描述视频的唯一标签"""
+        if self.is_ep:
+            return f"{self.seid}/{self.epid}"
+        return f"{self.avid}/{self.cid}"
+    @classmethod
+    def from_jsons(cls, dat:dict):
+        "从词典载入数据"
+        obj = cls.__new__(cls)
+        obj.__dict__.update(dat)
+        obj.reset_title()
+        return obj
+
+class VideosList:
+    """视频列表 -> [AV1(p1, p2, ...)] """
+    def __init__(self, inputd:list[str], db:Path|None=None, view_db=False) -> None:
+        self.videos : dict[str, Video] = {}
+        self.content : list[list[Video]] = []
+        self.userlist = {}
+        if db:
+            self._load_from_json(db)
+        if view_db:
+            for _,v in self.videos.items():
+                if len(self.content) > 0 and len(self.content[-1]) > 0 and \
+                        self.content[-1][0].dir_parent == v.dir_parent:
+                    self.content[-1].append(v)
+                else:
+                    self.content.append([v])
+        else:
+            self._load_from_app(inputd)
+        # 同步缺失的用户名
+        for _,v in self.videos.items():
+            if not v.owner is None or \
+                    v.owner_id not in self.userlist:
+                continue
+            v.owner = self.userlist[v.owner_id]
+        self.refresh_list()
+        if db:
+            db.write_text(self.dump_to_json())
+        if len(self.content) == 0:
+            mhelp(msg="[!] 没有视频条目")
+    def _load_from_app(self, dirs:list[str]):
+        input_f = [j for i in dirs for j in Path(i).glob("**/entry.json")]
+        input_f = sorted({pytools.calculate_relative3(i, Path()) for i in input_f})
+        if len(input_f) == 0:
+            mhelp(msg="[!] 未找到缓存的视频")
+        print(f"共找到 {len(input_f)} 个文件")
+        for i in input_f:
+            v = Video(i, self.userlist)
+            if len(self.content) > 0 and len(self.content[-1]) > 0 and \
+                    self.content[-1][0].dir_parent == v.dir_parent:
+                self.content[-1].append(v)
+            else:
+                self.content.append([v])
+            if v.tag in self.videos:
+                continue
+            self.videos[v.tag] = v
+    def _load_from_json(self, db:Path):
+        if not db.is_file():
+            return
+        try:
+            data = json.loads(pytools.read_text(db))
+        except json.JSONDecodeError:
+            return
+        if not isinstance(data, dict):
+            return
+        for tag, vid_data in data.items():
+            v = Video.from_jsons(vid_data)
+            if v.tag in self.videos:
+                continue
+            self.videos[tag] = v
+    def dump_to_json(self) -> str:
+        """导出为json字符串"""
+        videos = {k:vars(v) for k,v in self.videos.items()}
+        return json.dumps(videos, ensure_ascii=False, indent=2)
+    def refresh_list(self):
+        """刷新列表（名称、排序等）"""
+        def sort_key(x:list[Video]):
+            if CONFIG["sort_type"] == "uf_time":
+                return x[0].u_timestamp
+            if CONFIG["sort_type"] == "f_time":
+                return x[0].f_timestamp
+            if CONFIG["sort_type"] == "owner":
+                return x[0].owner or ""
+            if CONFIG["sort_type"] == "size":
+                return x[0].size
+            return x[0].timestamp
+        self.content = sorted(self.content, key=sort_key, reverse=CONFIG["sort_reverse"])
+        title_mode = ("maintitle", "part", "auto", "auto_reverse")
+        if CONFIG["name_format"] not in title_mode:
+            CONFIG["name_format"] = "auto"
+        for i in self.content:
+            for j in i:
+                j.reset_title(CONFIG["name_format"],
+                              ind_width=len(str(len(i))) if len(i)>1 else 0)
+        for i,vid in enumerate(self.content):
+            self.content[i] = sorted(vid, key=lambda x:x.page, reverse=not CONFIG["sort_reverse"])
 
 class Ui():
     """TUI,需要curses"""
     info_height=9
-    position=0
-    select=0
-    collection = []
-    def __init__(self, stdscr: curses.window, content : list) -> None:
+    def __init__(self, stdscr: curses.window, video_list : VideosList) -> None:
         if "curses" not in sys.modules:
             print("模块curses未导入，curses界面不可用")
             sys.exit(1)
-        self.content : list[list[Video]] = content
+        self.vl : VideosList = video_list
 
         self.stdscr = stdscr
         curses.curs_set(0)
@@ -148,6 +248,9 @@ class Ui():
         self.info = curses.newwin(self.info_height, self.width, self.height + 1, 0)
         self.sets = curses.newwin(int(self.height/2), int(self.width/2),
                                   int(self.height/4), int(self.width/4))
+        self.position=0
+        self.select=0
+        self.collection = []
     def update_winsize(self):
         """更新窗口大小"""
         try:
@@ -214,6 +317,10 @@ class Ui():
                 f"\nINDEX: {p.index}\n"
                 f"INDEX_TITLE: {p.indextitle}"
             )
+        size,unit = p.size/1024/1024, "M"
+        if size > 1024:
+            size,unit = size/1024, "G"
+        self.info.addstr(f"\n文件大小: {size:.2f}{unit} ({p.quality})")
         self.info.refresh()
     def gen_verbose_info(self, content) -> str:
         """显示光标处视频more详细信息"""
@@ -236,6 +343,10 @@ class Ui():
         if p.indextitle != "None":
             s += f"INDEX: {p.index}\n"
             s += f"INDEX_TITLE: {p.indextitle}\n"
+        size,unit = p.size/1024/1024, "M"
+        if size > 1024:
+            size,unit = size/1024, "G"
+        s += f"文件大小: {size:.2f}{unit} ({p.quality})\n"
         return s
     def check(self, content):
         """越界、上下滑动检查"""
@@ -324,30 +435,11 @@ class Ui():
                     CONFIG[list(CONFIG)[select]] = ""
                     edit_mode = True
             select %= len(CONFIG)
-        self.refresh_list()
-    def refresh_list(self):
-        def sort_key(x):
-            if CONFIG["sort_type"] == "uf_time":
-                return x[0].u_timestamp
-            if CONFIG["sort_type"] == "f_time":
-                return x[0].f_timestamp
-            if CONFIG["sort_type"] == "owner":
-                return x[0].owner
-            return x[0].timestamp
-        self.content = sorted(self.content, key=sort_key, reverse=CONFIG["sort_reverse"])
-        title_mode = ("maintitle", "part", "auto", "auto_reverse")
-        if CONFIG["name_format"] not in title_mode:
-            CONFIG["name_format"] = "auto"
-        for i in self.content:
-            for j in i:
-                j.reset_title(CONFIG["name_format"],
-                              ind_width=len(str(len(i))) if len(i)>1 else 0)
-        for i,vid in enumerate(self.content):
-            self.content[i] = sorted(vid, key=lambda x:x.page, reverse=not CONFIG["sort_reverse"])
+        self.vl.refresh_list()
     def videos_filter(self, key:str) -> list[list[Video]]:
         """获取过滤后的视频列表"""
         key = key.lower()
-        li = self.content
+        li = self.vl.content
         if key.startswith("mp:"):
             key = key[3:]
             li = [i for i in li if len(i) > 1]
@@ -366,8 +458,8 @@ class Ui():
         return li
     def main(self):
         """ui主程序"""
-        self.check(self.content)
-        self.refresh_list()
+        self.check(self.vl.content)
+        self.vl.refresh_list()
         self.stdscr.refresh()
         inp = "0"
         deep = 0
@@ -429,7 +521,7 @@ class Ui():
                 title_mode = {"1":"maintitle", "2":"part", "3":"auto",
                               "4":"auto_reverse"}
                 CONFIG["name_format"] = title_mode[inp]
-                self.refresh_list()
+                self.vl.refresh_list()
             elif inp == "5":
                 CONFIG["vfat_name"] = not CONFIG["vfat_name"]
             elif inp == "o":
@@ -474,6 +566,7 @@ class Ui():
         # curses.endwin()
 
 def get_video_dimensions(file_path:Path) -> tuple[int, int]:
+    """获取视频 width, height"""
     cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
            "-show_entries", "stream=width,height", "-of", "json", str(file_path)]
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -503,7 +596,7 @@ def cmd_genal(li, mode) -> str:
         for j in i:
             if not isinstance(j, Video):
                 continue
-            danmaku : Path = j.danmaku
+            danmaku : Path = Path(j.danmaku)
             # 替换vfat系统不允许出现的字符（包括部分正常文件系统特殊字符）
             output = j.title
             replacement = ["/", "／"]
@@ -577,7 +670,27 @@ def cmd_genal(li, mode) -> str:
     t+='echo "Done!"\n'
     return t
 
-def run_main() -> list[list[Video]]:
+def mhelp(ret=0, msg=""):
+    """显示帮助信息"""
+    if msg != "":
+        print(str(msg))
+    print("[*] 请确保`entry.json`文件存在")
+    print("[*] 在TUI中`jk`上下移动 `l`查看多p视频 `h`返回")
+    print("    `gG`快速跳转到列表头部或尾部 `r`反转列表排序")
+    print("    ` `选中或取消选中光标项 `aA`全选或取消全选")
+    print("    `e`导出为mp3 `E`导出为mp4 `c`复制出m4a文件")
+    print("    `p`播放音频文件 `123`切换总标题命名格式")
+    print("    `4`切换是否替换输出文件名特殊字符")
+    sys.exit(ret)
+
+CONFIG = {"player":"mpv", "outputd":"", "vfat_name":True,
+          "genass":False, "sort_type":"cf_time",
+          "sort_reverse":True,
+          "name_format":"auto",
+          "album":"", "cover":"", "prefix":"",
+          "index_name":True}
+
+def run_main():
     """运行主程序(需要)"""
     list_mode = False
     inputd = ["/sdcard/Android/data/tv.danmaku.bili/download/",
@@ -594,7 +707,7 @@ def run_main() -> list[list[Video]]:
     parser.add_argument('-m', '--mode', default="mp3", choices=["mp3", "mp4", "m4a", "3gp", "play"],
                         help='设置脚本输出类型(mp3默认,m4a仅复制)')
     parser.add_argument('-s', '--sort', default="auto",
-                        choices=["cf_time", "uf_time", "f_time", "owner"],
+                        choices=["cf_time", "uf_time", "f_time", "owner", "size"],
                         help='设置排序方式')
     parser.add_argument('-H', '--help-key', action="store_true", help='内部按键帮助')
     parser.add_argument('--album', default="b站", help='设置专辑')
@@ -602,6 +715,8 @@ def run_main() -> list[list[Video]]:
     parser.add_argument('--title', action="store_true", help='是否设置标题')
     parser.add_argument('--prefix', default="V_", help='输出文件prefix')
     parser.add_argument('--no-index-name', action="store_true", help='不在多p视频的命名中增加分p数')
+    parser.add_argument('--db', default=None, type=Path, help='指定json数据文件路径')
+    parser.add_argument('--view-db', action='store_true', help='仅从json数据读取并显示')
     try:
         __import__("argcomplete").autocomplete(parser)
     except ModuleNotFoundError:
@@ -623,67 +738,31 @@ def run_main() -> list[list[Video]]:
     CONFIG["index_name"] = not args.no_index_name
     if args.input_dir:
         inputd=args.input_dir
-
-    input_f = []
-    for i in (list(Path(i).glob("**/entry.json")) for i in inputd):
-        input_f += i
-    if len(input_f) == 0:
-        mhelp(msg="[!] no input file was found")
-    print(f"{len(input_f)} files were found")
-    li : list[list[Video]] = []
-    for i in enumerate(input_f):
-        v = Video(input_f[i[0]])
-        if len(li) > 0 and li[-1][0].dir_parent == v.dir_parent:
-            li[-1].append(v)
-        else:
-            li.append([v])
-    for i,vid in enumerate(li):
-        li[i] = sorted(vid, key=lambda x:x.page, reverse=not CONFIG["sort_reverse"])
-    for i in li:
-        for j in i:
-            if not j.owner is None or j.owner_id not in userlist:
-                continue
-            j.owner = userlist[j.owner_id]
-    li = sorted(li, key=lambda x:x[0].timestamp, reverse=CONFIG["sort_reverse"])
+    video_list = VideosList(inputd, args.db, args.view_db)
 
     if list_mode:
-        for i in li:
+        for i in video_list.content:
             for j in i:
                 print(j.getlist(), end=" ")
             print()
-        sys.exit(0)
+        return
     if outputf is not None:
         if not args.gen_ass:
             print("Tips: 没有弹幕？尝试使用`--gen-ass`选项")
-        Path(outputf).write_text(cmd_genal(li, mode), encoding="utf8")
-        sys.exit(0)
-    return li
+        t = cmd_genal(video_list.content, mode)
+        if outputf == "-":
+            print(t, end='')
+            return
+        Path(outputf).write_text(t, encoding="utf8")
+        return
 
-def mhelp(ret=0, msg=""):
-    """显示帮助信息"""
-    if msg != "":
-        print(str(msg))
-    print("[*] 请确保`entry.json`文件存在")
-    print("[*] 在TUI中`jk`上下移动 `l`查看多p视频 `h`返回")
-    print("    `gG`快速跳转到列表头部或尾部 `r`反转列表排序")
-    print("    ` `选中或取消选中光标项 `aA`全选或取消全选")
-    print("    `e`导出为mp3 `E`导出为mp4 `c`复制出m4a文件")
-    print("    `p`播放音频文件 `123`切换总标题命名格式")
-    print("    `4`切换是否替换输出文件名特殊字符")
-    sys.exit(ret)
-
-CONFIG = {"player":"mpv", "outputd":"", "vfat_name":True,
-          "genass":False, "sort_type":"cf_time",
-          "sort_reverse":True,
-          "name_format":"auto",
-          "album":"", "cover":"", "prefix":"",
-          "index_name":True}
-if __name__ == "__main__":
-    video_list = run_main()
     while True:
         try:
             curses.wrapper(lambda stdscr: Ui(stdscr, video_list).main())
             break
         except curses.error as e:
             pytools.print_err(f"[ERROR] curses err: {e}")
-            pytools.print_err(f"[INFO] restart ui")
+            pytools.print_err("[INFO] restart ui")
+
+if __name__ == "__main__":
+    run_main()
