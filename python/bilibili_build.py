@@ -129,8 +129,8 @@ class Video():
     def tag(self):
         """描述视频的唯一标签"""
         if self.is_ep:
-            return f"{self.seid}/{self.epid}"
-        return f"{self.avid}/{self.cid}"
+            return f"se{self.seid}/ep{self.epid}"
+        return f"av{self.avid}/c{self.cid}"
     @classmethod
     def from_jsons(cls, dat:dict):
         "从词典载入数据"
@@ -169,7 +169,9 @@ class VideosList:
             mhelp(msg="[!] 没有视频条目")
     def _load_from_app(self, dirs:list[str]):
         input_f = [j for i in dirs for j in Path(i).glob("**/entry.json")]
-        input_f = sorted({pytools.calculate_relative3(i, Path()) for i in input_f})
+        input_f = sorted({
+            min(pytools.calculate_relative3(i, Path()), i, i.resolve(), i.absolute())
+            for i in input_f})
         if len(input_f) == 0:
             mhelp(msg="[!] 未找到缓存的视频")
         print(f"共找到 {len(input_f)} 个文件")

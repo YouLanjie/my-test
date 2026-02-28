@@ -96,9 +96,7 @@ def calculate_relative3(path_to:Path, path_from:Path) -> Path:
        根据长度选择reslove和absolute(可能存在bug)"""
     reslove = calculate_relative(path_to, path_from)
     absolute = calculate_relative2(path_to, path_from)
-    if len(str(reslove)) <= len(str(absolute)):
-        return reslove
-    return absolute
+    return min(reslove, absolute)
 
 def get_strtime(dt:datetime.datetime|float|int|None = None,
                 h=True,m=True,s=True) -> str:

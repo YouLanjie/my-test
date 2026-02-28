@@ -73,7 +73,7 @@ class Tree:
         cwd = self.mkdir(path[:-1])
         if cwd is None:
             return False
-        name = path[-1]
+        name = path[-1] if path else ""
         if name in cwd:
             skip = 1
             f = "%s_fsk%d"
@@ -186,7 +186,7 @@ def to_tree(groups:dict[tuple, list[str]],
 
     ret = {}
     last = []
-    print("目录：")
+    pytools.print_err("目录：")
     for path, s in tree.to_list(1):
         if not s:
             continue
@@ -201,7 +201,7 @@ def to_tree(groups:dict[tuple, list[str]],
             headline = " ".join(fix(path[same_len:same_len+1]))
             if not blacklist.search(headline):
                 ret[file].append(f"{"*"*(same_len+1)} {headline}")
-                print(f"{" "*(same_len)}- {headline}")
+                pytools.print_err(f"{" "*(same_len)}- {headline}")
             same_len+=1
         ret[file] += s
         last = path
@@ -217,34 +217,20 @@ def process_unicode(s: str):
     #return re.sub(r'&#(\d+);', sub, s)
     return html.unescape(s)
 
-def simple_process(filename:str):
-    """不分卷"""
-    file = Path(filename)
-    if not file.is_file():
-        pytools.print_err(f"[WARN] 文件不存在:{file}")
-        return
-    s = pytools.read_text(file)
-    s = s.splitlines()
-    s = "\n\n".join([i for i in s if i])
-    s = process_unicode(s)
-    print(s)
-
 def parse_arg() -> argparse.Namespace:
     """解释参数"""
     parser=argparse.ArgumentParser(description="分割全一卷的txt小说文件")
     parser.add_argument("-c", "-i", "--config", type=Path, default=Path("config.json"),
                         help="指定配置文件")
     parser.add_argument("-C", "--print-config", action="store_true", help="打印配置文件模板")
-    parser.add_argument("-s", "--simple", help="只执行简单处理")
     parser.add_argument("-n", "--dry-run", action="store_true", help="不输出文件")
+    parser.add_argument("-s", "--simple", type=Path, help="只执行简单处理")
+    parser.add_argument("--match", help="分节用的re字符串")
     return parser.parse_args()
 
 def main():
     """主函数"""
     args = parse_arg()
-    if args.simple:
-        simple_process(args.simple)
-        return
     cfg_f = args.config
     default_pattern = r"^[　]*(第.*卷.*)"
     default_pattern2 = r"插图"
@@ -255,6 +241,7 @@ def main():
            "ban_section_pattern":default_pattern2,
            "comment":"这里用来记录点额外信息，不会对结果产生影响",
            "process_unicode":True,
+           "strip":True,
            "words":[["身分","身份"], ["计画","计划"], ["徵","征"],
                     ["乾","干"]],}
     new_cfg = {}
@@ -273,6 +260,10 @@ def main():
         return
 
     inp = cfg_f.parent/cfg["source_file"]
+    if args.simple and args.simple.is_file():
+        inp = args.simple
+        if args.match:
+            cfg["section_pattern"] = args.match
     if not inp.is_file():
         pytools.print_err(f"[WARN] '{inp}' is not file")
         return
@@ -297,6 +288,13 @@ def main():
         blacklist = re.compile(default_pattern2, re.I)
     docs = to_tree(seperate_str(pattern, content), blacklist=blacklist)
 
+    if args.simple:
+        s = f"#+title: {inp.stem}\n#+setupfile: {cfg['setupfile']}\n\n"
+        for _,content in docs.items():
+            s += "\n\n".join([i.strip() if cfg["strip"] else i for i in content if i]) + "\n\n"
+        print(s)
+        return
+
     ind = 0
     for h1,content in docs.items():
         ind += 1
@@ -304,12 +302,13 @@ def main():
         print(f"- 输出到文件: {outf}")
         if outf.is_dir():
             continue
-        s = "\n\n".join([i for i in content if i])
+        s = "\n\n".join([i.strip() if cfg["strip"] else i for i in content if i]) + "\n\n"
         if not args.dry_run:
             outf.write_text(f"""\
 #+title: {cfg['title']} {h1}
 #+setupfile: {cfg['setupfile']}
 """ + s, encoding="utf8")
+
     if args.dry_run:
         print("(Dry Run)")
 

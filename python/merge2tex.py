@@ -379,7 +379,9 @@ class Config:
             li = re.findall(r"^(\*+) (.*)", s, re.M)
             levels = sorted({len(i[0]) for i in li})
             if levels and max(levels) - min(levels) <= 1 and \
-                    Counter(len(i[0]) for i in li if i[1] != "Footnotes").get(min(levels)) != 1:
+                    Counter(len(i[0]) for i in li if
+                            i[1] != "Footnotes" and not str(i[1]).lower().startswith("comment ")
+                            ).get(min(levels)) != 1:
                 s = re.sub(r"^(\*+)(\s+.*)",
                            lambda x,lv=min(levels): (len(x.group(1))-lv+2)*"*"+x.group(2),
                            s, flags=re.M)
@@ -441,6 +443,7 @@ def analyse_texlog(s:str, source:str=""):
     """分析latex日志"""
     if "Missing character" in s:
         pytools.print_err("[WARN] 字体字符缺失:")
+        warn = []
         for i in set(re.findall(
             r"Missing character: There is no (.*?U\+([^)]+).*?) in font (.*)", s)):
             try:
@@ -448,11 +451,13 @@ def analyse_texlog(s:str, source:str=""):
                 hint = f" ({hint})"
             except ValueError:
                 hint = ""
-            pytools.print_err(f"({i[2]}): {i[0]}{hint}")
+            warn.append(f"({i[2]}): {i[0]}{hint}")
+        warn = sorted(warn)
+        pytools.print_err("\n".join(warn))
     if "Overfull" in s:
-        pytools.print_err("[WARN] 存在字符串越界警告（无具体项目则没大事）")
         sg = source.splitlines()
         reported = []
+        warn = []
         for i in re.findall(r"(Overfull).*? at lines (\d+)--(\d+)", s):
             try:
                 i1 = int(i[1])
@@ -466,15 +471,19 @@ def analyse_texlog(s:str, source:str=""):
             reported.append(i1)
             # pytools.print_err(f"{i[0]}: LINE {i1}")
             if 0 <= i1-1 < len(sg):
-                pytools.print_err(f"{i[0]}: L.{i1}> {sg[i1-1][:20]}")
+                s = sg[i1-1]
+                warn.append(f"L.{i1}> {s[:20]}{"" if len(s) < 20 else "..."}")
+        if warn:
+            pytools.print_err("[WARN] 存在字符串越界警告")
+            pytools.print_err("\n".join(warn))
 
 def build_tex(config, outputf, tex):
     """运行xelatex编译tex文件"""
     print(f"[INFO] 自动构建'{outputf}'")
     try:
         if config.cfg["setting"]["mktoc"]:
-            subprocess.run(["xelatex", outputf], check=True)
-        subprocess.run(["xelatex", outputf], check=True)
+            subprocess.run(["xelatex", outputf], stdin=subprocess.DEVNULL, check=True)
+        subprocess.run(["xelatex", outputf], stdin=subprocess.DEVNULL, check=True)
         logfile = outputf.parent/(outputf.stem+".log")
         if logfile.is_file():
             s = logfile.read_text()
