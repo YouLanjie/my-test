@@ -372,7 +372,8 @@ class Config:
                     s = s[nums[0]:]
                 elif len(nums) == 2 and nums[0] < nums[1]:
                     s = s[nums[0]:nums[1]]
-                print("         > "+"\n         > ".join(s[:5]))
+                if whitelist[i]:
+                    print("         > "+"\n         > ".join(s[:5]))
             s = "\n".join(s)
             s = re.sub("[　]+", " ", s)
             # 处理标题层级问题
@@ -441,21 +442,29 @@ def gen_toc_str(content:str) -> str:
 
 def analyse_texlog(s:str, source:str=""):
     """分析latex日志"""
+    sg = source.splitlines()
     if "Missing character" in s:
         pytools.print_err("[WARN] 字体字符缺失:")
         warn = []
+        charlist = set()
         for i in set(re.findall(
             r"Missing character: There is no (.*?U\+([^)]+).*?) in font (.*)", s)):
             try:
-                hint = unicodedata.name(chr(int(i[1], 16))).lower()
+                c = chr(int(i[1], 16))
+                hint = unicodedata.name(c).lower()
                 hint = f" ({hint})"
+                charlist.add(c)
             except ValueError:
                 hint = ""
             warn.append(f"({i[2]}): {i[0]}{hint}")
         warn = sorted(warn)
         pytools.print_err("\n".join(warn))
+        pytools.print_err("[TIPS] 它们可在tex文件找到:")
+        pytools.print_err("\n".join(
+            [f"L.{num}: {i[:20]}{"" if len(i) < 20 else "..."}"
+             for num,line in enumerate(sg)
+             for i in re.findall(".*["+"".join(charlist)+"].*", line)]))
     if "Overfull" in s:
-        sg = source.splitlines()
         reported = []
         warn = []
         for i in re.findall(r"(Overfull).*? at lines (\d+)--(\d+)", s):

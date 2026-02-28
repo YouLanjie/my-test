@@ -1618,7 +1618,7 @@ class TexExportVisitor(ExportVisitor):
     def visit_blockexport(self, node) -> str:
         if not isinstance(node.line, Strings) or not node.opt["printable"]:
             return ""
-        if node.lang == "html":
+        if node.lang == "tex":
             return node.line.s
         return ""
     def visit_blockexample(self, node) -> str:

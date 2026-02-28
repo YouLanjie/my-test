@@ -302,7 +302,7 @@ def main():
         print(f"- 输出到文件: {outf}")
         if outf.is_dir():
             continue
-        s = "\n\n".join([i.strip() if cfg["strip"] else i for i in content if i]) + "\n\n"
+        s = "\n\n".join([i.strip() if cfg["strip"] else i for i in content if i])
         if not args.dry_run:
             outf.write_text(f"""\
 #+title: {cfg['title']} {h1}
