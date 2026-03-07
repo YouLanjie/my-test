@@ -269,7 +269,7 @@ class Blog:
                     ret += spacing+f"- {dirname}\n"
                 ret += self.tree2str(obj, titlv, level+1, hide_time)+"\n"
                 continue
-            time_format = f" /[{obj.date or "NULL"}]/" if not hide_time else ""
+            time_format = (f" /[{obj.date}]/") if not hide_time and obj.date else ""
             ret += spacing+f"- [[./{obj.link}][*{obj.title}*]]{time_format}"
             ret += ("\\\\\n"+spacing+f"  {obj.desc}\n") if obj.desc else "\n"
         return ret
@@ -283,7 +283,7 @@ class Blog:
         timeline = pytools.squash_dict(self.tree, split='/')
         timeline = dict(sorted(timeline.items(), key=lambda x:x[1].date, reverse=True))
         s_timeline = self.tree2str(timeline)
-        content_timeline = [i[2:] for i in s_timeline.splitlines()]
+        content_timeline = s_timeline.splitlines()
         for i in range(2000, 2100):
             ind = 0
             has = False

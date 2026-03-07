@@ -579,8 +579,11 @@ def get_video_dimensions(file_path:Path) -> tuple[int, int]:
 
 def cmd_genal(li, mode) -> str:
     """生成shell命令用于保存或执行"""
-    has_subprocess = subprocess.run(["biliass","-v"],check=False,
-            capture_output=True).returncode == 0
+    try:
+        has_subprocess = subprocess.run(["biliass","-v"],check=False,
+                                        capture_output=True).returncode == 0
+    except FileNotFoundError:
+        has_subprocess = False
     if CONFIG["cover"] and Path(CONFIG["cover"]).is_file():
         cover_f = Path(CONFIG["cover"])
     else:
