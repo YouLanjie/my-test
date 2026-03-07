@@ -493,7 +493,7 @@ void check_notes(struct Note *p)
 
 #define KEYVALUE_BUF_SIZE 40
 /* 解读字符串形式的音符并产生解析好的音符串struct */
-struct Note *parse_notes(const char *str, double amplitude)
+struct Note *parse_notes(const char *str, double base_amplitude)
 {
 	static const double note_freq[256] = { 0,
 		['c'] = 130.8, ['d'] = 146.8, ['e'] = 164.8, ['f'] = 174.6,
@@ -507,6 +507,7 @@ struct Note *parse_notes(const char *str, double amplitude)
 	char key[KEYVALUE_BUF_SIZE] = "",
 	     value[KEYVALUE_BUF_SIZE] = "";
 	double fade = 0, bq_freq = 0;
+	double amplitude = 0.2;
 	uint8_t track = 0, setting_mode = 0,
 		instrument = 0, wave_func = 0,
 		bq = 0;
@@ -577,7 +578,7 @@ struct Note *parse_notes(const char *str, double amplitude)
 			if (!p) return NULL;
 			*p = (struct Note){
 				.ch=c, .ind=count, .line=countline,
-				.freq=note_freq[c], .amplitude=amplitude,
+				.freq=note_freq[c], .amplitude=amplitude*base_amplitude,
 				.type=type, .notes=4, .beates=beates,
 				.speed=speed,
 				.duration=0,
@@ -976,7 +977,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 
 	FILE *wav_file = NULL;
 	WavHeader wav_header;
-	uint64_t size = 0;
+	uint64_t size = 0;    /* 已播放采样大小（数量） */
 	if (status & FLG_SAVE) {
 		wav_file =  fopen(filename, "wb");
 		 /* 创建并写入WAV文件头 */
@@ -1013,7 +1014,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 			continue;
 		}
 
-		if (p->track == 0 && sizes[0] == 0) {
+		if (p->track == 0 && sizes[0] == 0) {    /* 直接播放 */
 			size+=duration;
 			if (status & FLG_SAVE) fwrite(p->pwav, sizeof(int16_t)*2, duration, wav_file);
 #ifdef ENABLE_ALSA
@@ -1021,14 +1022,15 @@ int melody(int id, char *filename, double amplitude, char *input)
 #endif
 			free(p->pwav);
 			p->pwav = NULL;
-		} else if (p->track == 0) {
+		} else if (p->track == 0) {    /* 并轨播放 */
 			if (sizes[0] == -1) {
 				sizes[0] = 0;
 				for(uint8_t i=1; i < UINT8_MAX; i++) {
-					if(sizes[i]>sizes[0]) sizes[0]=sizes[i];
+					/* 计算1以上的最长轨道 */
+					if(sizes[i]>sizes[0])sizes[0]=sizes[i];
 					sizes[i] = 0;    /* max size */
 				}
-				sizes[1] = size;    /* size have played */
+				sizes[1] = size;    /* 保存当前已经播放采样数(偏移) */
 			}
 			tracks[0] = p;
 			merge_tracks(tracks, duration, size-sizes[1]);
@@ -1045,13 +1047,14 @@ int melody(int id, char *filename, double amplitude, char *input)
 				sizes[0] = 0;
 				sizes[1] = 0;
 			}
-		} else {
+		} else {    /* 独立计算轨道 */
 			if (sizes[0] > 0) {
-				fprintf(stderr, "[%sWARN%s] 非零轨道比主轨道长(%lf - %lf = %lf < %lf)\n",
+				fprintf(stderr,
+					"[%sWARN%s] 非零轨道比主轨道长(%lf - %lf = %lf > 0)\n",
 					colors[istty][0], colors[istty][1],
-					(double)size/SAMPLE_RATE, (double)sizes[1]/SAMPLE_RATE,
+					(double)sizes[0]/SAMPLE_RATE,
 					(double)(size-sizes[1])/SAMPLE_RATE,
-					(double)sizes[0]/SAMPLE_RATE);
+					(double)(sizes[0]-(size-sizes[1]))/SAMPLE_RATE);
 				clean_tracks_wav(&tracks, 1);
 				sizes[0] = 0;
 				sizes[1] = 0;
@@ -1144,7 +1147,7 @@ int read_play_wave(char *filename)
 int main(int argc, char *argv[])
 {
 	int ch = 0, id = 0;
-	double amplitude = 0.2;
+	double amplitude = 1.0;
 	char filename[125] = "output.wav",
 	     *notes = NULL;
 	while ((ch = getopt(argc, argv, "hi:psnmHo:r:C:PxA:X")) != -1) {	/* 获取参数 */
@@ -1165,7 +1168,7 @@ int main(int argc, char *argv[])
 			       "    -P        打印音符(格式化)\n"
 			       "    -x        打印调试信息\n"
 			       "    -X        打印相位\n"
-			       "    -A <NUM>  基本音量(0~1,默认0.2)\n"
+			       "    -A <NUM>  音量系数(默认1.0)\n"
 			       "    -h        显示帮助\n"
 			       "  NUM: 0: 小星星\n"
 			       "       1: 中国人民志愿军战歌\n"
@@ -1204,8 +1207,8 @@ int main(int argc, char *argv[])
 			break;
 		case 'A':
 			amplitude = strtof(optarg, NULL);
-			if (amplitude > 0.9 || amplitude < 0)
-				amplitude = 0.2;
+			if (amplitude > 100 || amplitude < 0)
+				amplitude = 1.0;
 			break;
 		case 'r':
 			strcpy(filename, optarg);
