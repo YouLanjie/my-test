@@ -1883,26 +1883,26 @@ ${postamble}
     def visit_root(self, node: Root) -> str:
         if not node.opt["printable"]:
             return ""
-        text = node.line.accept(self) + "\n"
+        text = [node.line.accept(self)]
         for i in node.child:
-            text += i.accept(self)
-        return text
-    def visit_meta(self, node) -> str:
-        return ""
+            t = i.accept(self)
+            if t:
+                text.append(t)
+        return "\n".join(text)
     def visit_titleoutline(self, node) -> str:
-        text = ""
+        text = []
         for i in node.child:
-            if text and text[-1] != "\n":
-                text += "\n"
             # 每个列表组的每个项目
-            text += f"{i.accept(self)}"
-        if node.level > node.document.meta["options"]["h"] and text != "":
+            t = i.accept(self)
+            if t:
+                text.append(t)
+        if node.level > node.document.meta["options"]["h"] and text:
             headline_num = node.document.meta["options"]["num"]
             li_type = "ul"
             if (isinstance(headline_num,bool) and headline_num) or node.level <= headline_num:
                 li_type = "ol"
-            text = f"""<{li_type} class="org-ol">{text}</{li_type}>\n"""
-        return text
+            text = [f'<{li_type} class="org-ol">']+text+[f'</{li_type}>']
+        return "\n".join(text)
     def visit_blockcode(self, node) -> str:
         if not isinstance(node.line, Strings) or not node.opt["printable"]:
             return ""
@@ -1911,7 +1911,8 @@ ${postamble}
         try:
             pygments = importlib.import_module("pygments")
             get_lexer_by_name = importlib.import_module("pygments.lexers").get_lexer_by_name
-            fmt = importlib.import_module("pygments.formatters").get_formatter_by_name("html", style="monokai", nowrap=True)
+            fmt = importlib.import_module("pygments.formatters").\
+                    get_formatter_by_name("html", style="monokai", nowrap=True)
             try:
                 lang = node.lang
                 if not isinstance(lang, str):
@@ -1938,11 +1939,13 @@ ${postamble}
     def visit_blockquote(self, node) -> str:
         if not node.opt["printable"]:
             return ""
-        text = "<blockquote>\n"
+        text = ["<blockquote>"]
         for i in node.child:
-            text += i.accept(self)
-        text += "</blockquote>"
-        return text
+            t = i.accept(self)
+            if t:
+                text.append(t)
+        text.append("</blockquote>")
+        return "\n".join(text)
     def visit_blockexport(self, node) -> str:
         if not isinstance(node.line, Strings) or not node.opt["printable"]:
             return ""
@@ -1950,11 +1953,13 @@ ${postamble}
             return node.line.s
         return ""
     def visit_blockcenter(self, node) -> str:
-        text = "<div class=\"org-center\">\n"
+        text = ["<div class=\"org-center\">\n"]
         for i in node.child:
-            text += i.accept(self)
-        text += "</div>"
-        return text
+            t = i.accept(self)
+            if t:
+                text.append(t)
+        text.append("</div>")
+        return "\n".join(text)
     def visit_blockexample(self, node) -> str:
         if not isinstance(node.line, Strings) or not node.opt["printable"]:
             return ""
@@ -1970,56 +1975,46 @@ ${postamble}
             ret += f"{Strings(i, node).accept(self)}<br/>"
         ret += "</p>"
         return ret
-    def visit_list(self, node) -> str:
-        text = f"<{node.type} class=\"org-{node.type}\">\n"
+    def visit_list(self, node : List) -> str:
+        text = [f"<{node.type} class=\"org-{node.type}\">"]
         for i in node.child:
-            if text and text[-1] != "\n":
-                text += "\n"
             # 每个列表组的每个项目
-            text += f"<li>{i.accept(self)}</li>"
-        text += f"</{node.type}>\n"
-        return text
+            text.append(f"<li>{i.accept(self)}</li>")
+        text.append(f"</{node.type}>")
+        return "\n".join(text)
     def visit_table(self, node:Table) -> str:
         skip_list = [i[0] for i in node.control_line if i[1] == "align"]
         split_list = [i[0] for i in node.control_line if i[1] == "split"]
-        text = """\n<table border="2" cellspacing="0" cellpadding="6" """+\
-                """rules="groups" frame="hsides">"""
+        text = ['<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">']
         if len(node.lines) - len(node.control_line) <= 0:
-            text += "</table>"
-            return text
+            return text[0] + "</table>"
         rule = {"<l>":"left", "<c>":"center", "<r>":"right"}
-        text += "<colgroup>"
-        text += "\n".join([f"""<col class="org-{rule[i]}" />""" for i in node.align])
-        text += "</colgroup>"
+        text.append("<colgroup>")
+        text += [f"""<col class="org-{rule[i]}" />""" for i in node.align]
+        text.append("</colgroup>")
 
         # 一线分头尾
-        if split_list:
-            text += "<thead>"
-        else:
-            text += "<tbody>"
+        text.append("<thead>" if split_list else "<tbody>")
         index = 0
         for line in node.lines:
             if index in skip_list:
                 index+=1
                 continue
             if isinstance(line, str):
-                if index == split_list[0]:
-                    text += "\n</thead><tbody>\n"
-                else:
-                    text += "\n</tbody><tbody>\n"
+                text.append("</thead><tbody>" if index == split_list[0] else "</tbody><tbody>")
                 index+=1
                 continue
-            text += "<tr>"
+            text.append("<tr>")
             for col,align in zip(line, node.align):
                 if split_list and index < split_list[0]:
-                    text+=f"<th scope=\"col\" class=\"org-{rule[align]}\">{col.accept(self)}</th>"
+                    text+=[f'<th scope="col" class="org-{rule[align]}">{col.accept(self)}</th>']
                 else:
-                    text+=f"<td class=\"org-{rule[align]}\">"+\
-                            f"{col.accept(self) if col.accept(self) else "&nbsp;"}</td>"
+                    text+=[f'<td class="org-{rule[align]}">'
+                           f'{col.accept(self) if col.accept(self) else "&nbsp;"}</td>']
             index+=1
-            text += "</tr>"
-        text += "</table>"
-        return text
+            text.append("</tr>")
+        text.append("</table>")
+        return "\n".join(text)
     def visit_footnote(self, node: Footnote, printable=False) -> str:
         if not printable:
             return ""
@@ -2037,79 +2032,72 @@ ${postamble}
             text = f"<p>{text}</p>"
         return text
     def visit_listitem(self, node: ListItem) -> str:
-        text = ""
+        text = []
         flag = True
         for i in node.child[1:]:
             if not isinstance(i, (Comment, List)):
                 flag = False
                 break
-        if isinstance(node.child[0], Text) and flag:
-            text += f"{node.child[0].line.accept(self)}\n"
-        else:
-            text += f"{node.child[0].accept(self)}\n"
-        for i in node.child[1:]:
-            # 下一级的东西
-            j = i.accept(self)
-            if j and j[-1] != '\n':
-                j += "\n"
-            text +=  j
-        return text
+        li = [node.child[0].line if isinstance(node.child[0], Text) and flag else node.child[0]]
+        li += node.child[1:]
+        for i in li:
+            t = i.accept(self)
+            if t:
+                text.append(t)
+        return "\n".join(text)
     def visit_title(self, node: Title) -> str:
         if node.comment or not node.opt["printable"]:
             return ""
         title = node.line.accept(self)
         ids = node.id[node.document.status["lowest_title"]-1:-1]
         lv = ".".join([str(i) for i in ids])
+        hlv = node.level+2-node.document.status["lowest_title"]
 
-        text = ""
+        text : list[str] = []
+        textl : str = ""
         levels = node.document.setting["id_prefix"] + re.sub(r"\.","-",lv)
         if node.level <= node.document.meta["options"]["h"]:
-            text += f"""<div id="outline-container-{levels}" class=\"outline-{node.level+1}\">\n"""
-            text += f"""<h{node.level+2-node.document.status["lowest_title"]} """+\
-                f"""id="org-title-{levels}">"""
+            text += [f'<div id="outline-container-{levels}" class="outline-{node.level+1}">']
+            textl += f'<h{hlv} id="org-title-{levels}">'
             headline_num = node.document.meta["options"]["num"]
             if (isinstance(headline_num,bool) and headline_num) or len(ids) <= headline_num:
-                text += """<span class="section-number-"""+\
-                        f"""{node.level+2-node.document.status["lowest_title"]}">{lv}.</span>"""
+                textl += f'<span class="section-number-{hlv}">{lv}.</span>'
         else:
-            text += f"""<li>\n<a id="org-title-{levels}"></a>"""
+            textl = f'<li><a id="org-title-{levels}"></a>'
 
         if node.todo:
-            text+=f" <span class=\"{node.todo[0]} {node.todo[1]}\">{node.todo[1]}</span>"
-        text += f" {title}"
+            textl += f' <span class="{node.todo[0]} {node.todo[1]}">{node.todo[1]}</span>'
+        textl += f" {title}"
         if node.tag.s:
-            text += f"""{"&nbsp;"*3}<span class="tag">"""
+            textl += f'{"&nbsp;"*3}<span class="tag">'
             tags = node.tag.s.split(":")
             li = []
             for i in tags:
-                li.append(f"""<span class="{i}">{i}</span>""")
-            text += "&nbsp;".join(li)
-            text += """</span>"""
+                li.append(f'<span class="{i}">{i}</span>')
+            textl += "&nbsp;".join(li)
+            textl += "</span>"
 
-        if node.level <= node.document.meta["options"]["h"]:
-            text += f"</h{node.level+2-node.document.status["lowest_title"]}>\n"
-        else:
-            text += "<br/>\n"
+        textl += f"</h{hlv}>" if node.level <= node.document.meta["options"]["h"] else "<br/>"
+        text.append(textl)
+        textl = ""
 
         has_text_outline = False
         if node.child and not isinstance(node.child[0], Title):
-            text += f"""<div class="outline-text-{node.level+1}" """+\
-                    f"""id="text-{levels}">"""
+            text += [f'<div class="outline-text-{node.level+1}" id="text-{levels}">']
             has_text_outline = True
 
         for i in node.child:
             if has_text_outline and isinstance(i, TitleOutline):
-                text += "</div>"
+                text.append("</div>")
                 has_text_outline = False
-            text += i.accept(self)
+            t = i.accept(self)
+            if t:
+                text.append(t)
         if has_text_outline:
-            text += "</div>"
+            text.append("</div>")
 
-        if node.level <= node.document.meta["options"]["h"]:
-            text += "</div>"
-        else:
-            text += "</li>\n"
-        return text
+        text.append("</div>" if node.level <= node.document.meta["options"]["h"] else "</li>")
+        return "\n".join(text)
     def visit_strings(self, node: Strings, li: list) -> str:
         """输出行内html"""
         if not li:
@@ -2130,7 +2118,7 @@ ${postamble}
                         if isinstance(node.upward, Text) and \
                         not node.upward.opt.get("in_list") and len(li) == 1 else ""
                 ret += f"""\n<img src="{i[1]}" alt="{self.visit_strings(node, i[2])}" />\n"""
-                ret += "</p></div>\n" \
+                ret += "</p></div>" \
                         if isinstance(node.upward, Text) and \
                         not node.upward.opt.get("in_list") and len(li) == 1 else ""
             elif i[0] == "figure":
@@ -2168,7 +2156,7 @@ ${postamble}
                 ret += last_stat
                 last_stat = ""
             elif i[0] in node.rules:
-                ret += f"""{node.rules[i[0]][0]}{self.visit_strings(node, i[1])}{node.rules[i[0]][1]}"""
+                ret += f'{node.rules[i[0]][0]}{self.visit_strings(node, i[1])}{node.rules[i[0]][1]}'
                 ret += last_stat
                 last_stat = ""
             elif i[0] == "radio_link":

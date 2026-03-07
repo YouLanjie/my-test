@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Created:2025.10.18
 """基于python的简陋聊天室程序，向下兼容至python3.8"""
-# Filename: 聊天室v0.0.13.py
+# Filename: 聊天室v0.0.14.py
 
 from pathlib import Path
 from datetime import datetime
@@ -715,7 +715,8 @@ window.onload = function() {
 """, # ==================
 "url_self_1":"raw.githubusercontent.com/youlanjie/my-test/refs/heads/main/python/talking_local.py",
 "url_self_2":"https://youlanjie.github.io/lib/python/talking_local.py",
-"url_anti_jiyu":"https://youlanjie.github.io/lib/python/talking_local.py",
+"url_anti_jiyu":"github.com/imengyu/JiYuTrainer/releases/download/1.7.6/JiYuTrainer.exe",
+# 配错链接这么久不知道哎呦。。。。
 }
     @classmethod
     def get2(cls, key:str) -> str:
