@@ -192,17 +192,17 @@ class Config:
 
 % 使用 titlesec 重新定义标题格式，保持目录功能
 \titleformat{\section}
-  {\fontsize{#${setting.fontsizes.sections.section}}{0.1}\selectfont\bfseries}
+  {\setsmallf{#${setting.fontsizes.sections.section}}}
   {【\arabic{section}.】}
   {0pt}
   {}
 \titleformat{\subsection}
-  {\fontsize{#${setting.fontsizes.sections.subsection}}{0.1}\selectfont\bfseries}
+  {\setsmallf{#${setting.fontsizes.sections.subsection}}}
   {【\arabic{section}.\arabic{subsection}.】}
   {0pt}
   {}
 \titleformat{\subsubsection}
-  {\fontsize{#${setting.fontsizes.sections.subsubsection}}{0.1}\selectfont\bfseries}
+  {\setsmallf{#${setting.fontsizes.sections.subsubsection}}}
   {【\arabic{section}.\arabic{subsection}.\arabic{subsubsection}.】}
   {0pt}
   {}
@@ -440,51 +440,67 @@ def gen_toc_str(content:str) -> str:
                 (i[0], ind, i[1], i[0], ind)
     return s
 
+def _analyse_fonts(s:str, sg:list[str]):
+    pytools.print_err("[WARN] 字体字符缺失:")
+    warn = []
+    charlist = set()
+    for i in set(re.findall(
+        r"Missing character: There is no (.*?U\+([^)]+).*?) in font (.*)", s)):
+        try:
+            c = chr(int(i[1], 16))
+            hint = unicodedata.name(c).lower()
+            hint = f" ({hint})"
+            charlist.add(c)
+        except ValueError:
+            hint = ""
+        warn.append(f"({i[2]}): {i[0]}{hint}")
+    warn = sorted(warn)
+    pytools.print_err("\n".join(warn))
+    pytools.print_err("[TIPS] 它们可在tex文件找到:")
+    found : dict[str, list[int]] = {}
+    for num,line in enumerate(sg):
+        for c in charlist:
+            if c not in line:
+                continue
+            if not c in found:
+                found[c] = []
+            found[c] += [num]*(len(line.split(c))-1)
+    for i,nums in found.items():
+        pytools.print_err(f"[INFO] 对于字符{repr(i)}共有{len(set(nums))}行{len(nums)}处分布:")
+        for num in sorted(set(nums))[:20]:
+            pytools.print_err(f"  L.{num}: {sg[num][:30]}{"" if len(sg[num]) < 30 else "..."}")
+        if len(set(nums)) > 20:
+            pytools.print_err("    ......")
+
+def _analyse_too_wide(s:str, sg:list[str]):
+    reported = []
+    warn = []
+    for i in re.findall(r"Overfull.*? at lines (\d+)--(\d+)", s):
+        try:
+            i1 = int(i[0])
+            i2 = int(i[1])
+        except ValueError:
+            i1,i2 = 0, 0
+        if i2 - i1 < 1:
+            continue
+        if i1 in reported:
+            continue
+        reported.append(i1)
+        # pytools.print_err(f"{i[0]}: LINE {i1}")
+        if 0 <= i1-1 < len(sg):
+            s = sg[i1-1]
+            warn.append(f"L.{i1}> {s[:30]}{"" if len(s) < 30 else "..."}")
+    if warn:
+        pytools.print_err("[WARN] 存在字符串越界警告")
+        pytools.print_err("\n".join(warn))
+
 def analyse_texlog(s:str, source:str=""):
     """分析latex日志"""
     sg = source.splitlines()
     if "Missing character" in s:
-        pytools.print_err("[WARN] 字体字符缺失:")
-        warn = []
-        charlist = set()
-        for i in set(re.findall(
-            r"Missing character: There is no (.*?U\+([^)]+).*?) in font (.*)", s)):
-            try:
-                c = chr(int(i[1], 16))
-                hint = unicodedata.name(c).lower()
-                hint = f" ({hint})"
-                charlist.add(c)
-            except ValueError:
-                hint = ""
-            warn.append(f"({i[2]}): {i[0]}{hint}")
-        warn = sorted(warn)
-        pytools.print_err("\n".join(warn))
-        pytools.print_err("[TIPS] 它们可在tex文件找到:")
-        pytools.print_err("\n".join(
-            [f"L.{num}: {i[:20]}{"" if len(i) < 20 else "..."}"
-             for num,line in enumerate(sg)
-             for i in re.findall(".*["+"".join(charlist)+"].*", line)]))
+        _analyse_fonts(s, sg)
     if "Overfull" in s:
-        reported = []
-        warn = []
-        for i in re.findall(r"(Overfull).*? at lines (\d+)--(\d+)", s):
-            try:
-                i1 = int(i[1])
-                i2 = int(i[2])
-            except ValueError:
-                i1,i2 = 0, 0
-            if i2 - i1 < 1:
-                continue
-            if i1 in reported:
-                continue
-            reported.append(i1)
-            # pytools.print_err(f"{i[0]}: LINE {i1}")
-            if 0 <= i1-1 < len(sg):
-                s = sg[i1-1]
-                warn.append(f"L.{i1}> {s[:20]}{"" if len(s) < 20 else "..."}")
-        if warn:
-            pytools.print_err("[WARN] 存在字符串越界警告")
-            pytools.print_err("\n".join(warn))
+        _analyse_too_wide(s, sg)
 
 def build_tex(config, outputf, tex):
     """运行xelatex编译tex文件"""

@@ -160,7 +160,7 @@ def update_file(file:Path) -> Doc:
     if ARGS.verbose:
         print(f"[INFO] 正在处理文件 '{pytools.calculate_relative(file, ARGS.project_dir)}'")
 
-    if ARGS.no_build_home and ARGS.emacs:
+    if ARGS.no_build_home and (ARGS.emacs or ARGS.touch):
         doc = None
     else:
         doc = orgreader2.Document(content, str(file) )

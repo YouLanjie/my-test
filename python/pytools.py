@@ -205,4 +205,4 @@ def read_text(file: Path) -> str:
             break
         except UnicodeDecodeError:
             pass
-    return s
+    return "\n".join(s.splitlines())
