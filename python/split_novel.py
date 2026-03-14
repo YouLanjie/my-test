@@ -205,7 +205,7 @@ def main():
     """主函数"""
     args = parse_arg()
     cfg_f = args.config
-    default_pattern = r"^[　]*(第.*卷.*)"
+    default_pattern = r"^([^\s]*[章卷节篇典结].+)"
     default_pattern2 = r"插图"
     cfg = {"source_file":"",
            "title":"",

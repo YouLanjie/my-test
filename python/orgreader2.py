@@ -175,7 +175,8 @@ class Strings:
                 elif self.upward.document.setting.get("verbose_msg")\
                         and link.startswith("./") and not (base_path/file_path).is_file():
                     self.log(f"无法找到链接文件: {link}", "WARN")
-                for j in "%[]\"\\ #?|<>\t":
+                # 对于 `%#?` 期望自行转义
+                for j in "[]\"\\ |<>\t":
                     if j not in link:
                         continue
                     link = link.replace(j, f"%{hex(ord(j))[2:].upper().zfill(2)}")
@@ -196,21 +197,19 @@ class Strings:
             mode = "figure"
             alt = caption
         return mode, alt
-    def _parse_timestamp(self, ret:re.Match, li:list):
+    @classmethod
+    def _parse_timestamp(cls, ret:re.Match, li:list):
         chr_typ, year, month, day, hours, minutes = ret.groups()
         enable_hm = bool(hours and minutes)
         year, month, day, hours, minutes = int(year), int(month), int(day), \
                 int(hours or 0), int(minutes or 0)
 
-        day -= 1
-        year += (month-1) // 12
-        month = ([12]+list(range(1,12)))[month % 12]
-        timestamp = minutes*60 + hours*(60**2)
-        timestamp += datetime.datetime(year,month,1).timestamp()+day*(60**2*24)
-        s = pytools.get_strtime(datetime.datetime.fromtimestamp(timestamp),h=enable_hm,m=enable_hm,s=False)
+        right_time = pytools.correct_timestamp(year, month, day, hours, minutes)
+        s = pytools.get_strtime(right_time,h=enable_hm,m=enable_hm,s=False)
         chr_typ2 = "]" if chr_typ == "[" else ">"
         s = f"{chr_typ}{s}{chr_typ2}"
         li.append(["timestamp", s])
+        return right_time
     def orgtext_to_list(self, s:str, is_sub = False) -> list[str]:
         """解释行内字符串变成数组"""
         if not is_sub and self.cache.get(s):
@@ -1547,7 +1546,7 @@ class TexExportVisitor(ExportVisitor):
                 fn : Footnote = fns[i[1]]
                 ret += "\\footnote{%s}" % fn.accept(self)
             elif i[0] in self.rules:
-                ret += f"""{self.rules[i[0]][0]}{self.visit_strings(node, i[1])}{self.rules[i[0]][1]}"""
+                ret += f'{self.rules[i[0]][0]}{self.visit_strings(node, i[1])}{self.rules[i[0]][1]}'
                 ret += last_stat
                 last_stat = ""
             elif i[0] == "radio_link":
@@ -1604,7 +1603,7 @@ class TexExportVisitor(ExportVisitor):
             if text and text[-1] != "\n":
                 text += "\n"
             # 每个列表组的每个项目
-            text += r"\item %s" % i.accept(self)
+            text += f"\\item {i.accept(self)}"
         if text and text[-1] != "\n":
             text += "\n"
         text += r"\end{%s}" % typ
@@ -2105,57 +2104,64 @@ ${postamble}
         ret = ""
         last_stat = ""
         i : str | list = ""
+        def _s_link(i:list, last_stat:str) -> tuple[str,str]:
+            return (f'<a href="{i[1]}">{self.visit_strings(node, i[2])}</a>', last_stat)
+        def _s_img(i:list, last_stat:str) -> tuple[str,str]:
+            s = f'\n<img src="{i[1]}" alt="{self.visit_strings(node, i[2])}" />\n'
+            if isinstance(node.upward, Text) and \
+                    not node.upward.opt.get("in_list") and len(li) == 1:
+                s = f'<div class="figure"><p>{s}</p></div>'
+            return (s, last_stat)
+        def _s_figure(i:list, last_stat:str) -> tuple[str,str]:
+            self.figure_count += 1
+            s = f'\n<div class="figure">\n<p><img src="{i[1]}" alt="{i[1]}" /></p>\n'
+            s += '<p><span class="figure-number">Figure '
+            s += f'{self.figure_count}: </span>'
+            s += f'{self.text_backend.visit_strings(node, i[2])}</p></div>'
+            return (s, last_stat)
+        def _s_fn(i:list, last_stat:str) -> tuple[str,str]:
+            fns : dict = node.upward.document.status["footnotes"]
+            if not fns.get(i[1]):
+                node.log(f"引用没有定义的脚注'{i[1]}'", "ERROR")
+                return ("", last_stat)
+            fn : Footnote = fns[i[1]]
+            num = self .footnote_count
+            if fn.id <= 0:
+                self .footnote_count += 1
+                num+=1
+                fn.id = num
+                name = fn.name if fn.type == "str" else num
+                self.call_footnotes.append(i[1])
+            else:
+                num = fn.id
+            name = fn.name if fn.type == "str" else num
+            name = node.upward.document.setting["id_prefix"] + str(name)
+            fn.line.accept(self)
+            s = f"""<sup><a id="fnr.{name}" class="footref" """
+            s += f"""href="#fn.{name}" role="doc-backlink">"""
+            outline = node.upward.document.setting["footnote_style"]
+            s += f"""{outline[0]}{num}{outline[1]}</a></sup>"""
+            return (s, last_stat)
+        def _s_timestamp(i:list, last_stat:str) -> tuple[str,str]:
+            s = '<span class="timestamp-wrapper"><span class="timestamp">'
+            s += f'{i[1]}</span></span>'
+            s += last_stat
+            return (s, "")
+        process_rules = {"link": _s_link,
+                         "img": _s_img,
+                         "figure": _s_figure,
+                         "fn": _s_fn,
+                         "timestamp":_s_timestamp}
         for i in li:
             if isinstance(i, str):
                 i = escape(i).replace("\n", "<br/>")
                 ret+=i
                 continue
-            i = [escape(i) if isinstance(i, str) else i for i in i]
-            if i[0] == "link":
-                ret += f"""<a href="{i[1]}">{self.visit_strings(node, i[2])}</a>"""
-            elif i[0] == "img":
-                ret += "<div class=\"figure\"><p>" \
-                        if isinstance(node.upward, Text) and \
-                        not node.upward.opt.get("in_list") and len(li) == 1 else ""
-                ret += f"""\n<img src="{i[1]}" alt="{self.visit_strings(node, i[2])}" />\n"""
-                ret += "</p></div>" \
-                        if isinstance(node.upward, Text) and \
-                        not node.upward.opt.get("in_list") and len(li) == 1 else ""
-            elif i[0] == "figure":
-                self.figure_count += 1
-                ret += f"""\n<div class="figure">\n<p><img src="{i[1]}" alt="{i[1]}" /></p>\n"""
-                ret += """<p><span class="figure-number">Figure """+\
-                        f"""{self.figure_count}: </span>"""+\
-                        f"""{self.text_backend.visit_strings(node, i[2])}</p></div>"""
-            elif i[0] == "fn":
-                fns : dict = node.upward.document.status["footnotes"]
-                if not fns.get(i[1]):
-                    node.log(f"引用没有定义的脚注'{i[1]}'", "ERROR")
-                    continue
-                fn : Footnote = fns[i[1]]
-                num = self .footnote_count
-                if fn.id <= 0:
-                    self .footnote_count += 1
-                    num+=1
-                    fn.id = num
-                    name = fn.name if fn.type == "str" else num
-                    self.call_footnotes.append(i[1])
-                else:
-                    num = fn.id
-                name = fn.name if fn.type == "str" else num
-                name = node.upward.document.setting["id_prefix"] + str(name)
-                fn.line.accept(self)
-                ret += f"""<sup><a id="fnr.{name}" class="footref" """
-                ret += f"""href="#fn.{name}" role="doc-backlink">"""
-                outline = node.upward.document.setting["footnote_style"]
-                ret += f"""{outline[0]}{num}{outline[1]}</a></sup>"""
-            elif i[0] == "timestamp":
-                ret += '<span class="timestamp-wrapper"><span class="timestamp">'
-                ret += f"{i[1]}"
-                ret += '</span></span>'
-                ret += last_stat
-                last_stat = ""
+            if i[0] in process_rules:
+                s, last_stat = process_rules[i[0]](i, last_stat)
+                ret += s
             elif i[0] in node.rules:
+                i = [escape(i) if isinstance(i, str) else i for i in i]
                 ret += f'{node.rules[i[0]][0]}{self.visit_strings(node, i[1])}{node.rules[i[0]][1]}'
                 ret += last_stat
                 last_stat = ""
@@ -2163,7 +2169,7 @@ ${postamble}
                 pass
             else:
                 last_stat = " "
-                ret += str(i)
+                ret += escape(str(i))
         if ret and ret[0] == "\n":
             ret = ret[1:]
         ret.replace("\\", "<span>\\</span>")

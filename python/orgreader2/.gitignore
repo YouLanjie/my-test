@@ -1,5 +1,0 @@
-dist
-src/*.egg-info
-*.tar.gz
-*.pkg.tar.zst
-pkg/

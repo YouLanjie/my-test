@@ -1173,6 +1173,8 @@ class System:
         try:
             if not self.orgreader:
                 raise ModuleNotFoundError
+            if not content.startswith("# USE ORG"):
+                raise ValueError
             doc = self.orgreader.Document(content,
                                           file_name=msgid+".org",
                                           setting={"id_prefix":"org_"+msgid+"_"})
@@ -1182,7 +1184,7 @@ class System:
             if doc.status["footnotes"]:
                 msg += visitor.fns_to_html(doc)
             return msg
-        except Exception:
+        except (ModuleNotFoundError, ValueError, OSError, FileNotFoundError):
             return "<br/>".join(escape(content).splitlines())
     def get_html(self, ip:Union[dict,str] = "", tag = "") -> str:
         """生成html相应页面"""

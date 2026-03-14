@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """构建博客用脚本"""
 
+import datetime
 from string import Template
 from pathlib import Path
 from dataclasses import dataclass
@@ -88,7 +89,9 @@ class EmacsBacken:
 
 @dataclass
 class Doc:
+    """放文档数据"""
     date : str = ""
+    timestamp : float = 0
     link : str = ""
     title : str = ""
     desc : str = ""
@@ -173,10 +176,13 @@ svg: { scale: 1.0, displayAlign: 'center', displayIndent: '0em' },
 output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
 </script>
 <script id="MathJax-script" async src="/theme/tex-mml-chtml.js"></script>"""
-        date = re.sub(r"<(.*)>", r"\1", " ".join(doc.meta["date"]))
-        date = re.sub(r"([^ ]*) [一|二|三|四|五|六|日]", r"\1", date)
+        match=re.search(r"([\[<]?)(\d{4})-(\d{2})-(\d{2})(?:\D*(?<= )(\d\d?):(\d{2}).*|.*)[\]>]",
+                        " ".join(doc.meta["date"]))
+        dt = datetime.datetime.fromtimestamp(0)
+        if match:
+            dt = orgreader2.Strings._parse_timestamp(match , [])
         link = str(pytools.calculate_relative(outputf, ARGS.project_dir))
-        ret = Doc(date, link,
+        ret = Doc(pytools.get_strtime(dt), dt.timestamp(), link,
                   " ".join(doc.meta["title"]) if doc.meta["title"] else file.stem,
                   " ".join(doc.meta["description"]))
 
@@ -281,7 +287,7 @@ class Blog:
                                hide_time=not self.cfg["settings"]["tree_time"])
         # content_index = index_template+re.sub(r"^\- ", "** ", list_to_str(tree,True), flags=re.M)
         timeline = pytools.squash_dict(self.tree, split='/')
-        timeline = dict(sorted(timeline.items(), key=lambda x:x[1].date, reverse=True))
+        timeline = dict(sorted(timeline.items(), key=lambda x:x[1].timestamp, reverse=True))
         s_timeline = self.tree2str(timeline)
         content_timeline = s_timeline.splitlines()
         for i in range(2000, 2100):

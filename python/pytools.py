@@ -96,7 +96,7 @@ def calculate_relative3(path_to:Path, path_from:Path) -> Path:
        根据长度选择reslove和absolute(可能存在bug)"""
     reslove = calculate_relative(path_to, path_from)
     absolute = calculate_relative2(path_to, path_from)
-    return min(reslove, absolute)
+    return min(reslove, absolute, key=lambda x:len(str(x)))
 
 def get_strtime(dt:datetime.datetime|float|int|None = None,
                 h=True,m=True,s=True) -> str:
@@ -206,3 +206,12 @@ def read_text(file: Path) -> str:
         except UnicodeDecodeError:
             pass
     return "\n".join(s.splitlines())
+
+def correct_timestamp(year:int, month:int, day:int, hours:int, minutes:int):
+    """根据可能有错误或溢出的日期时间修正出正确的时间戳"""
+    day -= 1
+    year += (month-1) // 12
+    month = ([12]+list(range(1,12)))[month % 12]
+    timestamp = minutes*60 + hours*(60**2)
+    timestamp += datetime.datetime(year,month,1).timestamp()+day*(60**2*24)
+    return datetime.datetime.fromtimestamp(timestamp)

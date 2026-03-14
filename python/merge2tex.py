@@ -12,6 +12,7 @@ import argparse
 import re
 import subprocess
 import unicodedata
+import pprint
 
 import pytools
 import orgreader2 as org2
@@ -59,14 +60,22 @@ class TexExport(org2.TexExportVisitor):
             i = [org2.tex_escape(i) if isinstance(i, str) else i for i in i]
             if i[0] == "link":
                 alt = self.visit_strings(node, i[2])
-                if i[1] == alt:
-                    ret += r"\url{%s}" % i[1]
-                else:
-                    ret += r"\href{%s}{%s}" % (i[1], alt)
+                ret += r"\href{%s}{%s}" % (i[1], alt)
             elif i[0] == "img":
-                ret += f"""[IMG:{org2.tex_escape(i[1])}]"""
+                file = Path(node.upward.document.setting["file_name"]).parent/i[1]
+                if file.is_file() and file.suffix[1:].lower() in ("png", "jpg", "jpeg"):
+                    ret += r'\par\includegraphics[width=.9\linewidth]{%s}'% \
+                            file.resolve()
+                else:
+                    ret += f'[IMG:{i[1]}]'
             elif i[0] == "figure":
-                ret += f"""[IMG:{i[1]}][DESC:{self.visit_strings(node, i[2])}]"""
+                file : Path = Path(node.upward.document.setting["file_name"]).parent/i[1]
+                if file.is_file() and file.suffix[1:].lower() in ("png", "jpg", "jpeg"):
+                    ret += r'\par\includegraphics[width=.9\linewidth]{%s}'% \
+                            file.resolve()
+                    ret += f' 【DESC:{self.visit_strings(node, i[2])}】'
+                else:
+                    ret += f"""[IMG:{i[1]}][DESC:{self.visit_strings(node, i[2])}]"""
             elif i[0] == "fn":
                 fns : dict = node.upward.document.status["footnotes"]
                 if not fns.get(i[1]):
@@ -80,7 +89,7 @@ class TexExport(org2.TexExportVisitor):
                 if is_intitle:
                     ret += "%"
             elif i[0] in self.rules:
-                ret += f"""{self.rules[i[0]][0]}{self.visit_strings(node, i[1])}{self.rules[i[0]][1]}"""
+                ret += f'{self.rules[i[0]][0]}{self.visit_strings(node, i[1])}{self.rules[i[0]][1]}'
                 ret += last_stat
                 last_stat = ""
             elif i[0] == "radio_link":
@@ -93,6 +102,24 @@ class TexExport(org2.TexExportVisitor):
         return ret
     def visit_document(self, node: org2.Document) -> str:
         return node.root.accept(self)
+    def visit_table(self, node) -> str:
+        skip_list = [i[0] for i in node.control_line if i[1] == "align"]
+        text = "\\par【表格开始】\n\\begin{itemize}\n"
+        index = 0
+        for line in node.lines:
+            if index in skip_list:
+                index+=1
+                continue
+            if isinstance(line, str):
+                index+=1
+                continue
+            text += '\\item\n\\begin{itemize}\n'
+            text += '\\item '
+            text += "\n\\item ".join([i.accept(self) for i in line])
+            text+="\n\\end{itemize}\n"
+            index+=1
+        text += "\\end{itemize}\n【表格结束】\n\n"
+        return text
 
 class Config:
     """配置类"""
@@ -116,7 +143,7 @@ class Config:
                     "skip":0.1,
                     "footer":4.0,
                     },
-                "fontname":"DengXian Light",
+                "fontname":"Noto Sans CJK SC Light", # or: DengXian Light
                 "border":{
                     "left":0.7,
                     "right":0.7,
@@ -139,7 +166,8 @@ class Config:
                     "add":[]
                     }
                 },
-            "output":"output_#${title}_#${setting.papersize}_#${setting.fontsize}pt_#${template.gtst}.tex",
+            "output":"output_#${title}_#${setting.papersize}_#${setting.fontsize}pt_"\
+                    "#${template.gtst}.tex",
             }
     latex_template = r"""% 生成于: #${template.generate_time}
 \documentclass{article}
@@ -222,31 +250,6 @@ class Config:
 % 设置列表的间距
 \setlist{noitemsep,leftmargin=1em,labelsep=0.1em,topsep=0.1em,partopsep=0.1em}
 
-% 自定义quote环境
-\tcbuselibrary{skins,breakable}
-% 定义新环境：左侧有竖线，整体左缩进0.5em，段首缩进2em
-\renewtcolorbox{quote}[1][]{
-	breakable,
-	enhanced,
-	frame hidden,
-	colback=white,
-	left=0.5em,
-	right=0pt,
-	top=0pt,
-	bottom=0pt,
-	sharp corners,
-	before skip=0.5\baselineskip,
-	after skip=0.5\baselineskip,
-	overlay={
-		\draw[line width=0.3pt, black]([shift={(0.5em, -0.5em)}]frame.north west) -- ([shift={(0.5em, 0.5em)}]frame.south west);
-	},
-	parbox=false,
-	#1
-}
-% 设置环境内段落缩进
-\usepackage{etoolbox}
-\AtBeginEnvironment{quote}{\setlength{\parindent}{2em}}
-
 % 自定义src环境
 \lstset{
     breaklines=true,
@@ -261,10 +264,27 @@ class Config:
     %basicstyle=\ttfamily\small,
 }
 
+% 自定义quote环境
+\renewenvironment{quote}{
+    \par
+    \begin{itemize}
+    \item【Quote】 
+    \item 
+}{
+    \item【EndQuote】
+    \end{itemize}
+}
+
 % 重定义verse环境
-\renewenvironment{verse}
-  {\begin{quote}【Verse】\par}
-  {\end{quote}}
+\renewenvironment{verse}{
+    \par
+    \begin{itemize}
+    \item【Verse】 
+    \item 
+}{
+    \item【EndVerse】
+    \end{itemize}
+}
 
 % 文档信息
 \hypersetup{
@@ -312,6 +332,7 @@ class Config:
 }
 """
     latex_template_setfont = [r"""\setmainfont{#${setting.fontname}}
+\setCJKmainfont{#${setting.fontname}}
 \newcommand{\setsmallf}[1]{\fontsize{#1pt}{#${setting.fontsizes.skip}}\selectfont\CJKfontspec{#${setting.fontname}}}
 """,r"""
 \newcommand{\setsmallf}[1]{\fontsize{#1pt}{#${setting.fontsizes.skip}}\selectfont}
@@ -332,10 +353,11 @@ class Config:
         print(json.dumps(self.cfg_template, ensure_ascii=False, indent='\t'))
     def get_filelist(self):
         """获取文件列表"""
-        filelist : dict[Path, None] = {}  # 单纯是为了作有序的集合
+        filelist : dict[Path, Path] = {}  # 单纯是为了作有序的集合
         whitelist : dict[Path, list[int]] = {}  # 单独添加的文件
         home = self.cfg_f.parent
         for inp_dir in self.cfg["filelist"]:
+            print(f"???: {home/inp_dir}")
             if (home/inp_dir).is_dir():
                 print(f"[INFO] searching '{home/inp_dir}'")
                 fl = set((home/inp_dir).glob("**/*.org"))
@@ -350,8 +372,8 @@ class Config:
                 bl = set()
                 whitelist.update({(home/i).resolve():j for i,j in wl.items() if (home/i).is_file()})
                 wl = {home/i for i in whitelist}
-            filelist |= {i.resolve():None for i in mysorted((fl-bl)|wl)}
-        return list(filelist), whitelist
+            filelist |= {i.resolve():i.absolute() for i in mysorted((fl-bl)|wl)}
+        return [v for _,v in filelist.items()], whitelist
     def get_merged(self) -> tuple[str,str]:
         """生成org文件内容"""
         filelist, whitelist = self.get_filelist()
@@ -360,7 +382,7 @@ class Config:
         print("[INFO] filelist:")
         exportor = TexExport()
         for i in filelist:
-            file = pytools.calculate_relative(i, home)
+            file = pytools.calculate_relative3(i, home)
             filename = str(file)
             if i in whitelist and whitelist[i]:
                 filename += f" {whitelist[i]}"
@@ -391,7 +413,7 @@ class Config:
             s = ["#+begin_quote", f"FILE:【{filename.replace("/", "/ ")}】","#+end_quote",""] + s
             doc = org2.Document(
                     s,
-                    file_name=str(file),
+                    file_name=str(file.resolve()),
                     setting={"verbose_msg":True})
             content += doc.accept(exportor)
         return (f"字数：{len([i for i in content if i not in " \t\n\r\\{}[]"])/1000}k,\n"
@@ -558,7 +580,7 @@ def main():
         if not (args.title or args.author or args.filelist):
             return
     print("[INFO] Config:")
-    __import__('pprint').pprint(config.cfg)
+    pprint.pprint(config.cfg, sort_dicts=False)
     w,c = config.get_merged()
     temp_dict = config.generate_template_dict(w)
     outputf = config.cfg_f.parent/Template2(config.cfg["output"]).safe_substitute(temp_dict)
@@ -581,13 +603,13 @@ def parse_arg() -> argparse.Namespace:
                         help="指定配置文件(不可用时命令行配置才有用)")
     parser.add_argument("-C", "--print-config", action="store_true", help="打印配置文件模板")
     parser.add_argument("-p", "--print-template", action="store_true", help="打印latex模板")
-    parser.add_argument("-r", "--run", action="store_true", help="auto run command")
+    parser.add_argument("-r", "--run", action="store_true", help="自动运行xelatex编译")
     parser.add_argument("-t", "--title", type=str, help="指定标题")
     parser.add_argument("-a", "--author", type=str, help="指定作者")
     parser.add_argument("-f", "--filelist", action="append", help="增设文件列表")
     parser.add_argument("--gen-toc", default=False, nargs='?', const=True,
-                        type=Path, help="generate toc file")
-    parser.add_argument("--analyse-log", type=Path, help="generate toc file")
+                        type=Path, help="生成toc文件")
+    parser.add_argument("-A", "--analyse-log", type=Path, help="分析log文件")
     return parser.parse_args()
 
 if __name__ == "__main__":
