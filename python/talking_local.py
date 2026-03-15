@@ -534,10 +534,16 @@ ${send_window}
 <div class="container">
   <h1>搜索页面</h1>
   <form method="GET" action="/search">
-     <div class="form-group">
+    <div class="form-group">
       <label for="msg">搜索内容(均支持<a href="/about#re">正则表达式</a>):</label><input type="text" name="msg" value="${msg}">
       <label for="user">搜索用户:</label><input type="text" name="user" value="${user}">
       <label for="page_limit">每页展示的消息数:</label><input type="number" name="page_limit" value="${page_limit}">
+      <label for="sort_type">排序方式:</label>
+      <select name="sort_type">
+        <option value="t" selected>时间正序</option>
+        <option value="tr">时间倒序</option>
+        <option value="len">长度</option>
+      </select>
       <label for="cap">不区分大小写:</label><input style="width:auto;" type="checkbox" name="cap"${cap}>
     </div>
     <button type="submit">更新搜索</button>
@@ -1322,6 +1328,11 @@ class System:
                                 re.search(re_str, i.content, flags)]
                 except re.error as e:
                     log_in_file(f"re.search: '{e}' - '{re_str}'", "[WARN]")
+            if querys.get("sort_type") in ("tr", "len"):
+                if querys.get("sort_type") == "tr":
+                    messages.reverse()
+                else:
+                    messages = sorted(messages, key=lambda x:len(x.content))
 
             s,pages = generate_message_list(messages, querys or "", False)
             try:

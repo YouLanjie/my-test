@@ -3,12 +3,12 @@
 
 # 标准库
 from pathlib import Path
-import datetime
 import os
 import time
 import re
 import gzip
 import importlib
+import hashlib
 import threading
 import subprocess
 from typing import Literal
@@ -115,7 +115,8 @@ class Strings:
     pattern = [
             ("link", re.compile(r"^\[\[((?:[^\[\]\\]|\\.)*)(?:\]\[(.*?))?\]\]"), "["),
             ("timestamp",
-             re.compile(r"([\[<])(\d{4})-(\d{2})-(\d{2})(?:\D*(?<= )(\d\d?):(\d{2}).*|.*)[\]>]"), "[<"),
+             re.compile(r"([\[<])(\d{4})-(\d{2})-(\d{2})(?:\D*(?<= )(\d\d?):(\d{2}).*|.*)[\]>]"),
+             "[<"),
             ("fn", re.compile(r"\[fn:([^]]*)\]"), "["),
             ("code", _get_strings_pattern("="), "="),
             ("code", _get_strings_pattern("~"), "~"),
@@ -123,8 +124,8 @@ class Strings:
             ("bold", _get_strings_pattern(r"\*"), "*"),
             ("del", _get_strings_pattern(r"\+"), "+"),
             ("underline", _get_strings_pattern("_"), "_"),
-            ("radio_link", re.compile(r"<<([^<>]+)>>"), "<"),
-            ("radio_link_auto", re.compile(r"<<<([^<>]+)>>>"), "<"),
+            ("radio_link_auto", re.compile(r"<<<(?! )([^<>]+)(?! )>>>"), "<"),
+            ("radio_link", re.compile(r"(?<!<)<<(?! )([^<>]+)(?! )>>(?!>)"), "<"),
             ]
     img_exts=["png", "jpg", "jpeg", "gif", "webp", "svg", "avif"]
     rules = {"code":("<code>","</code>"),
@@ -139,14 +140,21 @@ class Strings:
         if isinstance(node, Root):
             self.upward = node
     def _parse_link_find_chapter(self, s:str) -> tuple[str|None,str]:
-        doc = self.upward.document
+        doc = self.upward.document.status
         level = ""
         obj = None
-        for i in doc.status["table_of_content"]:
+        for i in doc["table_of_content"]:
             if i[-1]["title"].s != s:
                 continue
-            level = "-".join(str(j) for j in i[doc.status["lowest_title"]-1:-1])
+            level = "-".join(str(j) for j in i[doc["lowest_title"]-1:-1])
             obj = f"#org-title-{level}"
+        if not obj:
+            if doc["no_cache"]:
+                return ("", "")
+            if not s in doc["radio_link"]:
+                return (None, "")
+            level = "1" # 暂时未知规律
+            obj = "#"+doc["radio_link"][s]
         return (obj, level.replace("-","."))
     def _parse_link(self, ret, li, last):
         mode = "link"
@@ -210,6 +218,14 @@ class Strings:
         s = f"{chr_typ}{s}{chr_typ2}"
         li.append(["timestamp", s])
         return right_time
+    def _parse_radiolink(self, typ:str, ret:re.Match):
+        if typ not in ("radio_link_auto", "radio_link"):
+            return
+        key = ret.group(1)
+        if key in self.upward.document.status[typ]:
+            return
+        md5 = hashlib.md5(key.encode("utf8")).hexdigest()[:10]
+        self.upward.document.status[typ][key] = f"org-{md5}"
     def orgtext_to_list(self, s:str, is_sub = False) -> list[str]:
         """解释行内字符串变成数组"""
         if not is_sub and self.cache.get(s):
@@ -233,7 +249,8 @@ class Strings:
                 continue
 
             # 识别前一字符是否满足条件（前后条件还不一样）
-            if current_pattern[0] not in ("link", "fn") and i-1 > 0 \
+            if current_pattern[0] not in (
+                    "link", "fn", "radio_link", "radio_link_auto") and i-1 > 0 \
                     and s[i-1] not in " (-\n":
                 i+=1
                 continue
@@ -251,7 +268,8 @@ class Strings:
             elif current_pattern[0] == "fn":
                 li.append([current_pattern[0], ret.group(1)])
             elif current_pattern[0] in ("radio_link", "radio_link_auto"):
-                li.append([current_pattern[0], ret.group(1)])
+                li.append([current_pattern[0], ret.group(1), self.orgtext_to_list(ret.group(1) , True)])
+                self._parse_radiolink(current_pattern[0], ret)
             else:
                 # 其他杂项并嵌套调用
                 li.append([current_pattern[0], self.orgtext_to_list(ret.group(1), True)])
@@ -259,7 +277,7 @@ class Strings:
         if last != i and re.findall(r"[^ ]", s[last:i]):
             # 补充增加前面的纯文本内容(若非空)
             li.append(s[last:i])
-        if not is_sub:
+        if not is_sub and not self.upward.document.status["no_cache"]:
             self.cache[s] = li
         return li
     def get_separator_between(self, ch1:str, ch2:str) -> str:
@@ -322,7 +340,7 @@ class Root:
         self.current = self
     def checkend(self, lines:list[str], i:int) -> tuple[bool,int]:
         """检查结构是否结束"""
-        if not self.opt["childable"] and self.re_end:
+        if not self.opt["childable"] or not self.re_end:
             return False, i
         match = self.re_end.match(lines[i])
         ret = i
@@ -1109,7 +1127,10 @@ class Document:
                         "progress":False,"id_prefix":"","verbose_msg":False}
         self.status = {"lowest_title":50, "clean_up":False, "is_in_src":[],
                        "table_of_content":[], "footnotes":{},
-                       "setupfiles":setupfiles or []}
+                       "radio_link":{}, "radio_link_auto":{},
+                       "setupfiles":setupfiles or [],
+                       "no_cache":True,
+                       }
         self.meta={
             "title":[],
             "date":[],
@@ -1144,8 +1165,10 @@ class Document:
         if self.setting.get("progress"):
             pth = threading.Thread(target=self.print_progress, args=["READING"])
             pth.start()
+        self.pre_process()
         self.build_tree()
         self.merge_text(self.root)
+        self.post_process()
         self.status["clean_up"] = True
         if pth:
             pth.join()
@@ -1166,7 +1189,8 @@ chtml: { scale: 1.0, displayAlign: 'center', displayIndent: '0em' },
 svg: { scale: 1.0, displayAlign: 'center', displayIndent: '0em' },
 output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
 </script>
-<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>"""
+<script id="MathJax-script" \
+async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>"""
     def print_progress(self, typ = "PROGRESS"):
         """打印进度条"""
         if self.status.get("clean_up") is None:
@@ -1195,6 +1219,27 @@ output: { font: 'mathjax-modern', displayOverflow: 'overflow' } };
                 print(f"{typ} [{s}] {progress*100:6.2f}% {self.current_line:10}", end="\r")
                 time.sleep(1/50)
             print("")
+    def pre_process(self):
+        """预处理"""
+    def post_process(self):
+        """后处理"""
+        source = "\n".join(self.lines)
+        pat1 = [i[1] for i in Strings.pattern if i[0] == "radio_link_auto"][0]
+        pat2 = [i[1] for i in Strings.pattern if i[0] == "radio_link"][0]
+        radio_link_auto = {source[:i.span()[0]].count('\n'):i.group(1)
+                           for i in pat1.finditer(source, re.M)}
+        radio_link = {source[:i.span()[0]].count('\n'):i.group(1)
+                      for i in pat2.finditer(source, re.M)}
+        html_exporter = HtmlExportVisitor()
+        # print(radio_link_auto)
+        # print(radio_link)
+        for i in sorted(radio_link_auto|radio_link):
+            ret = self.root.search(i)
+            if not ret:
+                continue
+            # print(i, ret.to_node_tree())
+            ret.line.accept(html_exporter)
+        self.status["no_cache"] = False
     def build_tree(self):
         """构建节点树"""
         rules = [
@@ -2147,11 +2192,27 @@ ${postamble}
             s += f'{i[1]}</span></span>'
             s += last_stat
             return (s, "")
+        def _s_radio_link(i:list, last_stat:str) -> tuple[str,str]:
+            li = node.upward.document.status["radio_link"]
+            if i[1] not in li:
+                node.log(f"未知的定义'{i[1]}'", "WARN")
+                return ("", last_stat)
+            s = f'<a id="{li.get(i[1])}"></a>'
+            return (s, last_stat)
+        def _s_radio_link_auto(i:list, last_stat:str) -> tuple[str,str]:
+            li = node.upward.document.status["radio_link_auto"]
+            if i[1] not in li:
+                node.log(f"未知的定义'{i[1]}'", "WARN")
+                return ("", last_stat)
+            s = f'<a id="{li.get(i[1])}">{self.visit_strings(node, i[2])}</a>'
+            return (s, last_stat)
         process_rules = {"link": _s_link,
                          "img": _s_img,
                          "figure": _s_figure,
                          "fn": _s_fn,
-                         "timestamp":_s_timestamp}
+                         "timestamp":_s_timestamp,
+                         "radio_link":_s_radio_link,
+                         "radio_link_auto":_s_radio_link_auto}
         for i in li:
             if isinstance(i, str):
                 i = escape(i).replace("\n", "<br/>")
@@ -2165,8 +2226,6 @@ ${postamble}
                 ret += f'{node.rules[i[0]][0]}{self.visit_strings(node, i[1])}{node.rules[i[0]][1]}'
                 ret += last_stat
                 last_stat = ""
-            elif i[0] == "radio_link":
-                pass
             else:
                 last_stat = " "
                 ret += escape(str(i))

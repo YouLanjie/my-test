@@ -718,7 +718,11 @@ int create_note_wave(struct Note **pp)
 			if (p->flag&NFLG_LEGATO)    /* fade out */
 				phase *= sigmoid((int32_t)(duration_offset+duration-i)/((double)SAMPLE_RATE/100));
 			if (p->flag&NFLG_LEFT)  buffer[i * 2] += phase;    /* 左声道 */
-			if (p->flag&NFLG_RIGHT) buffer[i*2+1] += phase;    /* 左声道 */
+#ifdef ENABLE_REVERPHASE
+			if (p->flag&NFLG_RIGHT) buffer[i*2+1] -= phase;    /* 右声道 */
+#else
+			if (p->flag&NFLG_RIGHT) buffer[i*2+1] += phase;    /* 右声道 */
+#endif
 		}
 		if (p->bq) {
 			Biquad bq_l = {}, bq_r = {};
