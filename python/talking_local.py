@@ -87,7 +87,7 @@ label {
     color: #34495e;
 }
 
-input, textarea {
+input, textarea, select {
     width: 100%;
     padding: 12px 15px;
     border: 1px solid #ddd;
@@ -368,7 +368,7 @@ label {
     color: #e0e0e0;
 }
 
-input, textarea {
+input, textarea, select {
     background-color: #2d2d3e;
     border: 1px solid #444;
     color: #e0e0e0;
@@ -540,9 +540,7 @@ ${send_window}
       <label for="page_limit">每页展示的消息数:</label><input type="number" name="page_limit" value="${page_limit}">
       <label for="sort_type">排序方式:</label>
       <select name="sort_type">
-        <option value="t" selected>时间正序</option>
-        <option value="tr">时间倒序</option>
-        <option value="len">长度</option>
+        ${sort_type_options}
       </select>
       <label for="cap">不区分大小写:</label><input style="width:auto;" type="checkbox" name="cap"${cap}>
     </div>
@@ -702,6 +700,7 @@ window.onload = function() {
   <p>算了，写起来好累，自己去<a href="https://www.runoob.com/regexp/regexp-syntax.html">这个链接</a>里看教程如果感兴趣的话</p>
   <h2>相关链接:</h2>
   <ul>
+    <li><a href="/more_info">【统计信息】</a></li>
     <li><a href="/self_update">【自动更新按钮】(请勿滥用)</a></li>
     <li><a href="http://${url_self_1}">本程序链接(github)</a></li>
     <li><a href="${url_self_2}">本程序链接(github.io)</a></li>
@@ -710,6 +709,33 @@ window.onload = function() {
   </ul>
   <h2>主题设置</h2>
   <p>当前主题为：<a id="theme-toggle-button" onclick="toggleTheme()">light（点击切换）</a></p>
+</div>
+""", # ==================
+"more_info":"""
+<div class="container">
+  <h1>统计信息</h1>
+  <h2>总体统计</h2>
+  <p>总消息数: ${total_msgs}</p>
+  <p>总消息字符数: ${total_chars}</p>
+  <p>总编辑次数: ${total_edits}</p>
+  <h2>用户统计</h2>
+  <table border="1" style="width:100%; border-collapse: collapse;">
+    <thead>
+      <tr>
+        <th>用户名</th>
+        <th>消息数</th>
+        <th>总字符数</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${user_stats_rows}
+    </tbody>
+  </table>
+
+  <h2>消息详情</h2>
+  <ol>
+      ${message_rows}
+  </ol>
 </div>
 """, # ==================
 "self_update":"""
@@ -1106,7 +1132,9 @@ class System:
         if pager and len(("\n".join(li)).splitlines()) > 12:
             self.print_in_page(li, limit=18)
         else:
-            print("\n".join(li), end="")
+            print("\n".join(li[-20:]), end="")
+            if len(li) > 20:
+                print("\n[NOTE]: 只打印了最新20条消息")
     def select_message(self) -> Union[Message, None]:
         """过滤选择消息"""
         msg_list = {}
@@ -1328,11 +1356,23 @@ class System:
                                 re.search(re_str, i.content, flags)]
                 except re.error as e:
                     log_in_file(f"re.search: '{e}' - '{re_str}'", "[WARN]")
-            if querys.get("sort_type") in ("tr", "len"):
-                if querys.get("sort_type") == "tr":
-                    messages.reverse()
-                else:
-                    messages = sorted(messages, key=lambda x:len(x.content))
+            sort_type = querys.get("sort_type")
+            sort_type_options = {
+                    "t": "时间正序",
+                    "tr": "时间倒序",
+                    "len": "长度",
+                    "lenr": "长度倒序",
+                    }
+            if sort_type not in sort_type_options:
+                sort_type = "t"
+            if sort_type.startswith("len"):
+                messages = sorted(messages, key=lambda x:len(x.content))
+            if sort_type.endswith("r"):
+                messages.reverse()
+            sort_type_options = "".join([
+                '<option value="%s"%s>%s</option>' % (k," selected" if k == sort_type else "",v)
+                for k,v in sort_type_options.items()
+                ])
 
             s,pages = generate_message_list(messages, querys or "", False)
             try:
@@ -1348,7 +1388,8 @@ class System:
                 "user": urllib.parse.unquote(querys.get("user") or ".*"),
                 "msg": urllib.parse.unquote(querys.get("msg") or ".*"),
                 "cap": " checked" if querys.get("cap") else "",
-                "page_limit": limit}
+                "page_limit": limit,
+                "sort_type_options": sort_type_options}
             if not querys.get("user") is None:
                 title = "搜索结果"
             else:
@@ -1416,6 +1457,63 @@ class System:
             meta = """<meta http-equiv="refresh" content="2;url=/?p=last_msg#last_msg">"""
             s = Rescourses.get2("self_update")
             threading.Thread(target=self_update).start()
+        elif tag == "more_info":
+            title = "统计信息"
+            # 总体统计
+            total_msgs = len(self.messages)
+            total_chars = sum(len(m.content) for m in self.messages)
+            total_edits = sum(len(m.edit_history) for m in self.messages)
+
+            # 用户统计
+            user_stats = {}
+            for u in self.users:
+                user_stats[u.id] = {"name": u.name, "count": 0, "total_chars": 0}
+            for m in self.messages:
+                uid = m.owner
+                if uid in user_stats:
+                    user_stats[uid]["count"] += 1
+                    user_stats[uid]["total_chars"] += len(m.content)
+
+            rows = []
+            for uid, stats in user_stats.items():
+                if stats["count"] > 0:
+                    rows.append(
+                        f"<tr><td>{escape(stats['name'])}</td>"
+                        f"<td>{stats['count']}</td>"
+                        f"<td>{stats['total_chars']}</td></tr>"
+                    )
+            user_stats_rows = "\n".join(rows) if rows else "<tr><td colspan='3'>暂无消息</td></tr>"
+
+            # 消息详情
+            user_map = {u.id: u.name for u in self.users}
+            msg_rows = []
+            for m in self.messages:   # 按发送时间正序，若需倒序可反转
+                # 不展示内容
+                mid = escape(m._id)
+                username = escape(user_map.get(m.owner, "<未知用户>"))
+                send_time = escape(get_strtime(m.timestamp))
+                msg_len = len(m.content)
+                edit_count = len(m.edit_history)
+                last_edit = ""
+                if edit_count > 0:
+                    last_edit = escape(get_strtime(m.edit_history[-1]))
+                msg_rows.append(
+                        "<li>"
+                        f"<p>({send_time})@[{username}]<br/>"
+                        f'ID:<a href="/search?id={mid}" style="font-size:10px">{mid}</a><br/>'
+                        f"L:{msg_len} (EC:{edit_count}) LC:{last_edit}</p>"
+                        "</p></li>"
+                )
+            message_rows = "".join(msg_rows) if msg_rows else "<li>暂无消息</li>"
+
+            data = {
+                "total_msgs": total_msgs,
+                "total_chars": total_chars,
+                "total_edits": total_edits,
+                "user_stats_rows": user_stats_rows,
+                "message_rows": message_rows,
+            }
+            s = Rescourses.get("more_info", data)
         else:
             tag = "404"
             title = "404 Page Not Found"
@@ -1441,7 +1539,7 @@ class SimpleWebUI(http.server.SimpleHTTPRequestHandler):
         # 如果访问根路径，返回主页
         if path in ('/', '/userlist', '/login', '/register',
                     '/login', '/dashboard', '/about', '/search',
-                    '/self_update', '/edit'):
+                    '/self_update', '/edit', '/more_info'):
             ip = self.client_address[0]
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
