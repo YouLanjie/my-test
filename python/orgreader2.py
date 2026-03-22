@@ -501,6 +501,7 @@ class Meta(Root):
 
         if self.key == "setupfile":
             if self.value in self.document.status["setupfiles"]:
+                self.log(f"重复的setupfile:{self.value}")
                 return
             self._load_sub_setupfile()
         elif self.key == "seq_todo":
@@ -599,9 +600,11 @@ class Meta(Root):
         setupfile=Path(self.document.setting["file_name"]).parent if self.document.setting["file_name"] else Path()
         setupfile=setupfile/self.value
         setupfile_name = ""
+        obj = self.value
         if setupfile.is_file():
             content = setupfile.read_text(encoding="utf8")
             setupfile_name = str(setupfile)
+            obj = str(setupfile.resolve())
         elif re.match(r"http[s]?://.+", self.value):
             try:
                 req = importlib.import_module("requests").get(self.value, timeout=3)
@@ -618,7 +621,7 @@ class Meta(Root):
                 return
         else:
             self.log(f"异常文件名提示: '{self.value}'")
-        self.document.status["setupfiles"].append(self.value)
+        self.document.status["setupfiles"].append(obj)
         content = str(content).splitlines()
         doc = Document(content,
                        file_name=setupfile_name,

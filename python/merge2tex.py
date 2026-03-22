@@ -14,8 +14,13 @@ import subprocess
 import unicodedata
 import pprint
 
-import pytools
-import orgreader2 as org2
+
+try:
+    from . import pytools
+    from . import orgreader2 as org2
+except ImportError:
+    import pytools
+    import orgreader2 as org2
 
 try:
     from natsort import natsorted as mysorted
@@ -150,7 +155,7 @@ class Config:
                     "top":0.5,
                     "bottom":0.9,  # 由于页码在该边距之外,所以要大点
                     "bindingoffset":.9,
-                    "footskip":6.9, # pt
+                    "footskip":7.0, # pt
                     },
                 "cols":9,
                 "toc_cols":5,
@@ -216,6 +221,14 @@ class Config:
 \let\footnote=\endnote
 % 重新定义显示方式
 \renewcommand{\enoteformat}{\setsmallf{#${setting.fontsize}}(\theenmark.)}
+\let\oldtheendnotes=\theendnotes
+\makeatletter
+\renewcommand{\theendnotes}{%
+  \if@haveenotes
+    \oldtheendnotes
+  \fi
+}
+\makeatother
 \def\enoteheading{\section*{【尾注】}}
 
 % 使用 titlesec 重新定义标题格式，保持目录功能
@@ -351,13 +364,12 @@ class Config:
     def print_config_template(self):
         """打印模板json"""
         print(json.dumps(self.cfg_template, ensure_ascii=False, indent='\t'))
-    def get_filelist(self):
+    def get_filelist(self, print=print):
         """获取文件列表"""
         filelist : dict[Path, Path] = {}  # 单纯是为了作有序的集合
         whitelist : dict[Path, list[int]] = {}  # 单独添加的文件
         home = self.cfg_f.parent
         for inp_dir in self.cfg["filelist"]:
-            print(f"???: {home/inp_dir}")
             if (home/inp_dir).is_dir():
                 print(f"[INFO] searching '{home/inp_dir}'")
                 fl = set((home/inp_dir).glob("**/*.org"))
@@ -607,7 +619,7 @@ def parse_arg() -> argparse.Namespace:
     parser.add_argument("-t", "--title", type=str, help="指定标题")
     parser.add_argument("-a", "--author", type=str, help="指定作者")
     parser.add_argument("-f", "--filelist", action="append", help="增设文件列表")
-    parser.add_argument("--gen-toc", default=False, nargs='?', const=True,
+    parser.add_argument("-G", "--gen-toc", default=False, nargs='?', const=True,
                         type=Path, help="生成toc文件")
     parser.add_argument("-A", "--analyse-log", type=Path, help="分析log文件")
     return parser.parse_args()
