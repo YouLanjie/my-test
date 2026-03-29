@@ -5,8 +5,9 @@
 
 from string import Template
 from pathlib import Path
-from collections import Counter
+from collections import Counter,deque
 import time
+import sys
 import json
 import argparse
 import re
@@ -536,14 +537,66 @@ def analyse_texlog(s:str, source:str=""):
     if "Overfull" in s:
         _analyse_too_wide(s, sg)
 
-def build_tex(config, outputf, tex):
+def build_tex(config, outputf:Path, tex):
     """运行xelatex编译tex文件"""
+    def seconds_to_hms(seconds):
+        """将秒数转换为 HH:MM:SS 格式"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    def run_xelatex(total_time=0.0, total_page=0.0):
+        pat_pages = re.compile(r"^\[(\d+)\]|^Output written on .* \((\d+) pages?\)")
+        cmd = ["xelatex", outputf]
+        t1 = time.time()
+        t2 = t1
+        now_page = 0
+        log = deque(maxlen=20)
+        p = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                bufsize=1)
+        if not p.stdout:
+            p.terminate()
+            raise subprocess.CalledProcessError(p.returncode, cmd)
+        while p.poll() is None:
+            i = p.stdout.readline()[:-1]
+            log.append(i)
+            if ret := pat_pages.match(i):
+                t2 = time.time()
+                now_page = int(ret.group(1) or ret.group(2))
+                hint = f" ({(now_page)/total_page*100:.1f}%) 剩余{int(total_time+10-t2+t1)}秒  " \
+                        if total_page else ""
+                print(f"[{seconds_to_hms(t2-t1)}] 进度:第{now_page}页{hint}", end="\r")
+            sys.stdout.flush()
+        p.wait()
+        if now_page:
+            print(f"\n[INFO] 共生成{now_page}页耗时{t2-t1:.2f}秒")
+        if p.returncode:
+            pytools.print_err("[WARN] 遇到错误，最后20行输出：")
+            pytools.print_err("\n".join(log))
+            raise subprocess.CalledProcessError(p.returncode, cmd)
+        return t2-t1, now_page
+
     print(f"[INFO] 自动构建'{outputf}'")
     try:
-        if config.cfg["setting"]["mktoc"]:
-            subprocess.run(["xelatex", outputf], stdin=subprocess.DEVNULL, check=True)
-        subprocess.run(["xelatex", outputf], stdin=subprocess.DEVNULL, check=True)
+        total_time, total_page = 0, 0
         logfile = outputf.parent/(outputf.stem+".log")
+        if config.cfg["setting"]["mktoc"]:
+            total_time,total_page = run_xelatex()
+            if logfile.is_file():
+                s = logfile.read_text()
+                if sys.stderr and sys.stderr.isatty():
+                    print("\033[2m", end="", file=sys.stderr)
+                analyse_texlog(s, tex)
+                if sys.stderr and sys.stderr.isatty():
+                    print("\033[0m", end="", file=sys.stderr)
+                    sys.stderr.flush()
+            print("[INFO] 执行第二遍编译")
+        run_xelatex(total_time, total_page)
         if logfile.is_file():
             s = logfile.read_text()
             analyse_texlog(s, tex)
