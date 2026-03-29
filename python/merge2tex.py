@@ -483,9 +483,12 @@ def _analyse_fonts(s:str, sg:list[str]):
         r"Missing character: There is no (.*?U\+([^)]+).*?) in font (.*)", s)):
         try:
             c = chr(int(i[1], 16))
+        except ValueError:
+            continue
+        charlist.add(c)
+        try:
             hint = unicodedata.name(c).lower()
             hint = f" ({hint})"
-            charlist.add(c)
         except ValueError:
             hint = ""
         warn.append(f"({i[2]}): {i[0]}{hint}")
@@ -500,12 +503,14 @@ def _analyse_fonts(s:str, sg:list[str]):
             if not c in found:
                 found[c] = []
             found[c] += [num]*(len(line.split(c))-1)
-    for i,nums in found.items():
+    for i,nums in list(found.items())[:20]:
         pytools.print_err(f"[INFO] 对于字符{repr(i)}共有{len(set(nums))}行{len(nums)}处分布:")
         for num in sorted(set(nums))[:20]:
             pytools.print_err(f"  L.{num}: {sg[num][:30]}{"" if len(sg[num]) < 30 else "..."}")
         if len(set(nums)) > 20:
             pytools.print_err("    ......")
+    if len(found) > 20:
+        pytools.print_err(f"[INFO] 此外还有{len(found)-20}个缺失字符未被列出")
 
 def _analyse_too_wide(s:str, sg:list[str]):
     reported = []
@@ -647,6 +652,9 @@ def main():
     print("[INFO] Config:")
     pprint.pprint(config.cfg, sort_dicts=False)
     w,c = config.get_merged()
+    if w:
+        print("[INFO] 统计信息：")
+        print(w.strip())
     temp_dict = config.generate_template_dict(w)
     outputf = config.cfg_f.parent/Template2(config.cfg["output"]).safe_substitute(temp_dict)
 
