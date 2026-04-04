@@ -16,7 +16,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 
-#define BUFSIZE (1024*1024)
+#define BUFSIZE (1024*1024*5)
 
 int main(int argc, char *argv[])
 {
@@ -33,12 +33,13 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 	int operator = 0;
-	if (argc >= 3 - !tty) sscanf(argv[2-!tty], "%d", &operator);
+	if (argc >= 3 - !tty) operator = atoi(argv[2-!tty]);;
 	uint8_t buffer[BUFSIZE] = {0};
 	size_t size = 0;
 	while ((size = fread(buffer, 1, BUFSIZE, fp)) > 0) {
 		for (int i = 0; i<size; buffer[i]^=operator,i++);
-		fwrite(buffer, 1, size, stdout);
+		/*fwrite(buffer, sizeof(*buffer), size, stdout);*/
+		write(STDOUT_FILENO, buffer, size);
 	}
 	if (tty) fclose(fp);
 	return 0;
