@@ -221,8 +221,9 @@ class VideosList:
             CONFIG["name_format"] = "auto"
         for i in self.content:
             for j in i:
+                ind_width=len(str(max(i, key=lambda x: x.index).index)) if len(i)>1 else 0
                 j.reset_title(CONFIG["name_format"],
-                              ind_width=len(str(max(i, key=lambda x: x.index))) if len(i)>1 else 0)
+                              ind_width=ind_width)
         for i,vid in enumerate(self.content):
             self.content[i] = sorted(vid, key=lambda x:x.page, reverse=not CONFIG["sort_reverse"])
 
