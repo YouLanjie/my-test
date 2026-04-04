@@ -12,27 +12,35 @@
 
 
 #include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <unistd.h>
+
+#define BUFSIZE (1024*1024)
 
 int main(int argc, char *argv[])
 {
-	if (argc < 2) {
-		fprintf(stderr, "Usage: flip <FILE> [NUM]\n");
+	bool tty = isatty(STDIN_FILENO);
+	if (argc < 2 && tty) {
+		fprintf(stderr,
+			"Usage: flip <FILE> [NUM]\n"
+			"       flip [NUM] < ./FILE\n");
 		return 1;
 	}
-	FILE *fp = fopen(argv[1], "rb");
+	FILE *fp = tty ? fopen(argv[1], "rb") : stdin;
 	if (!fp) {
 		fprintf(stderr, "打开文件失败：%s\n", argv[1]);
 		return 1;
 	}
 	int operator = 0;
-	if (argc >= 3) sscanf(argv[2], "%d", &operator);
-	int c = 0;
-	while (((c = fgetc(fp)) && 0) || c != EOF) {
-		c ^= operator;
-		putc(c, stdout);
+	if (argc >= 3 - !tty) sscanf(argv[2-!tty], "%d", &operator);
+	uint8_t buffer[BUFSIZE] = {0};
+	size_t size = 0;
+	while ((size = fread(buffer, 1, BUFSIZE, fp)) > 0) {
+		for (int i = 0; i<size; buffer[i]^=operator,i++);
+		fwrite(buffer, 1, size, stdout);
 	}
-	fclose(fp);
+	if (tty) fclose(fp);
 	return 0;
 }
-
 
