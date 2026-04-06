@@ -104,15 +104,17 @@ class Video():
         return [self.owner, self.title, "AV"+self.avid, self.bvid, self.dir_self]
     def reset_title(self, mode="auto", ind_width=0):
         """根据给出模式重新设置总标题"""
+        ind_str = ""
+        if ind_width and CONFIG["index_name"]:
+            ind_str = f"[P{self.index:0{ind_width}d}] "
         if mode == "maintitle":
             self.title = self.maintitle
         elif mode == "part":
             self.title = self.part
+        elif mode == "part_withp":
+            self.title = ind_str + self.part
         else:
             self.title = self.maintitle
-            ind_str = ""
-            if ind_width and CONFIG["index_name"]:
-                ind_str = f"[P{self.index:0{ind_width}d}] "
             if self.part not in ("None", "", self.maintitle) and \
                     not self.part.startswith(("Video_", "studio_video_")):
                 self.title = f"{self.part} - {self.title}" if mode == "auto_reverse" \
@@ -216,14 +218,13 @@ class VideosList:
                 return x[0].size
             return x[0].timestamp
         self.content = sorted(self.content, key=sort_key, reverse=CONFIG["sort_reverse"])
-        title_mode = ("maintitle", "part", "auto", "auto_reverse")
+        title_mode = ("maintitle", "part", "part_withp" , "auto", "auto_reverse")
         if CONFIG["name_format"] not in title_mode:
             CONFIG["name_format"] = "auto"
         for i in self.content:
             for j in i:
                 ind_width=len(str(max(i, key=lambda x: x.index).index)) if len(i)>1 else 0
-                j.reset_title(CONFIG["name_format"],
-                              ind_width=ind_width)
+                j.reset_title(CONFIG["name_format"], ind_width=ind_width)
         for i,vid in enumerate(self.content):
             self.content[i] = sorted(vid, key=lambda x:x.page, reverse=not CONFIG["sort_reverse"])
 
@@ -520,9 +521,9 @@ class Ui():
                 self.collection = []
             elif inp == "a":
                 self.collection = list(range(len(cont)))
-            elif inp in "1234":
+            elif inp in "12345":
                 title_mode = {"1":"maintitle", "2":"part", "3":"auto",
-                              "4":"auto_reverse"}
+                              "4":"auto_reverse", "5":"part_withp"}
                 CONFIG["name_format"] = title_mode[inp]
                 self.vl.refresh_list()
             elif inp == "5":

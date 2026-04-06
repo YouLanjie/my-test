@@ -1,82 +1,56 @@
-#include "tools.h"
+#include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <dirent.h>
+#include <string.h>
+
+char *dirtypes[][2] = {
+	[DT_UNKNOWN]
+		  = {"未  知", "31"},
+	[DT_FIFO] = {"管  道", "37"},
+	[DT_CHR]  = {"块设备", "33"},
+	[DT_DIR]  = {"文件夹", "34"},
+	[DT_BLK]  = {"存  储", "33"},
+	[DT_REG]  = {"文  件", "37"},
+	[DT_LNK]  = {"链  接", "36"},
+	[DT_SOCK] = {"套接字", "35"},
+	[DT_WHT]  = {"啥玩意", "44"},
+};
+int typeslen = sizeof(dirtypes)/sizeof(dirtypes[0]);
+
+void listdir(char *dirname)
+{
+	if (!dirname) return;
+	DIR *dp = opendir(dirname);
+	if (!dp) {
+		fprintf(stderr, "ERROR 无法打开文件夹:%s\n", dirname);
+		fprintf(stderr, "ERROR 错误信息: %s\n", strerror(errno));
+		return;
+	}
+	printf("\033[1;33m%s :\033[0m\n", dirname);
+	struct dirent *dp_item = NULL;
+	for (;;) {
+		if ((dp_item = readdir(dp)) == NULL) break;
+		uint8_t type = dp_item->d_type;
+		if (type >= typeslen) type = DT_UNKNOWN;
+		printf("%6s  ||  \033[1;%sm%s\033[0m\n",
+		       dirtypes[type][0], dirtypes[type][1],
+		       dp_item->d_name);
+	}
+	closedir(dp);
+	printf("\033[1;36m==================\033[0m\n");
+}
 
 int main(int argc, char *argv[])
 {
-	char dirname[501];
-	DIR *dp;
-	struct dirent *name;
-
+	printf("\033[1;33m类  型  ||  名  字\n"
+	       "\033[1;36m==================\033[0m\n");
 	if (argc == 1) {
-		printf("input dir name\n");
-		fgets(dirname, 501, stdin);
-		dirname[strlen(dirname) - 1] = '\0';
-		dp = opendir(dirname);
-	} else {
-		printf("\033[1;33m类  型  ||  名  字\n"
-		       "\033[1;36m==================\033[0m\n");
-		for (int count = 1; count < argc; count++) {
-			dp = opendir(argv[count]);
-			printf("\033[1;33m%s :\033[0m\n", argv[count]);
-			if (!dp) {
-				perror(argv[count]);
-				printf("\033[1;36m==================\033[0m\n");
-				continue;
-			}
-			name = readdir(dp);
-			while (name) {
-				if (strcmp(".", name->d_name) == 0 || strcmp("..", name->d_name) == 0) {
-					name = readdir(dp);
-					continue;
-				}
-				if (name->d_type == 2) {
-					printf("块设备  ||  \033[1;33m");
-				} else if (name->d_type == 4) {
-					printf("文件夹  ||  \033[1;34m");
-				} else if (name->d_type == 6) {
-					printf("存  储  ||  \033[1;33m");
-				} else if (name->d_type == 8) {
-					printf("文  件  ||  \033[1;37m");
-				} else if (name->d_type == 10) {
-					printf("链  接  ||  \033[1;36m");
-				} else if (name->d_type == 12) {
-					printf("套接字  ||  \033[1;35m");
-				}
-				printf("%s\033[0m\n", name->d_name);
-				name = readdir(dp);
-			}
-			closedir(dp);
-			printf("\033[1;36m==================\033[0m\n");
-		}
+		listdir("./");
 		return 0;
 	}
-	if (!dp) {
-		printf("\033[1;31m[Error]\033[0m\n");
-		perror(dirname);
-		return 0;
+	while (--argc && ++argv) {
+		listdir(*argv);
 	}
-	printf("\033[1;36m类  型  ||  名  字\n==================\033[0m\n");
-	name = readdir(dp);
-	while (name) {
-		if (strcmp(".", name->d_name) == 0 || strcmp("..", name->d_name) == 0) {
-			name = readdir(dp);
-			continue;
-		}
-		if (name->d_type == 2) {
-			printf("块设备  ||  \033[1;33m");
-		} else if (name->d_type == 4) {
-			printf("文件夹  ||  \033[1;34m");
-		} else if (name->d_type == 6) {
-			printf("存  储  ||  \033[1;33m");
-		} else if (name->d_type == 8) {
-			printf("文  件  ||  \033[1;37m");
-		} else if (name->d_type == 10) {
-			printf("链  接  ||  \033[1;36m");
-		} else if (name->d_type == 12) {
-			printf("套接字  ||  \033[1;35m");
-		}
-		printf("%s\033[0m\n", name->d_name);
-		name = readdir(dp);
-	}
-	closedir(dp);
 	return 0;
 }

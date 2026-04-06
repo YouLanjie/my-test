@@ -1330,7 +1330,7 @@ class System:
                 "send_window": Rescourses.get("send_window" if self.now_user.get(ip) \
                         else "send_window2", {}),
                 "pages":pages}
-            title = "Python聊天室"
+            title = "消息列表"
         elif tag == "search":
             userlist = {u.id:u.name for u in self.users}
             messages = self.messages
@@ -1525,7 +1525,7 @@ class System:
                 s = tmp
         s = Rescourses.get("template", {
             "content":s,
-            "meta":meta, "title":f"{title} - {ip}",
+            "meta":meta, "title":f"【Py聊天室】{title} - {ip}",
             "loginstatus":loginstatus})
         return s
 

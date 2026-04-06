@@ -22,9 +22,14 @@ get_mem_by_grep() {
 		tag="msedge"
 	fi
 	echo "TAG:     '$tag'"
-	pslist=$(ps aux)
+	pslist=$(ps auxww)
 	pslist=$(echo "$pslist"|grep "$tag")
-	for i in $(echo "$pslist"|awk '{print $2}')
+	if [[ $pslist == "" ]];then
+		echo "WARN: no matches of '$tag'" >&2
+		return 1
+	fi
+	sum=$(echo "$pslist"|awk '{print $2}')
+	for i in $sum
 	do
 		if [[ ! -f "/proc/$i/status" ]];then continue;fi
 		if [[ $i == $$ ]];then continue;fi
@@ -65,7 +70,7 @@ get_mem_by_grep_and_save() {
 }
 
 get_mem_split_by_user() {
-	ps aux | awk '{users[$1] += $6} END {for (u in users) printf "%-10s %s MB\n",u,users[u]/1024}'
+	ps auxww | awk '{users[$1] += $6} END {for (u in users) printf "%-10s %s MB\n",u,users[u]/1024}'
 }
 
 get_pacman_pkg_size_list() {
