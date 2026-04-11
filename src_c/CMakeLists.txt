@@ -11,7 +11,8 @@ set(LIB_REQUIRE_M
 	input
 	neuro
 	social
-	libav_test)
+	libav_test
+	render3d)
 
 
 file(GLOB APP_SOURCES "./*.c")
