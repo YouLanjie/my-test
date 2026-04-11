@@ -2,13 +2,11 @@
  * @file        render3d.c
  * @author      u0_a221
  * @date        2026-04-06
- * @brief       简要描述该文件的作用
+ * @brief       通过ascii艺术画形式“渲染”伪3D画面
  */
 
 #include "tools.h"
 #include <math.h>
-#include <stdlib.h>
-#include <time.h>
 
 /* 辅助程序(Py)：
 str(list([(k/10,i,j), (i, j, k/10), (i, k/10, j)] for k in range(-10, 10) for j in range(-1, 2, 2) for i in range(-1, 2, 2))).replace("(","{").repla ce(")","}").replace("[","").replace("]","").replace(" ","")
