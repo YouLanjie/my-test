@@ -16,10 +16,12 @@ str(list([(k/10,i,j), (i, j, k/10), (i, k/10, j)] for k in range(-10, 10) for j 
 #ifndef FPS
 #define FPS 40
 #endif
-#define MAX_FRAME 10000
+#define MAX_FRAME 100000
 /* 虚拟投影屏幕边界大小(非实际显示)，效果类似视差？
  * 值越大视角越窄(除非终端够大)透视效果越不明显 */
-#define VIEW_SCALE 30
+uint8_t VIEW_SCALE = 30;
+uint8_t VIEW_DEPT  = 7;
+double VIEW_OFFSETY = 0;
 
 static const char CHRTABLE[] = {
 	"$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft"
@@ -28,47 +30,94 @@ static const char CHRTABLE[] = {
 static const int MAXCHR = sizeof(CHRTABLE)-2;
 /*#define LENOF(var) (sizeof(var)/sizeof(*var))*/
 
-int scr_h = 0, scr_w = 0, scr_s = 0;
-char *scr = NULL;
+typedef struct {
+	char *scr;
+	size_t h;
+	size_t w;
+	size_t size;
+} Scr_t;
+
+Scr_t *scr_create(size_t width, size_t height)
+{
+	if (width == 0 || height == 0) return NULL;
+	Scr_t *p = malloc(sizeof(*p));
+	size_t size = width * height + 1;
+	*p = (Scr_t){
+		.scr = malloc(size),
+		.h = height,
+		.w = width,
+		.size = size,
+	};
+	memset(p->scr, MAXCHR, p->size);
+	return p;
+}
+
+void scr_free(Scr_t **p)
+{
+	if (!p || !*p) return;
+	free((*p)->scr);
+	free(*p);
+	*p = NULL;
+}
 
 /* x,y : [0, MAX)
- * return: 可操作的字符指针 */
-char *scr_p(int x, int y)
+ * return: 屏幕字符指针或NULL */
+char *scr_p(Scr_t *s, int x, int y)
 {
-	static char c = 0;
-	if (x < 0 || x >= scr_w || y < 0 || y >= scr_h) return &c;
-	return scr + y*scr_w + x;
+	if (!s) return NULL;
+	if (x < 0 || x >= s->w || y < 0 || y >= s->h) return NULL;
+	return s->scr + y*s->w + x;
 }
-#define SCRC(x,y) scr_p(scr_w/2+(int)(x), scr_h/2-(int)(y))
-
-/* 灰度映射 与打印前安全处理 */
-void scr_update()
+/* 中央原点屏幕坐标系 转换成 左上角原点屏幕坐标系 */
+char *scr_c(Scr_t *s, int x, int y)
 {
+	if (!s) return NULL;
+	return scr_p(s, s->w/2+(int)(x), s->h/2-(int)(y));
+}
+
+/* 灰度映射 打印前安全处理 打印 重置屏幕 */
+void scr_print(Scr_t *s)
+{
+	if (!s) return;
 	static int j = 0;
 	static int c = 0;
-	for (j = 0; j < scr_s; j++) {
-		c = scr[j] > MAXCHR ? MAXCHR : (uint32_t)scr[j];
-		scr[j] = CHRTABLE[c];
+	for (j = 0; j < s->size; j++) {
+		c = s->scr[j] > MAXCHR ? MAXCHR : (uint32_t)s->scr[j];
+		s->scr[j] = CHRTABLE[c];
 	}
-	for (j = 0; j < scr_h; j++) scr[scr_w*(j+1)-1] = '\n';
-	scr[scr_s-1] = 0;
+	for (j = 0; j < s->h; j++) s->scr[s->w*(j+1)-1] = '\n';
+	s->scr[s->size-1] = 0;
+	printf("\033[H%s", s->scr);
+	memset(s->scr, MAXCHR, s->size);
 }
 
 
-/* 点 | 物体 */
+/* 向量 | 点 | 物体 */
 typedef struct {
 	double x;
 	double y;
 	double z;
-} Point_t;
+} Vec_t, Point_t;
+
+/* 将点投影到虚拟屏幕上 */
+void point_cast(Point_t p, Scr_t *s)
+{
+	if (p.z >= 0) return;
+	char *scrp = scr_c(s,
+			   p.x/-p.z*VIEW_SCALE,
+			   (p.y+VIEW_OFFSETY)/-p.z*VIEW_SCALE);
+	if (!scrp) return;
+	uint8_t dept = -p.z*MAXCHR/VIEW_DEPT;
+	if (dept> MAXCHR) dept = MAXCHR;
+	if (*scrp > dept) *scrp = dept;
+	return;
+}
 
 typedef struct {
 	Point_t center;
 	size_t count_point;
 	Point_t *points;
 } Obj_t;
-
-Obj_t *block = NULL;
 
 /* 创建物体 */
 Obj_t *obj_create(int size, Point_t center, Point_t *points)
@@ -92,84 +141,137 @@ void obj_free(Obj_t **obj)
 	*obj = NULL;
 }
 
-/* 将点投影到虚拟屏幕上 */
-void point2scr(Point_t p)
+/* 绕y轴旋转 */
+void obj_rotate_y(Obj_t *obj, double theta)
 {
-	if (p.z >= 0) return;
-	char *scrp = SCRC(p.x/-p.z*VIEW_SCALE, p.y/-p.z*VIEW_SCALE);
-	if (*scrp > (-p.z)) *scrp = (-p.z);
+	if (!obj || !obj->points || !theta) return;
+#ifdef NO_ROTATE
 	return;
-}
-
-/* 单帧动画处理 */
-void frame()
-{
-	static int j = 0;
-	static double theta = M_PI/FPS;
-	static double step = 0.10, dstep = 0.001;
-	static double vx = 0, vy = 0;
-	if (vx == 0 && vy == 0) {
-		srand(time(NULL));
-		vx = (double)(rand() % 1000 - 500) / 10000;
-		vy = (double)(rand() % 1000 - 500) / 10000;
-	}
-#define P block->points[j]
-#define CP block->center
-#define RP(v) (P.v - CP.v)
-	if (step < 0 && CP.z >= -1) {
-		dstep += 0.003;
-		step = -step + dstep/5;
-		if (step > 0.2) {
-			step = 0.1;
-			dstep = 0.001;
-		}
-		theta *= 2;
-		vx = (double)(rand() % 1000 - 500) / 10000;
-		vy = (double)(rand() % 1000 - 500) / 10000;
-	}
+#endif
+	Point_t *p = obj->points,
+		*C = &obj->center;
 	double s = sin(theta), c = cos(theta);
-#ifndef NO_ROTATE
-	for (j = 0 ; j < block->count_point; j++) {
-		P = (Point_t){
-			.x = RP(x)*c-RP(z)*s + CP.x,
-			.y = P.y,
-			.z = RP(x)*s+RP(z)*c + CP.z,
+#define RP(v) (p->v - C->v)
+	for (int j = 0 ; j < obj->count_point; j++,p++) {
+		*p = (Point_t){
+			.x = RP(x)*c-RP(z)*s + C->x,
+			.y = p->y,
+			.z = RP(x)*s+RP(z)*c + C->z,
 		};
 	}
-#endif
-	if (CP.x > 1 || CP.x < -1) vx = -vx;
-	if (CP.y > 1 || CP.y < -1) vy = -vy;
-	for (j = 0 ; j < block->count_point; j++) {
-		P.x += vx;
-		P.y += vy;
-		P.z -= step;
-	}
-	CP.x += vx;
-	CP.y += vy;
-	CP.z -= step;
-	for (j = 0 ; j < block->count_point; j++) point2scr(P);
-	step -= dstep;
-	if (theta > M_PI/FPS) theta *= 0.7;
-	else theta *= 0.99;
 #undef RP
+}
+
+/* 沿给定的Vec方向移动 */
+void obj_shift(Obj_t *obj, Vec_t v)
+{
+	if (!obj || !obj->points) return;
+	Point_t *p = &obj->center;
+	for (int j = -1 ; j < (int64_t)obj->count_point; j++,p++) {
+		if (j == 0) p = obj->points;
+		*p = (Point_t){
+			.x = p->x + v.x,
+			.y = p->y + v.y,
+			.z = p->z + v.z,
+		};
+	}
+}
+
+void obj_cast(Obj_t *obj, Scr_t *scr)
+{
+	static int j = 0;
+	for (j = 0 ; j < obj->count_point; j++)
+		point_cast(obj->points[j], scr);
+}
+
+Obj_t *obj_line_from_point(Point_t t1, Point_t t2, size_t count)
+{
+	if (count == 0 || count > 1024) return NULL;
+	Point_t dt = (Point_t){
+			.x = t2.x-t1.x,
+			.y = t2.y-t1.y,
+			.z = t2.z-t1.z},
+		t[count];
+	for (int i = 0; i < count && i < (sizeof(t)/sizeof(*t)); i++) {
+#define P(var) t[i].var = t1.var + (double)i/count*dt.var
+		P(x);
+		P(y);
+		P(z);
+#undef P
+	}
+	dt = (Point_t){ .x = (t1.x+t2.x)/2,
+			.y = (t1.y+t2.y)/2,
+			.z = (t1.z+t2.z)/2};
+	return obj_create(count, dt, t);
+}
+
+/* 单帧动画处理
+ * 输入处理*/
+bool frame(Obj_t *obj, double *theta, Vec_t *v)
+{
+	if (!obj) return false;
+	static bool suspend = false;
+
+	/* 输入处理 */
+	switch (kbhitGetchar()) {
+	case ' ': v->y += 0.04; break;
+	case 'w': v->z -= 0.01; break;
+	case 's': v->z += 0.01; break;
+	case 'a': v->x -= 0.01; break;
+	case 'd': v->x += 0.01; break;
+	case 'j': *theta += 0.001*M_PI; break;
+	case 'k': *theta -= 0.001*M_PI; break;
+	case '-': VIEW_SCALE -= 1; break;
+	case '=': VIEW_SCALE += 1; break;
+	case 'W': VIEW_OFFSETY+=0.01; break;
+	case 'S': VIEW_OFFSETY-=0.01; break;
+	case 'p': suspend=!suspend; break;
+	case 'q': return true; break;
+	}
+	if (suspend) return false;
+
+#define P obj->points[j]
+#define CP obj->center
+	obj_rotate_y(obj, *theta);
+	obj_shift(obj, *v);
+
+	/* 速度衰减 */
+	v->x *= 0.99;
+	v->z *= 0.99;
+	*theta *= 0.999;
+	/* 自然下落 */
+	v->y -= 0.098/FPS;
+
+	/* 类似碰撞处理 */
+#define BOX(var, min, max, rate) \
+	if ((CP.var > (max) && v->var > 0) || (CP.var < (min) && v->var < 0)) \
+	v->var *= (rate);
+	BOX(x, -5, 5, -0.7);
+	BOX(z, -20, 0, -0.7);
+	BOX(y, -1, 20, -0.5);
+#undef BOX
+
 #undef CP
 #undef P
-	return;
+	return false;
 }
 
 
 int main(void)
 {
-	scr_h = get_winsize_row() - 5;
-	scr_w = get_winsize_col() - 5;
-	scr_s = scr_w*scr_h+1;
+	int scr_h = get_winsize_row() - 5,
+	    scr_w = get_winsize_col() - 5;
 	if (scr_h <= 10 || scr_w <= 10) {
-		LOG("终端太小");
+		LOG("终端太小(当前可用尺寸：%dx%d)", scr_w, scr_h);
 		return 0;
 	}
-	scr = malloc(scr_s);
-	block = obj_create(5*48+ 5*17-1,
-			(Point_t){0, 0, 0},
+	Scr_t *scr = scr_create(scr_w, scr_h);
+	Obj_t *line[2] = {
+		obj_line_from_point((Point_t){-2,-1,1}, (Point_t){-2,-1,-10}, 50),
+		obj_line_from_point((Point_t){2,-1,1}, (Point_t){2,-1,-10}, 50)
+	};
+	Obj_t *block = obj_create(5*48+ 5*17-1,
+			(Point_t){0, -1, 0},
 			(Point_t[]){
 {-1.0,-1,-1},{-1,-1,-1.0},{-1,-1.0,-1},{-1.0,1,-1},{1,-1,-1.0},
 {1,-1.0,-1},{-1.0,-1,1},{-1,1,-1.0},{-1,-1.0,1},{-1.0,1,1},
@@ -238,31 +340,40 @@ int main(void)
 {0.6,-0.6,0},{-0.9,-0.7,0},{-0.7,-0.7,0},{-0.4,-0.7,0},{-0.2,-0.7,0},
 {0.2,-0.7,0},{0.5,-0.7,0},{0.7,-0.7,0},{0.1,-0.8,0},
 			});
+	/* 移动到离屏幕远一点的地方 */
+	obj_shift(block, (Vec_t){.x=0,.y=1,.z=-4});
+	obj_rotate_y(block, -M_PI*5/FPS);
+
+	double theta = M_PI/8/FPS;
+	Vec_t v = (Vec_t){
+		.x = 0,
+		.y = 0.05,
+		.z = 0.08,
+	};
 
 	printf("\x1b[2J");
 	int i = 0;
 	for (i = 0; i < MAX_FRAME; ++i) {
-		memset(scr, MAXCHR, scr_s);
+		if (frame(block, &theta, &v)) break;
+		obj_cast(line[0], scr);
+		obj_cast(line[1], scr);
+		obj_cast(block, scr);
+		scr_print(scr);
 
-		frame();
-		scr_update();
-
-		printf("\033[H%s", scr);
-		printf("=> FPS: %d, FRAME: %d\n", FPS, i);
-		printf("=> CP xyz: %.3f, %.3f, %.3f\n",
+		printf("=> FPS: %d, VIEW_SCALE: %d, VIEW_DEPT: %d, FRAME: %d \n",
+		       FPS, VIEW_SCALE, VIEW_DEPT, i);
+		printf("=> Center xyz: %.3f, %.3f, %.3f \n",
 		       block->center.x,
 		       block->center.y,
 		       block->center.z
 		       );
-		printf("=> P[0] xyz: %.3f, %.3f, %.3f\n",
-		       block->points[0].x,
-		       block->points[0].y,
-		       block->points[0].z
-		       );
+		printf("=> Speed xyzr: %.3f, %6.3f, %.3f, %.3fr/s \n",
+		       v.x, v.y, v.z, (theta*FPS)/(2*M_PI));
 		usleep(SECOND/FPS);
 	}
 	obj_free(&block);
-	free(scr);
+	scr_free(&scr);
+	printf("[INFO] 退出程序\n");
 	return 0;
 }
 
