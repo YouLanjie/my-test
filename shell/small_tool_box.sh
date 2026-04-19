@@ -73,6 +73,11 @@ get_mem_split_by_user() {
 	ps auxww | awk '{users[$1] += $6} END {for (u in users) printf "%-10s %s MB\n",u,users[u]/1024}'
 }
 
+get_sorted_pcpu() {
+	pslist="$(ps -o "times,etimes,pid,comm" axww --sort=pcpu --no-headers)"
+	echo "$pslist"|awk '{printf "%-6s %6.3f%% %s\n",$3,$1/$2*100,$4}'
+}
+
 get_pacman_pkg_size_list() {
 	#pacman -Qi|grep '名字\|安装后大小'|sed 's/.* : //'|sed 'N;s/\n/ /'|\
 		#awk '{if ($3 == "MiB"){printf "%15.3f %s\n",$2*1024,$1}else{printf "%15.3f %s\n",$2,$1}}'|sort -n

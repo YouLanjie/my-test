@@ -367,7 +367,7 @@ bool frame(Obj_t *obj, double *theta, Vec_t *v)
 Scr_t *base_init()
 {
 	int scr_h = get_winsize_row() - 5,
-	    scr_w = get_winsize_col() - 5;
+	    scr_w = get_winsize_col() - 1;
 	if (scr_h <= 10 || scr_w <= 10) {
 		LOG("终端太小(当前可用尺寸：%dx%d)", scr_w, scr_h);
 		return NULL;
