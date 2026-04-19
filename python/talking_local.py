@@ -535,14 +535,14 @@ ${send_window}
   <h1>搜索页面</h1>
   <form method="GET" action="/search">
     <div class="form-group">
-      <label for="msg">搜索内容(均支持<a href="/about#re">正则表达式</a>):</label><input type="text" name="msg" value="${msg}">
-      <label for="user">搜索用户:</label><input type="text" name="user" value="${user}">
-      <label for="page_limit">每页展示的消息数:</label><input type="number" name="page_limit" value="${page_limit}">
-      <label for="sort_type">排序方式:</label>
+      <label for="msg">搜索内容(均支持<a href="/about#re">正则表达式</a>):</label><input type="text" name="msg" value="${msg}"><br/>
+      <label for="user">搜索用户:</label><input type="text" name="user" value="${user}"><br/>
+      <label for="page_limit">每页展示的消息数:</label><input type="number" name="page_limit" value="${page_limit}"><br/>
+      <label for="sort_type">排序方式:</label><br/>
       <select name="sort_type">
         ${sort_type_options}
       </select>
-      <label for="cap">不区分大小写:</label><input style="width:auto;" type="checkbox" name="cap"${cap}>
+      <label for="cap">不区分大小写:</label><input style="width:auto;" type="checkbox" name="cap"${cap}><br/>
     </div>
     <button type="submit">更新搜索</button>
   </form>
@@ -563,7 +563,7 @@ ${pages}
 <form method="POST" action="/send_message">
 <div class="form-group">
 <label for="message">填写要发送的消息:</label><textarea name="message" rows="4" required></textarea>
-</div>
+</div><br/>
 <button type="submit">发送</button></form>
 """, # ==================
 "send_window2":"""
@@ -605,7 +605,7 @@ ${usercard}
     <div class="form-group">
       <label for="note">修改备注:</label>
       <textarea name="note" rows="4" required>${note}</textarea>
-    </div>
+    </div><br/>
     <button type="submit">提交修改</button>
   </form>
 </div>
@@ -632,8 +632,8 @@ ${usercard}
   <h1>登录</h1>
   <form method="POST" action="/login">
      <div class="form-group">
-      <label for="name">用户名:</label><input type="text" name="username"${value} required>
-      <label for="passwd">密码:</label><input type="password" name="passwd" required>
+      <label for="name">用户名:</label><input type="text" name="username"${value} required><br/>
+      <label for="passwd">密码:</label><input type="password" name="passwd" required><br/>
     </div>
     <button type="submit">登录</button>
   </form>
@@ -644,9 +644,9 @@ ${usercard}
   <h1>注册</h1>
   <form method="POST" action="/register">
     <div class="form-group">
-      <label for="name">用户名（暂不支持修改）:</label><input type="text" name="username" required>
-      <label for="passwd">密码（暂不支持注册后修改或找回）:</label><input type="password" name="passwd" required>
-      <label for="passwd2">再次输入相同的密码确认:</label><input type="password" name="passwd2" required>
+      <label for="name">用户名（暂不支持修改）:</label><input type="text" name="username" required><br/>
+      <label for="passwd">密码（暂不支持注册后修改或找回）:</label><input type="password" name="passwd" required><br/>
+      <label for="passwd2">再次输入相同的密码确认:</label><input type="password" name="passwd2" required><br/>
     </div>
     <button type="submit">注册</button>
   </form>
