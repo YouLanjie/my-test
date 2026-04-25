@@ -315,19 +315,19 @@ class Config:
 \setsmallf{#${setting.fontsize}}
 #${template.mktitle}
 #${template.mktoc}
-\begin{multicols}{#${setting.cols}}
+#${template.cols.begin}
 
 #${template.gen_info}
 
 #${template.body}
 
 \theendnotes
-\end{multicols}
+#${template.cols.end}
 \end{document}
 """
-    latex_template_toc = r"""\begin{multicols}{#${setting.toc_cols}}
+    latex_template_toc = r"""#${template.toc_cols.begin}
 \tableofcontents
-\end{multicols}
+#${template.toc_cols.end}
 #${template.newpage.toc}
 """
     latex_template_info = "\n\n\\noindent\n".join(r"""【页面设置】
@@ -442,6 +442,13 @@ class Config:
                 }
         k.update(pytools.squash_dict(self.cfg))
         k["counter.words"] = words
+        for i in ("toc_cols", "cols"):
+            try:
+                n = int(k[f"setting.{i}"])
+            except ValueError:
+                n = 0
+            k[f"template.{i}.begin"] = r"\begin{multicols}{%d}" % n if n > 1 else ""
+            k[f"template.{i}.end"] = r"\end{multicols}" if n > 1 else ""
         k["template.mktitle"] = (r"\maketitle{}"+\
                 ("\\newpage\n" if k["setting.newpage.title"] else "")) \
                 if k["setting.mktitle"] else ""

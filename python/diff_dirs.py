@@ -5,7 +5,11 @@ import argparse
 from pathlib import Path
 import hashlib
 import os
-import argcomplete
+
+try:
+    import argcomplete
+except ModuleNotFoundError:
+    pass
 
 source_file_black_list = [Path(i).resolve() for i in [
     ".local/state/konsolestaterc",
@@ -100,7 +104,10 @@ if __name__ == "__main__":
     arg_parse.add_argument("-o","--origin",default=None,help="对比（更新的）文件夹设置（默认为$HOME）")
     arg_parse.add_argument("-b","--black-list",default=None,help="文件夹黑名单")
     arg_parse.add_argument("-x","--debug",action="store_true",help="调试")
-    argcomplete.autocomplete(arg_parse)
+    try:
+        argcomplete.autocomplete(arg_parse)
+    except NameError:
+        pass
     ARGS = arg_parse.parse_args()
     if ARGS.black_list:
         source_black_list += [Path(f"{ARGS.input}/{i}").resolve() for i in ARGS.black_list.split(r"\n")]
