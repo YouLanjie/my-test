@@ -8,7 +8,7 @@
  *
  */
 
-#include "tools.h"
+#include "../include/tools.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_audio.h>
 #include <SDL2/SDL_mixer.h>

@@ -10,7 +10,7 @@
 
 
 #include <limits.h>
-#include "tools.h"
+#include "../include/tools.h"
 
 #ifdef _WIN32
 #define IS_WIN (1)

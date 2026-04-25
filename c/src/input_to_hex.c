@@ -9,7 +9,7 @@
  */
 
 
-#include "tools.h"
+#include "../include/tools.h"
 #include <limits.h>
 
 char *i2b(unsigned long data, int bytes, char *buf, size_t buf_size)

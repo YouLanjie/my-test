@@ -5,7 +5,7 @@
  * @brief       通过ascii艺术画形式“渲染”伪3D画面
  */
 
-#include "tools.h"
+#include "../include/tools.h"
 #include <math.h>
 
 /* 辅助程序(Py)：

@@ -1,4 +1,5 @@
-#include "include.h"
+#include "../include/tools.h"
+#include "../include/cmenu.h"
 #ifdef __linux
 
 // 定义宏
@@ -21,6 +22,11 @@
 #define ArrowDn "↓"
 #define ArrowLf "←"
 #define ArrowRi "→"
+#define C_WHITE_BLUE   252
+#define C_BLUE_WHITE   253
+#define C_WHITE_YELLOW 254
+#define C_BLACK_WHITE  255
+#define C_WHITE_BLACK  256
 
 /* 开启颜色或效果 */
 #define color_on(n) attron(COLOR_PAIR(n))

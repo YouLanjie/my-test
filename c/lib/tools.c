@@ -1,4 +1,4 @@
-#include "include.h"
+#include "../include/tools.h"
 #include <fcntl.h>
 
 #ifdef __linux__
@@ -12,7 +12,7 @@
 extern int kbhit()
 {
 	int is_tty = isatty(STDIN_FILENO);
-	struct termios new_attr, old_attr;
+	struct termios new_attr, old_attr = {0};
 	/* 保存现在的终端设置 */
 	if (is_tty)
 		if (tcgetattr(STDIN_FILENO, &old_attr) < 0) return -1;
@@ -44,7 +44,7 @@ extern int kbhitGetchar()
 {
 #ifdef __linux__
 	int is_tty = isatty(STDIN_FILENO);
-	struct termios new_attr, old_attr;
+	struct termios new_attr, old_attr = {0};
 	if (is_tty)
 		if (tcgetattr(STDIN_FILENO, &old_attr) < 0) return -1;
 	new_attr = old_attr;
@@ -201,6 +201,7 @@ extern char *_fread(FILE *fp)
 
 	fseek(fp, 0L, SEEK_END);
 	size = ftell(fp);
+	if (sizeof(char) * (size + 1) == 0) return NULL;
 	str = malloc(sizeof(char) * (size + 1));
 	if (str == NULL) {
 		perror("The file is too big");

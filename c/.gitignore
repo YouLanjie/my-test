@@ -5,7 +5,6 @@ tags
 build
 *.cmake
 CMake*
-Makefile
 build.ninja
 .ninja_*
 a.out

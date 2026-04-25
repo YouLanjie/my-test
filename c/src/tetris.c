@@ -9,7 +9,7 @@
  */
 
 
-#include "tools.h"
+#include "../include/tools.h"
 #include <stdint.h>
 
 /* 特定type的方块(4*4)内第i位的状态值 */
