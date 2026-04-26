@@ -6,8 +6,10 @@
  */
 
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <stdio.h>
 //#include "path.h"
 
 bool str_start_with(char *s, char *pat)
@@ -23,6 +25,32 @@ bool str_end_with(char *s, char *pat)
 	if (strlen(s) < strlen(pat)) return false;
 	int size = strlen(pat);
 	return !strncmp(s+strlen(s)-size, pat, size);
+}
+
+char *strip_left(char *s, char c)
+{
+	if (!s || !*s) return NULL;
+	char *p = s;
+	p+=strlen(s)-1;
+	while (p >= s && p && *p == c) p--;
+	while (p >= s && p && *p != c) p--;
+	if (p < s) return NULL;
+	return p;
+}
+
+char *path_basename(char *s)
+{
+	char *p = strip_left(s, '/');
+	if (!p) return NULL;
+	char basename[FILENAME_MAX] = {0};
+	strlcpy(basename, p+1, sizeof(basename));
+	p = strip_left(basename, '.');
+	if (p && p > basename) *p = 0;
+	int size = strlen(basename)+1;
+	if (size <= 1) return NULL;
+	p = malloc(size);
+	strlcpy(p, basename, size);
+	return p;
 }
 
 char *normalize_path(char *path, char *buf, size_t size)
@@ -61,5 +89,4 @@ char *normalize_path(char *path, char *buf, size_t size)
 	strlcpy(buf, out, size);
 	return buf;
 }
-
 

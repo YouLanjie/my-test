@@ -3,8 +3,10 @@ bin
 Lang/en_US/LC_MESSAGES/socket.mo
 tags
 build
+.build
 *.cmake
 CMake*
 build.ninja
 .ninja_*
 a.out
+*.so
