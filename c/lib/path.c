@@ -6,20 +6,22 @@
  */
 
 #include <stdbool.h>
-#include <stdlib.h>
 #include <string.h>
 #include <limits.h>
-#include <stdio.h>
-//#include "path.h"
+#include "../include/string_view.h"
 
-bool str_start_with(char *s, char *pat)
+typedef struct {
+	char path[PATH_MAX];
+} Path_t;
+
+bool str_start_with(const char *s, const char *pat)
 {
 	if (!s || !pat) return false;
 	if (strlen(s) < strlen(pat)) return false;
 	return !strncmp(s, pat, strlen(pat));
 }
 
-bool str_end_with(char *s, char *pat)
+bool str_end_with(const char *s, const char *pat)
 {
 	if (!s || !pat) return false;
 	if (strlen(s) < strlen(pat)) return false;
@@ -27,37 +29,22 @@ bool str_end_with(char *s, char *pat)
 	return !strncmp(s+strlen(s)-size, pat, size);
 }
 
-char *strip_left(char *s, char c)
+SV_t path_basename(Path_t path)
 {
-	if (!s || !*s) return NULL;
-	char *p = s;
-	p+=strlen(s)-1;
-	while (p >= s && p && *p == c) p--;
-	while (p >= s && p && *p != c) p--;
-	if (p < s) return NULL;
-	return p;
+	SV_t s = {strlen(path.path), path.path}, last = {0, NULL};
+	while (s.len != 0) last = sv_chop_by_delim(&s, '/');
+	s = last;
+	last.len = 0;
+	while (last.len == 0 && s.len != 0) last = sv_chop_by_delim(&s, '.');
+	return last;
 }
 
-char *path_basename(char *s)
+Path_t normalize_path(char *path)
 {
-	char *p = strip_left(s, '/');
-	if (!p) return NULL;
-	char basename[FILENAME_MAX] = {0};
-	strlcpy(basename, p+1, sizeof(basename));
-	p = strip_left(basename, '.');
-	if (p && p > basename) *p = 0;
-	int size = strlen(basename)+1;
-	if (size <= 1) return NULL;
-	p = malloc(size);
-	strlcpy(p, basename, size);
-	return p;
-}
-
-char *normalize_path(char *path, char *buf, size_t size)
-{
-	if (!path) return NULL;
+	if (!path) return (Path_t){0};
+	Path_t ret = {0};
+	char *out = ret.path;
 	int i1 = 0, i2 = 0;
-	char out[PATH_MAX] = {0};
 	for (; path[i1] && i2 < PATH_MAX; i1++) {
 		if (i2 && out[i2-1] == '/' && path[i1] == '/') continue;
 		if (i2 && str_end_with(out, "/.") && path[i1] == '/') {
@@ -86,7 +73,6 @@ char *normalize_path(char *path, char *buf, size_t size)
 		out[i2] = '.';
 		out[i2+1] = 0;
 	}
-	strlcpy(buf, out, size);
-	return buf;
+	return ret;
 }
 

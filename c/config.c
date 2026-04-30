@@ -18,13 +18,19 @@ typedef struct {
 	char *sources[5];
 	/*char *flags;*/
 } CLIBS_t;
+typedef struct {
+	char *filename;
+	char *comp;
+	char *link;
+	char *libs;
+} CFLAGS_t;
 #define ARRAY_LEN(v) (sizeof(v)/sizeof(v[0]))
 
 CLIBS_t CLIBS[] = {
 	{BUILD_DIR"libctools.a", {LIB_DIR"tools.c", LIB_DIR"print_in_box.c"}},
 	{BUILD_DIR"libcmenu.a", {LIB_DIR"menu.c"}},
 };
-char *CFILEFLAGS[][3] = {
+CFLAGS_t CFILEFLAGS[] = {
 	{SOURCE_DIR"lrc.c", "", "-lSDL2_mixer -lSDL2"},
 	{SOURCE_DIR"musicSynth/ALSA.c", "", "-lasound -fopenmp -lm"},
 	{SOURCE_DIR"network/socket.c", "", "-lpthread"},
