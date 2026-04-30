@@ -93,7 +93,6 @@ void build_c(char *cwd, char *filename, char *bin_dir)
 	if ((basename = path_basename(source)).len == 0) return;
 	sprintf(obj.path, BUILD_DIR"%.*s.o", (int)basename.len, basename.p);
 	sprintf(bin.path, "%s%.*s", bin_dir?bin_dir:BIN_DIR, (int)basename.len, basename.p);
-	if (!is_newer(obj.path, 1, (char*[]){source.path})) return;
 	if (!is_newer(bin.path, 1, (char*[]){obj.path})) return;
 
 	sprintf(cmd, COMPILOR" "CLINKFLAGS" -o \"%s\" \"%s\"", bin.path, obj.path);

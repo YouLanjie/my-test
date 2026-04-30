@@ -27,7 +27,7 @@ typedef struct {
 #define ARRAY_LEN(v) (sizeof(v)/sizeof(v[0]))
 
 CLIBS_t CLIBS[] = {
-	{BUILD_DIR"libctools.a", {LIB_DIR"tools.c", LIB_DIR"print_in_box.c"}},
+	{BUILD_DIR"libctools.a", {LIB_DIR"tools.c", LIB_DIR"libprint_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c"}},
 	{BUILD_DIR"libcmenu.a", {LIB_DIR"menu.c"}},
 };
 CFLAGS_t CFILEFLAGS[] = {
