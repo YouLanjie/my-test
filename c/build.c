@@ -5,7 +5,6 @@
  * @brief       构建脚本
  */
 
-#include "include/string_view.h"
 #include "lib/path.c"
 #include "lib/string_view.c"
 #include <stdio.h>
@@ -15,13 +14,64 @@
 #include <dirent.h>
 #include <limits.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <wait.h>
 
-#include "config.c"
+typedef struct {
+	const char *libname;
+	const char *sources[5];
+} CLIBS_t;
+
+typedef struct {
+	const char *filename;
+	const char *flg_comp;
+	const char *flg_link;
+	const char *libs;
+	const char *deps;
+	const bool no_elf;
+} CFLAGS_t;
+
+#define ARRAY_LEN(v) (sizeof(v)/sizeof(v[0]))
+
+// ===============================
+// 配置区
+#define SOURCE_DIR "./src/"
+#define LIB_DIR    "./lib/"
+#define BUILD_DIR  "./.build/"
+#define BIN_DIR    "./bin/"
+#define COMPILOR   "gcc"
+#define CCOMFLAGS  "-Wall -Wextra -O2 -g"
+#define CLINKFLAGS "-L"BUILD_DIR" -lctools"
+
+
+#define LIB(l, ...) (CLIBS_t){.libname=BUILD_DIR l, .sources={__VA_ARGS__}}
+CLIBS_t CLIBS[] = {
+	LIB("libctools.a", LIB_DIR"tools.c", LIB_DIR"libprint_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c"),
+	LIB("libcmenu.a", LIB_DIR"menu.c"),
+};
+#undef LIB
+
+#define FLG(f, l, ...) (CFLAGS_t){.filename=SOURCE_DIR f, .libs=l, __VA_ARGS__}
+CFLAGS_t CFILEFLAGS[] = {
+	FLG("lrc.c",              "SDL2_mixer SDL2"),
+	FLG("musicSynth/ALSA.c",  "asound m", .flg_comp="-fopenmp"),
+	FLG("tests/libav_test.c", "avformat avcodec avutil swresample m"),
+	FLG("tests/social.c",     "m"),
+	FLG("tests/try_iconv.c",  "iconv"),
+	FLG("tetris.c",           "ncurses"),
+	FLG("render3d.c",         "m"),
+	FLG("tests/input.c",      "m"),
+	FLG("tests/sin.c",        "m"),
+};
+#undef FLG
+// 配置区结束
+// ================================
+
 
 /* fl的文件是否比f的新 */
-bool is_newer(char *f, int fl_len, char *fl[])
+bool is_newer(const char *f, int fl_len, const char *fl[])
 {
 	if (!f || !fl) return false;
 	struct stat st;
@@ -34,97 +84,128 @@ bool is_newer(char *f, int fl_len, char *fl[])
 	return false;
 }
 
-bool cmd_cflags_join(char *cmd, int len, char *source, int mode)
+int run_cmd(char *cmd)
 {
-	if (!cmd || !source) return false;
-	Path_t ret = {0};
-	CFLAGS_t *flags = CFILEFLAGS; 
-	char *p = NULL;
+	if (!cmd) return -1;
+	printf("[RUN] %s\n", cmd);
+	int ret = 0;
+	ret = system(cmd);
+	if (ret) fprintf(stderr, "[WARN] 命令执行错误(%d): %s\n", ret, cmd);
+	return ret;
+}
+
+/* RET:
+ * <0: faild
+ * 0: 无更新
+ * &(1<<0): 完成obj编译
+ * &(1<<1): 完成elf编译
+ * */
+int build_file(Path_t source, Path_t (*obj_hander)(Path_t), Path_t (*elf_hander)(Path_t), CFLAGS_t cflags)
+{
+	if (!obj_hander) return -1;
+	const CFLAGS_t *flag = &(CFLAGS_t){.filename=NULL};
+	Path_t obj;
+	uint8_t ret = 0;
+	source = path_normalize(source.path);
 	for (uint64_t i = 0; i < ARRAY_LEN(CFILEFLAGS); i++) {
-		p = ((char*[]){flags[i].libs, flags[i].comp, flags[i].link})[mode];
-		if (!flags[i].filename || !p) continue;
-		ret = normalize_path(flags[i].filename);
-		if (strcmp(ret.path, source) != 0) continue;
-		if (strcmp(p, "//NOEXE") == 0) return false;
-		strlcat(cmd, " ", len);
-		strlcat(cmd, p, len);
-		return true;
+		if (!CFILEFLAGS[i].filename) continue;
+		obj = path_normalize(CFILEFLAGS[i].filename);    // 借用obj
+		if (strcmp(obj.path, source.path) != 0) continue;
+		flag = CFILEFLAGS+i;
+		break;
 	}
-	return true;
+
+	char cmd[PATH_MAX*5] = {0};
+	obj = obj_hander(source);
+	if (is_newer(obj.path, 1, (const char*[]){source.path})) {
+		sprintf(cmd, COMPILOR" -c -o \"%s\" \"%s\"", obj.path, source.path);
+		if (cflags.flg_comp) {
+			strlcat(cmd, " ", sizeof(cmd));
+			strlcat(cmd, cflags.flg_comp, sizeof(cmd));
+		}
+		if (flag->flg_comp) {
+			strlcat(cmd, " ", sizeof(cmd));
+			strlcat(cmd, flag->flg_comp, sizeof(cmd));
+		}
+		if (run_cmd(cmd) != 0) return -3;
+		ret |= 1;
+	}
+	if (!elf_hander || flag->no_elf) return 1;
+
+	SV_t prefix, deps = sv_from_cstr(flag->deps), left;
+	Path_t elf = {0};
+	int size = 0;
+	for (char *p = source.path; p && *p; p++) if (*p == '/') size = p-source.path;
+	prefix = (SV_t){.p=source.path, .len=size};
+	while (deps.len > 0) {    /* 检查明确指定的依赖文件 */
+		sv_trim_left_by_type(&deps, isspace);    /* 跳过空格 */
+		while (deps.len > 0 && isspace(deps.p[0])) sv_chop_left(&deps, 1);
+		if (deps.len <= 0) break;
+		left = sv_chop_by_type(&deps, isspace);
+		if(left.len <= 0) break;
+		strncpy(elf.path, prefix.p, prefix.len);    /* 这里依旧临时借用(Path_t)elf */
+		path_join(elf, left);
+		printf("[INFO] CHECK DEP: %s\n", elf.path);
+		build_file(elf, obj_hander, NULL, cflags);    /* 设置elf_hander为NULL防递归 */
+	}
+	elf = elf_hander(source);
+	if (is_newer(elf.path, 1, (const char*[]){obj.path})) {
+		sprintf(cmd, COMPILOR" -o \"%s\" \"%s\"", elf.path, obj.path);
+		if (cflags.flg_link) {
+			strlcat(cmd, " ", sizeof(cmd));
+			strlcat(cmd, cflags.flg_link, sizeof(cmd));
+		}
+		if (flag->flg_link) {
+			strlcat(cmd, " ", sizeof(cmd));
+			strlcat(cmd, flag->flg_link, sizeof(cmd));
+		}
+		deps = sv_from_cstr(flag->libs);
+		while (deps.len > 0) {
+			sv_trim_left_by_type(&deps, isspace);
+			left = sv_chop_by_type(&deps, isspace);
+			strlcat(cmd, " -l", sizeof(cmd));
+			strncat(cmd, left.p, left.len);
+		}
+		if (run_cmd(cmd) != 0) return -5;
+		ret |= 1 << 1;
+	}
+	return ret;
 }
 
-bool build_obj(char *cwd, char *filename)
+/* 将路径变为 BUILD_DIR/xxx_xxx_xxx.o */
+Path_t path_hander_obj_replace(Path_t path)
 {
-	if (!filename) return false;
-	if (!cwd) cwd = "./";
-	char cmd[5*PATH_MAX] = {0};
-	SV_t basename = {0};
-	Path_t source = {0},
-	       obj = {0};
-
-	sprintf(source.path, "%s/%s", cwd, filename);
-	source = normalize_path(source.path);
-	if ((basename = path_basename(source)).len == 0) return false;
-	sprintf(obj.path, BUILD_DIR"%.*s.o", (int)basename.len, basename.p);
-	if (!is_newer(obj.path, 1, (char*[]){source.path})) return true;
-
-	sprintf(cmd, COMPILOR" "CCOMFLAGS" -c -o \"%s\" \"%s\"", obj.path, source.path);
-	if (!cmd_cflags_join(cmd, sizeof(cmd), source.path, 1)) return false;
-	printf("[RUN] %s\n", cmd);
-	if (system(cmd)) {
-		printf("[WARN] non-zero returned\n");
-		return false;
-	}
-	return true;
+	for (char *p = path.path; p && *p; p++) if (*p == '/') *p = '_';
+	SV_t sv = path_basename(path);
+	while (sv.len > 0 && (sv.p[0] == '.' || sv.p[0] == '_')) sv_chop_left(&sv, 1);
+	path = path_join((Path_t){BUILD_DIR}, sv);
+	strlcat(path.path, ".o", sizeof(path.path));
+	return path;
 }
-
-void build_c(char *cwd, char *filename, char *bin_dir)
+/* 将路径变为 BIN_DIR/xxx */
+Path_t path_hander_elf(Path_t path)
 {
-	if (!filename) return;
-	if (!cwd) cwd = "./";
-	char cmd[5*PATH_MAX] = {0};
-	SV_t basename = {0};
-	Path_t source = {0},
-	       obj = {0},
-	       bin = {0};
-
-	sprintf(source.path, "%s/%s", cwd, filename);
-	source = normalize_path(source.path);
-	if ((basename = path_basename(source)).len == 0) return;
-	sprintf(obj.path, BUILD_DIR"%.*s.o", (int)basename.len, basename.p);
-	sprintf(bin.path, "%s%.*s", bin_dir?bin_dir:BIN_DIR, (int)basename.len, basename.p);
-	if (!is_newer(bin.path, 1, (char*[]){obj.path})) return;
-
-	sprintf(cmd, COMPILOR" "CLINKFLAGS" -o \"%s\" \"%s\"", bin.path, obj.path);
-	if (!cmd_cflags_join(cmd, sizeof(cmd), source.path, 2)) return;
-	printf("[RUN] %s\n", cmd);
-	if (system(cmd)) {
-		printf("[WARN] non-zero returned\n");
-		printf("[WARN] (%s) %s\n", source.path, cmd);
-	}
+	SV_t sv = path_basename(path);
+	path = path_join((Path_t){BIN_DIR}, sv);
+	return path;
 }
 
 void build_libs()
 {
 	char cmd[5*PATH_MAX] = {0};
 	Path_t path = {0};
-	SV_t p = {0};
 	for (uint64_t i = 0; i < ARRAY_LEN(CLIBS); i++) {
 		if (!is_newer(CLIBS[i].libname, ARRAY_LEN(CLIBS[i].sources), CLIBS[i].sources))
 			continue;
 		sprintf(cmd, "ar rcs \"%s\" ", CLIBS[i].libname);
 		uint64_t j = 0;
 		for (j = 0; j < ARRAY_LEN(CLIBS[i].sources) && CLIBS[i].sources[j]; j++) {
-			build_obj(NULL, CLIBS[i].sources[j]);
-
 			strlcpy(path.path, CLIBS[i].sources[j], sizeof(path.path));
-			if ((p = path_basename(path)).len == 0) continue;
-			sprintf(path.path, BUILD_DIR"%.*s.o", (int)p.len, p.p);
+			build_file(path, path_hander_obj_replace, NULL, (CFLAGS_t){.flg_comp=CCOMFLAGS});
 
-			strlcat(cmd, " \"", sizeof(cmd));
-			strlcat(cmd, path.path, sizeof(cmd));
-			if(str_end_with(cmd, ".c")) cmd[strlen(cmd)] = 'o';
-			strlcat(cmd, "\"", sizeof(cmd));
+			path = path_hander_obj_replace(path);
+			int size = strlen(cmd);
+			snprintf(cmd+size, sizeof(cmd)-size, " \"%s\"", path.path);
 		}
 		if (j == 0) continue;
 		printf("[RUN] %s\n", cmd);
@@ -132,7 +213,6 @@ void build_libs()
 	}
 }
 
-int pcount = 0;
 
 void fordir(char *cwd, char *dirname)
 {
@@ -140,9 +220,10 @@ void fordir(char *cwd, char *dirname)
 	if (!cwd) cwd = "./";
 	if (str_start_with(dirname, "lib")) return;
 
+	static int pcount = 0;
 	Path_t path = {0};
 	sprintf(path.path, "%s/%s", cwd, dirname);
-	path = normalize_path(path.path);
+	path = path_normalize(path.path);
 
 	DIR *dp = opendir(path.path);
 	if (!dp) {
@@ -167,8 +248,9 @@ void fordir(char *cwd, char *dirname)
 		while (pcount >= 8) if (wait(NULL) > 0) pcount--;
 		pid_t pid = fork();
 		if (pid == 0) {
-			if (build_obj(path.path, dp_item->d_name))
-				build_c(path.path, dp_item->d_name, NULL);
+			build_file(path_join(path, sv_from_cstr(dp_item->d_name)),
+				   path_hander_obj_replace, path_hander_elf,
+				   (CFLAGS_t){.flg_comp=CCOMFLAGS, .flg_link=CLINKFLAGS});
 			exit(0);
 		}
 		pcount++;
@@ -177,14 +259,25 @@ void fordir(char *cwd, char *dirname)
 	return;
 }
 
+static Path_t path_hander_self(Path_t c)
+{
+	(void)c;    /* 消警告用的 */
+	return (Path_t){"./build"};
+}
+
 int main(int argc, char *argv[])
 {
+	(void)argc;
+	printf("[INFO] 构建程序 ("__FILE__") 构建时间 "__TIMESTAMP__"\n");
 	mkdir(BUILD_DIR, 0755);
 	mkdir(BIN_DIR, 0755);
+	if (build_file((Path_t){__FILE_NAME__}, path_hander_obj_replace,
+		       path_hander_self, (CFLAGS_t){.flg_comp=CCOMFLAGS}) == 2) {
+		execvp(argv[0], argv);
+		return 1;
+	}
 	build_libs();
 	fordir(NULL, SOURCE_DIR);
-	build_obj(NULL, __FILE__);
-	build_c(NULL, __FILE__, "./");
 	while(wait(NULL) > 0) usleep(0010000);
 	return 0;
 }

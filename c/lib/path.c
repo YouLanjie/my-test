@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <limits.h>
+#include <sys/stat.h>
 #include "../include/string_view.h"
 
 typedef struct {
@@ -39,40 +40,76 @@ SV_t path_basename(Path_t path)
 	return last;
 }
 
-Path_t normalize_path(char *path)
+Path_t path_normalize(const char *path)
 {
 	if (!path) return (Path_t){0};
 	Path_t ret = {0};
-	char *out = ret.path;
-	int i1 = 0, i2 = 0;
-	for (; path[i1] && i2 < PATH_MAX; i1++) {
-		if (i2 && out[i2-1] == '/' && path[i1] == '/') continue;
-		if (i2 && str_end_with(out, "/.") && path[i1] == '/') {
-			out[i2-1] = 0;
-			i2--;
+	char *p = ret.path;
+	int i = 0;
+	for (; *path && i < PATH_MAX; path++) {
+		if (i && p[i-1] == '/' && *path == '/') continue;
+		if (i && str_end_with(p, "/.") && *path == '/') {
+			p[i-1] = 0;
+			i--;
 			continue;
 		}
-		if (i2 > 2 && str_end_with(out, "/..") && path[i1] == '/') {
-			out[i2-3] = 0;
-			if (!strcmp(out, "..") || str_end_with(out, "/..") ||
-			    !strcmp(out, ".") || str_end_with(out, "/.")) {
-				out[i2-3] = '/';
-				out[i2] = path[i1];
-				i2++;
+		if (i > 2 && str_end_with(p, "/..") && *path == '/') {
+			p[i-3] = 0;
+			if (!strcmp(p, "..") || str_end_with(p, "/..") ||
+			    !strcmp(p, ".") || str_end_with(p, "/.")) {
+				p[i-3] = '/';
+				p[i] = *path;
+				i++;
 				continue;
 			}
-			for (;i2 >= 0 && out[i2] != '/'; i2--) out[i2] = 0;
-			i2++;
+			for (;i >= 0 && p[i] != '/'; i--) p[i] = 0;
+			i++;
 			continue;
 		}
-		out[i2] = path[i1];
-		i2++;
+		p[i] = *path;
+		i++;
 	}
-	while (out[0] != '/' && str_end_with(out, "/.")) out[strlen(out)-1] = 0;
-	if (i2 == 0) {
-		out[i2] = '.';
-		out[i2+1] = 0;
+	while (p[0] != '/' && str_end_with(p, "/.")) p[strlen(p)-1] = 0;
+	if (i == 0) {
+		p[i] = '.';
+		p[i+1] = 0;
 	}
 	return ret;
+}
+
+Path_t path_join(Path_t path, SV_t s)
+{
+	int size = strlen(path.path);
+	char sep = '/';
+	if (size <= 0 || path.path[size-1] == sep) sep = 0; 
+	if (size+s.len+(sep!=0) >= sizeof(path.path)) return path;
+	if (sep) {
+		path.path[size] = sep;
+		path.path[size+1] = 0;
+	}
+	strncat(path.path, s.p, s.len);
+	return path_normalize(path.path);
+}
+
+typedef struct {
+	struct stat st;
+	bool isexist;
+	bool islink;
+	bool isdir;
+	bool isfile;
+} Path_st_t;
+
+/* fl的文件是否比f的新 */
+Path_st_t path_get_st(Path_t f)
+{
+	Path_st_t st = {0};
+	if (stat(f.path, &st.st) == -1) {
+		st.isexist = false;
+		return st;
+	}
+	st.isdir = S_ISDIR(st.st.st_mode);
+	st.isfile = S_ISREG(st.st.st_mode);
+	st.islink = S_ISLNK(st.st.st_mode);
+	return st;
 }
 
