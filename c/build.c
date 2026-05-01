@@ -48,7 +48,7 @@ typedef struct {
 
 #define LIB(l, ...) (CLIBS_t){.libname=BUILD_DIR l, .sources={__VA_ARGS__}}
 CLIBS_t CLIBS[] = {
-	LIB("libctools.a", LIB_DIR"tools.c", LIB_DIR"libprint_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c"),
+	LIB("libctools.a", LIB_DIR"tools.c", LIB_DIR"print_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c"),
 	LIB("libcmenu.a", LIB_DIR"menu.c"),
 };
 #undef LIB
@@ -70,18 +70,20 @@ CFLAGS_t CFILEFLAGS[] = {
 // ================================
 
 
-/* fl的文件是否比f的新 */
-bool is_newer(const char *f, int fl_len, const char *fl[])
+/* fl的文件是否比f的新
+ * ret: 0不新 1新的 2原文件不存在 <0文件列表缺失(对应编号)
+ * */
+int is_newer(const char *f, int fl_len, const char *fl[])
 {
-	if (!f || !fl) return false;
+	if (!f || !fl) return 0;
 	struct stat st;
-	if (stat(f, &st) == -1) return true;
+	if (stat(f, &st) == -1) return 2;
 	time_t t = st.st_mtim.tv_sec;
 	for (int i = 0; i < fl_len && fl[i]; i++) {
-		if (stat(fl[i], &st) == -1) return false;
-		if (st.st_mtim.tv_sec > t) return true;
+		if (stat(fl[i], &st) == -1) return -1-i;    /* 若任意fl[i]不存在: true */
+		if (st.st_mtim.tv_sec > t) return 1;
 	}
-	return false;
+	return 0;
 }
 
 int run_cmd(char *cmd)
@@ -105,7 +107,7 @@ int build_file(Path_t source, Path_t (*obj_hander)(Path_t), Path_t (*elf_hander)
 	if (!obj_hander) return -1;
 	const CFLAGS_t *flag = &(CFLAGS_t){.filename=NULL};
 	Path_t obj;
-	uint8_t ret = 0;
+	uint8_t stat = 0;
 	source = path_normalize(source.path);
 	for (uint64_t i = 0; i < ARRAY_LEN(CFILEFLAGS); i++) {
 		if (!CFILEFLAGS[i].filename) continue;
@@ -117,7 +119,12 @@ int build_file(Path_t source, Path_t (*obj_hander)(Path_t), Path_t (*elf_hander)
 
 	char cmd[PATH_MAX*5] = {0};
 	obj = obj_hander(source);
-	if (is_newer(obj.path, 1, (const char*[]){source.path})) {
+	int ret = is_newer(obj.path, 1, (const char*[]){source.path});
+	if (ret < 0) {
+		fprintf(stderr, "[WARN] 文件缺失 %s\n", source.path);
+		return -3;
+	}
+	if (ret > 0) {
 		sprintf(cmd, COMPILOR" -c -o \"%s\" \"%s\"", obj.path, source.path);
 		if (cflags.flg_comp) {
 			strlcat(cmd, " ", sizeof(cmd));
@@ -127,8 +134,8 @@ int build_file(Path_t source, Path_t (*obj_hander)(Path_t), Path_t (*elf_hander)
 			strlcat(cmd, " ", sizeof(cmd));
 			strlcat(cmd, flag->flg_comp, sizeof(cmd));
 		}
-		if (run_cmd(cmd) != 0) return -3;
-		ret |= 1;
+		if (run_cmd(cmd) != 0) return -4;
+		stat |= 1;
 	}
 	if (!elf_hander || flag->no_elf) return 1;
 
@@ -149,7 +156,12 @@ int build_file(Path_t source, Path_t (*obj_hander)(Path_t), Path_t (*elf_hander)
 		build_file(elf, obj_hander, NULL, cflags);    /* 设置elf_hander为NULL防递归 */
 	}
 	elf = elf_hander(source);
-	if (is_newer(elf.path, 1, (const char*[]){obj.path})) {
+	ret = is_newer(elf.path, 1, (const char*[]){obj.path});
+	if (ret < 0) {
+		fprintf(stderr, "[WARN] 文件缺失 %s\n", obj.path);
+		return -5;
+	}
+	if (ret > 0) {
 		sprintf(cmd, COMPILOR" -o \"%s\" \"%s\"", elf.path, obj.path);
 		if (cflags.flg_link) {
 			strlcat(cmd, " ", sizeof(cmd));
@@ -166,10 +178,10 @@ int build_file(Path_t source, Path_t (*obj_hander)(Path_t), Path_t (*elf_hander)
 			strlcat(cmd, " -l", sizeof(cmd));
 			strncat(cmd, left.p, left.len);
 		}
-		if (run_cmd(cmd) != 0) return -5;
-		ret |= 1 << 1;
+		if (run_cmd(cmd) != 0) return -6;
+		stat |= 1 << 1;
 	}
-	return ret;
+	return stat;
 }
 
 /* 将路径变为 BUILD_DIR/xxx_xxx_xxx.o */
@@ -194,9 +206,14 @@ void build_libs()
 {
 	char cmd[5*PATH_MAX] = {0};
 	Path_t path = {0};
+	int ret = 0;
 	for (uint64_t i = 0; i < ARRAY_LEN(CLIBS); i++) {
-		if (!is_newer(CLIBS[i].libname, ARRAY_LEN(CLIBS[i].sources), CLIBS[i].sources))
+		ret = is_newer(CLIBS[i].libname, ARRAY_LEN(CLIBS[i].sources), CLIBS[i].sources);
+		if (ret < 0) {
+			fprintf(stderr, "[WARN] 库源文件缺失: %s\n", CLIBS[i].sources[-i-1]);
 			continue;
+		}
+		if (ret == 0) continue;
 		sprintf(cmd, "ar rcs \"%s\" ", CLIBS[i].libname);
 		uint64_t j = 0;
 		for (j = 0; j < ARRAY_LEN(CLIBS[i].sources) && CLIBS[i].sources[j]; j++) {
@@ -208,8 +225,7 @@ void build_libs()
 			snprintf(cmd+size, sizeof(cmd)-size, " \"%s\"", path.path);
 		}
 		if (j == 0) continue;
-		printf("[RUN] %s\n", cmd);
-		system(cmd);
+		run_cmd(cmd);
 	}
 }
 
@@ -272,7 +288,7 @@ int main(int argc, char *argv[])
 	mkdir(BUILD_DIR, 0755);
 	mkdir(BIN_DIR, 0755);
 	if (build_file((Path_t){__FILE_NAME__}, path_hander_obj_replace,
-		       path_hander_self, (CFLAGS_t){.flg_comp=CCOMFLAGS}) == 2) {
+		       path_hander_self, (CFLAGS_t){.flg_comp=CCOMFLAGS}) == 0b11) {
 		execvp(argv[0], argv);
 		return 1;
 	}
