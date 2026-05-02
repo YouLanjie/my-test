@@ -153,6 +153,7 @@ Note_t *parse_notes(const char *str, FILE *fp, double base_amplitude)
 			ifin("bq", "%hhu", bq, bq%=BQ_MAX)
 			ifin("bq_freq", "%lf", bq_freq, if(bq_freq<0)bq_freq=0)
 			ifin("har", "%hhd", harmonics,)
+			;    /* 必须加个分号终结else分支 */
 #undef ifin
 			memset(key, 0, KEYVALUE_BUF_SIZE);
 			memset(value, 0, KEYVALUE_BUF_SIZE);

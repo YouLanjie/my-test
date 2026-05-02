@@ -19,6 +19,13 @@
 #include <stdbool.h>
 #include <math.h>
 
+#ifndef DISABLE_OMP
+#include <omp.h>
+#endif
+
+// #define DISBLE_OMP
+// #define ENABLE_REVERPHASE
+
 /* 采样率（Hz） */
 extern uint32_t SAMPLE_RATE;
 
@@ -57,7 +64,7 @@ typedef struct {
 	double x1, x2;       // 前两个输入样本
 	double y1, y2;       // 前两个输出样本
 } Biquad;
-enum BiquadType { BQ_LP=1, BQ_HP, BQ_BP, BQ_MAX};
+enum BiquadType { BQ_LP=1, BQ_HP, BQ_BP, BQ_MAX};    /* :bq=num; 指定 */
 
 
 /* 音符数据 */

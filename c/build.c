@@ -54,19 +54,23 @@ CLIBS_t CLIBS[] = {
 #undef LIB
 
 #define FLG(f, l, ...) (CFLAGS_t){.filename=SOURCE_DIR f, .libs=l, __VA_ARGS__}
+#define MUS(f, l, ...) FLG("musicSynth/" f, "m "l, .flg_comp="-fopenmp", .flg_link="-fopenmp", __VA_ARGS__)
+#define MUSDEP .deps="lib/core.c lib/wave_func.c lib/note_parser.c lib/melody.c"
 CFLAGS_t CFILEFLAGS[] = {
-	FLG("musicSynth/music_synth.c", "m", .flg_comp="-fopenmp", .flg_link="-fopenmp",
-	    .deps="lib/core.c lib/wave_func.c lib/note_parser.c lib/melody.c"),
-	FLG("musicSynth/alsa_play.c",   "asound m", .flg_comp="-fopenmp", .flg_link="-fopenmp"),
-	FLG("tests/libav_test.c",       "avformat avcodec avutil swresample m"),
-	FLG("tests/social.c",           "m"),
-	FLG("tests/try_iconv.c",        "iconv"),
-	FLG("lrc.c",                    "SDL2_mixer SDL2"),
-	FLG("tetris.c",                 "ncurses"),
-	FLG("render3d.c",               "m"),
-	FLG("tests/input.c",            "m"),
-	FLG("tests/sin.c",              "m"),
+	MUS("music_synth.c",      , MUSDEP),
+	MUS("alsa_play.c",        "asound", MUSDEP),
+
+	FLG("tests/libav_test.c", "avformat avcodec avutil swresample m"),
+	FLG("tests/social.c",     "m"),
+	FLG("tests/try_iconv.c",  "iconv"),
+	FLG("lrc.c",              "SDL2_mixer SDL2"),
+	FLG("tetris.c",           "ncurses"),
+	FLG("render3d.c",         "m"),
+	FLG("tests/input.c",      "m"),
+	FLG("tests/sin.c",        "m"),
 };
+#undef MUS
+#undef MUSDEP
 #undef FLG
 // 配置区结束
 // ================================
