@@ -50,6 +50,7 @@ double sawtooth_wave(double t)
 
 double noise_wave(double t)
 {
+	(void)t;
 	return 2*(double)rand()/RAND_MAX-1;
 }
 

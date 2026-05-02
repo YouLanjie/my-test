@@ -19,11 +19,6 @@
 #include <stdbool.h>
 #include <math.h>
 
-#ifndef DISABLE_OMP
-#include <omp.h>
-#endif
-
-// #define DISBLE_OMP
 // #define ENABLE_REVERPHASE
 
 /* 采样率（Hz） */

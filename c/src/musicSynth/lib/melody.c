@@ -130,7 +130,7 @@ uint64_t melody_0(Note_t *pH, void (*pcm_handle)(int16_t*,int), struct Melody_op
 			pcm_handle(p->pwav, duration);
 			free(p->pwav);
 			p->pwav = NULL;
-			if (size-sizes[1] >= sizes[0]) {
+			if (size-(uint64_t)sizes[1] >= (uint64_t)sizes[0]) {
 				// exit clean up
 				clean_tracks_wav(&tracks, 0);
 				sizes[0] = 0;

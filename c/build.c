@@ -21,6 +21,7 @@
 
 typedef struct {
 	const char *libname;
+	const char *libfile;
 	const char *sources[5];
 } CLIBS_t;
 
@@ -37,6 +38,7 @@ typedef struct {
 
 // ===============================
 // 配置区
+#define MAX_PTR    8
 #define SOURCE_DIR "./src/"
 #define LIB_DIR    "./lib/"
 #define BUILD_DIR  "./.build/"
@@ -46,19 +48,22 @@ typedef struct {
 #define CLINKFLAGS "-L"BUILD_DIR" -lctools"
 
 
-#define LIB(l, ...) (CLIBS_t){.libname=BUILD_DIR l, .sources={__VA_ARGS__}}
+#define LIB(l, ...) (CLIBS_t){.libname=l, .libfile=BUILD_DIR "lib"l".a", .sources={__VA_ARGS__}}
+#define MUSDIR SOURCE_DIR"musicSynth/lib/"
 CLIBS_t CLIBS[] = {
-	LIB("libctools.a", LIB_DIR"tools.c", LIB_DIR"print_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c"),
-	LIB("libcmenu.a", LIB_DIR"menu.c"),
+	LIB("ctools", LIB_DIR"tools.c", LIB_DIR"print_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c"),
+	LIB("cmenu", LIB_DIR"menu.c"),
+	LIB("cmusicsynth", MUSDIR"core.c", MUSDIR"wave_func.c", MUSDIR"note_parser.c", MUSDIR"melody.c"),
 };
+#undef MUSDIR
 #undef LIB
 
 #define FLG(f, l, ...) (CFLAGS_t){.filename=SOURCE_DIR f, .libs=l, __VA_ARGS__}
-#define MUS(f, l, ...) FLG("musicSynth/" f, "m "l, .flg_comp="-fopenmp", .flg_link="-fopenmp", __VA_ARGS__)
-#define MUSDEP .deps="lib/core.c lib/wave_func.c lib/note_parser.c lib/melody.c"
+#define MUS(f, l, ...) FLG("musicSynth/" f, l" m cmusicsynth", .flg_comp="-fopenmp", .flg_link="-fopenmp", __VA_ARGS__)
 CFLAGS_t CFILEFLAGS[] = {
-	MUS("music_synth.c",      , MUSDEP),
-	MUS("alsa_play.c",        "asound", MUSDEP),
+	MUS("lib/core.c",         "m\0",),
+	MUS("alsa_play.c",        "asound",),
+	MUS("music_synth.c",      ,),
 
 	FLG("tests/libav_test.c", "avformat avcodec avutil swresample m"),
 	FLG("tests/social.c",     "m"),
@@ -102,6 +107,8 @@ int run_cmd(char *cmd)
 	return ret;
 }
 
+#define sprintfcat(buf, fmt, ...) snprintf((buf)+strlen(buf), sizeof(buf)-strlen(buf), fmt __VA_OPT__(,) __VA_ARGS__)
+
 /* RET:
  * <0: faild
  * 0: 无更新
@@ -123,7 +130,9 @@ int build_file(Path_t source, Path_t (*obj_hander)(Path_t), Path_t (*elf_hander)
 		break;
 	}
 
-	char cmd[PATH_MAX*5] = {0};
+	char cmd[PATH_MAX*2] = {0};
+	char str_deps[PATH_MAX*2] = {0};
+	char str_libs[PATH_MAX] = {0};
 	obj = obj_hander(source);
 	int ret = is_newer(obj.path, 1, (const char*[]){source.path});
 	if (ret < 0) {
@@ -155,46 +164,39 @@ int build_file(Path_t source, Path_t (*obj_hander)(Path_t), Path_t (*elf_hander)
 		if (deps.len <= 0) break;
 		left = sv_chop_by_type(&deps, isspace);
 		if(left.len <= 0) break;
+		sprintfcat(cmd, " \"%s\"", obj_hander(path_join(path_from_sv(prefix), left)).path);
 		if (build_file(path_join(path_from_sv(prefix), left), obj_hander, NULL, cflags) > 0)    /* 设置elf_hander为NULL防递归 */
 			stat |= 0b100;    /* 标记依赖更新 */
 		size++;
 	}
 
 	Path_t elf = elf_hander(source);
+	deps = sv_from_cstr(flag->libs);
+	while (deps.len > 0) {
+		sv_trim_left_by_type(&deps, isspace);
+		if (deps.len <= 0) break;
+		left = sv_chop_by_type(&deps, isspace);
+		if(left.len <= 0) break;
+		sprintfcat(str_libs, " -l%.*s", (int)left.len, left.p);
+		uint64_t i = 0;
+		for (i = 0; i < ARRAY_LEN(CLIBS); i++) {
+			if (strncmp(CLIBS[i].libname, left.p, left.len) != 0) continue;
+			if (is_newer(elf.path, 1, (const char*[]){CLIBS[i].libfile})) stat |= 0b1000;
+			break;
+		}
+	}
+
 	ret = is_newer(elf.path, 1, (const char*[]){obj.path});
 	if (ret < 0) {
 		fprintf(stderr, "[WARN] 文件缺失 %s\n", obj.path);
 		return -5;
 	}
-	if (ret > 0 || stat & 0b100) {
+	if (ret > 0 || stat & 0b1100) {
 		sprintf(cmd, COMPILOR" -o \"%s\" \"%s\"", elf.path, obj.path);
-		if (cflags.flg_link) {
-			strlcat(cmd, " ", sizeof(cmd));
-			strlcat(cmd, cflags.flg_link, sizeof(cmd));
-		}
-		if (flag->flg_link) {
-			strlcat(cmd, " ", sizeof(cmd));
-			strlcat(cmd, flag->flg_link, sizeof(cmd));
-		}
-		deps = sv_from_cstr(flag->deps);
-		while (deps.len > 0) {
-			sv_trim_left_by_type(&deps, isspace);
-			if (deps.len <= 0) break;
-			left = sv_chop_by_type(&deps, isspace);
-			if(left.len <= 0) break;
-			strlcat(cmd, " \"", sizeof(cmd));
-			strlcat(cmd, obj_hander(path_join(path_from_sv(prefix), left)).path, sizeof(cmd));
-			strlcat(cmd, "\"", sizeof(cmd));
-		}
-		deps = sv_from_cstr(flag->libs);
-		while (deps.len > 0) {
-			sv_trim_left_by_type(&deps, isspace);
-			if (deps.len <= 0) break;
-			left = sv_chop_by_type(&deps, isspace);
-			if(left.len <= 0) break;
-			strlcat(cmd, " -l", sizeof(cmd));
-			strncat(cmd, left.p, left.len);
-		}
+		if (cflags.flg_link) sprintfcat(cmd, " %s", cflags.flg_link);
+		if (flag->flg_link) sprintfcat(cmd, " %s", flag->flg_link);
+		if (*str_deps) sprintfcat(cmd, "%s", str_deps);
+		if (*str_libs) sprintfcat(cmd, "%s", str_libs);
 		if (run_cmd(cmd) != 0) return -6;
 		stat |= 0b10;
 	}
@@ -224,26 +226,34 @@ void build_libs()
 	char cmd[5*PATH_MAX] = {0};
 	Path_t path = {0};
 	int ret = 0;
+	int pcount = 0;
 	for (uint64_t i = 0; i < ARRAY_LEN(CLIBS); i++) {
-		ret = is_newer(CLIBS[i].libname, ARRAY_LEN(CLIBS[i].sources), CLIBS[i].sources);
+		ret = is_newer(CLIBS[i].libfile, ARRAY_LEN(CLIBS[i].sources), CLIBS[i].sources);
 		if (ret < 0) {
 			fprintf(stderr, "[WARN] 库源文件缺失: %s\n", CLIBS[i].sources[-i-1]);
 			continue;
 		}
 		if (ret == 0) continue;
-		sprintf(cmd, "ar rcs \"%s\" ", CLIBS[i].libname);
+		sprintf(cmd, "ar rcs \"%s\" ", CLIBS[i].libfile);
 		uint64_t j = 0;
 		for (j = 0; j < ARRAY_LEN(CLIBS[i].sources) && CLIBS[i].sources[j]; j++) {
 			strlcpy(path.path, CLIBS[i].sources[j], sizeof(path.path));
-			build_file(path, path_hander_obj_replace, NULL, (CFLAGS_t){.flg_comp=CCOMFLAGS});
+			while (pcount >= MAX_PTR) if (wait(NULL) > 0) pcount--;
+			if (fork() == 0) {
+				build_file(path, path_hander_obj_replace, NULL, (CFLAGS_t){.flg_comp=CCOMFLAGS});
+				exit(0);
+			}
+			pcount++;
 
 			path = path_hander_obj_replace(path);
 			int size = strlen(cmd);
 			snprintf(cmd+size, sizeof(cmd)-size, " \"%s\"", path.path);
 		}
 		if (j == 0) continue;
+		while(wait(NULL) > 0) pcount--, usleep(0010000);
 		run_cmd(cmd);
 	}
+	while(wait(NULL) > 0) pcount--, usleep(0010000);
 }
 
 
@@ -278,7 +288,7 @@ void fordir(char *cwd, char *dirname)
 		}
 		if (type != DT_REG || !str_end_with(dp_item->d_name,".c"))
 			continue;
-		while (pcount >= 8) if (wait(NULL) > 0) pcount--;
+		while (pcount >= MAX_PTR) if (wait(NULL) > 0) pcount--;
 		pid_t pid = fork();
 		if (pid == 0) {
 			build_file(path_join(path, sv_from_cstr(dp_item->d_name)),

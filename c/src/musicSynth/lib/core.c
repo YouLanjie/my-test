@@ -7,6 +7,9 @@
  */
 
 #include "../core.h"
+#ifndef DISABLE_OMP
+#include <omp.h>
+#endif
 
 uint32_t SAMPLE_RATE = 44100;
 
@@ -265,7 +268,7 @@ int create_note_wave(Note_t **pp, bool no_fade, bool smooth, bool no_har)
 /* 需编译和链接时使用 -fopenmp 编译参数 */
 #pragma omp parallel for
 #endif
-		for (int i = 0; i < sample_num; i++) {    /* 生成每个采样点声波的相位 */
+		for (uint32_t i = 0; i < sample_num; i++) {    /* 生成每个采样点声波的相位 */
 			double env = adsr_envelope(i, sample_num, no_fade)*p->amplitude;
 			double freq = flag_slide ? get_portamento_freq(flag_slide, p->freq, (double)i/sample_num, smooth) : p->freq;
 			int16_t phase = (int16_t)gen_wave((double)i/SAMPLE_RATE, env, freq, p, no_har);
@@ -284,7 +287,7 @@ int create_note_wave(Note_t **pp, bool no_fade, bool smooth, bool no_har)
 			Biquad bq_l = {}, bq_r = {};
 			create_biquad(&bq_l, p->bq, p->bq_freq, 0);
 			create_biquad(&bq_r, p->bq, p->bq_freq, 0);
-			for (int i = 0; i < sample_num; i++) {
+			for (uint32_t i = 0; i < sample_num; i++) {
 				buffer[i * 2] = apply_biquad(&bq_l, buffer[i * 2]);
 				buffer[i*2+1] = apply_biquad(&bq_r, buffer[i*2+1]);
 			}
