@@ -10,3 +10,4 @@ build.ninja
 .ninja_*
 a.out
 *.so
+*.wav

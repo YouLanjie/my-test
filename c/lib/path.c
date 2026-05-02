@@ -30,6 +30,20 @@ bool str_end_with(const char *s, const char *pat)
 	return !strncmp(s+strlen(s)-size, pat, size);
 }
 
+Path_t path_from_cstr(const char *s)
+{
+	Path_t path;
+	strlcpy(path.path, s, sizeof(path.path));
+	return path;
+}
+
+Path_t path_from_sv(SV_t sv)
+{
+	Path_t path = {0};
+	strncpy(path.path, sv.p, sv.len);
+	return path;
+}
+
 SV_t path_basename(Path_t path)
 {
 	SV_t s = {strlen(path.path), path.path}, last = {0, NULL};

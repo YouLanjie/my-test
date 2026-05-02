@@ -9,8 +9,9 @@
  *
  */
 
-#define ENABLE_ALSA
-#define ENABLE_OMP
+// #define DISABLE_ALSA
+// #define DISBLE_OMP
+// #define ENABLE_REVERPHASE
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,11 +20,11 @@
 #include <limits.h>
 #include <stdint.h>
 #include <math.h>
-#ifdef ENABLE_ALSA
+#ifndef DISABLE_ALSA
 #include <alsa/asoundlib.h>
 #endif
 
-#ifdef ENABLE_OMP
+#ifndef DISABLE_OMP
 #include <omp.h>
 #endif
 
@@ -42,7 +43,7 @@ uint16_t status = FLG_FADE|FLG_HARMONICS;
 /* 采样率（Hz） */
 unsigned int SAMPLE_RATE = 44100;
 
-#ifdef ENABLE_ALSA
+#ifndef DISABLE_ALSA
 snd_pcm_t *init()
 {
 	snd_pcm_t *pcm_handle = NULL;
@@ -361,7 +362,7 @@ double gen_wave(double x, double volume, double f,
 		return INT16_MAX * volume * value;
 	double (*func)(double) = wave_funcs[wave_func];
 	/* 需使用 -fopenmp 编译参数 */
-#ifdef ENABLE_OMP
+#ifndef DISABLE_OMP
 #pragma omp simd reduction(+:value)
 #endif
 	for (int i = 1; i < 15; i++) {
@@ -705,8 +706,8 @@ int create_note_wave(struct Note **pp)
 			continue;
 		}
 		uint32_t duration = pduration(p);
-#ifdef ENABLE_OMP
-/* 需使用 -fopenmp 编译参数 */
+#ifndef DISABLE_OMP
+/* 需编译和链接时使用 -fopenmp 编译参数 */
 #pragma omp parallel for
 #endif
 		for (int i = 0; i < sample_num; i++) {    /* 生成每个采样点声波的相位 */
@@ -749,7 +750,7 @@ int create_note_wave(struct Note **pp)
 	return sample_num;
 }
 
-#ifdef ENABLE_ALSA
+#ifndef DISABLE_ALSA
 int play_wav(snd_pcm_t *pcm_handle, int16_t *wave, int size)
 {
 	if (!pcm_handle)
@@ -991,7 +992,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 		fwrite(&wav_header, 1, sizeof(wav_header), wav_file);
 	}
 
-#ifdef ENABLE_ALSA
+#ifndef DISABLE_ALSA
 	snd_pcm_t *pcm_handle = NULL;
 	if (status & FLG_PLAY) {
 		// ALSA PCM设备配置
@@ -1021,7 +1022,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 		if (p->track == 0 && sizes[0] == 0) {    /* 直接播放 */
 			size+=duration;
 			if (status & FLG_SAVE) fwrite(p->pwav, sizeof(int16_t)*2, duration, wav_file);
-#ifdef ENABLE_ALSA
+#ifndef DISABLE_ALSA
 			if (status & FLG_PLAY) play_wav(pcm_handle, p->pwav, duration);
 #endif
 			free(p->pwav);
@@ -1040,7 +1041,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 			merge_tracks(tracks, duration, size-sizes[1]);
 			size+=duration;
 			if (status & FLG_SAVE) fwrite(p->pwav, sizeof(int16_t)*2, duration, wav_file);
-#ifdef ENABLE_ALSA
+#ifndef DISABLE_ALSA
 			if (status & FLG_PLAY) play_wav(pcm_handle, p->pwav, duration);
 #endif
 			free(p->pwav);
@@ -1084,7 +1085,7 @@ int melody(int id, char *filename, double amplitude, char *input)
 
 	if (status & FLG_PLAY) {
 		// 等待播放完成并关闭设备
-#ifdef ENABLE_ALSA
+#ifndef DISABLE_ALSA
 		snd_pcm_drain(pcm_handle);
 		snd_pcm_close(pcm_handle);
 #endif
@@ -1134,7 +1135,7 @@ int read_play_wave(char *filename)
 	       header.channels, header.sample_rate, header.byte_rate, header.block_align,
 	       header.bits_per_sample, header.data_size/header.block_align, header.file_size);
 
-#ifdef ENABLE_ALSA
+#ifndef DISABLE_ALSA
 	snd_pcm_t *pcm_handle = init();
 	if (! pcm_handle) return 2;
 
@@ -1181,8 +1182,8 @@ int main(int argc, char *argv[])
 			       "       4: 运动员进行曲\n"
 			       "       5: 我和我的祖国\n"
 			       "       6: 义勇军进行曲\n"
-#ifndef ENABLE_ALSA
-			       "[!] 本程序在编译时关闭了`ENABLE_ALSA`\n"
+#ifdef DISABLE_ALSA
+			       "[!] 本程序在编译时指定了`DISABLE_ALSA`\n"
 			       "    意味着无法提供任何ALSA方面的支持\n"
 #endif
 			       );

@@ -55,15 +55,17 @@ CLIBS_t CLIBS[] = {
 
 #define FLG(f, l, ...) (CFLAGS_t){.filename=SOURCE_DIR f, .libs=l, __VA_ARGS__}
 CFLAGS_t CFILEFLAGS[] = {
-	FLG("lrc.c",              "SDL2_mixer SDL2"),
-	FLG("musicSynth/ALSA.c",  "asound m", .flg_comp="-fopenmp"),
-	FLG("tests/libav_test.c", "avformat avcodec avutil swresample m"),
-	FLG("tests/social.c",     "m"),
-	FLG("tests/try_iconv.c",  "iconv"),
-	FLG("tetris.c",           "ncurses"),
-	FLG("render3d.c",         "m"),
-	FLG("tests/input.c",      "m"),
-	FLG("tests/sin.c",        "m"),
+	FLG("musicSynth/music_synth.c", "m", .flg_comp="-fopenmp", .flg_link="-fopenmp",
+	    .deps="lib/core.c lib/wave_func.c lib/note_parser.c lib/melody.c"),
+	FLG("musicSynth/alsa_play.c",   "asound m", .flg_comp="-fopenmp", .flg_link="-fopenmp"),
+	FLG("tests/libav_test.c",       "avformat avcodec avutil swresample m"),
+	FLG("tests/social.c",           "m"),
+	FLG("tests/try_iconv.c",        "iconv"),
+	FLG("lrc.c",                    "SDL2_mixer SDL2"),
+	FLG("tetris.c",                 "ncurses"),
+	FLG("render3d.c",               "m"),
+	FLG("tests/input.c",            "m"),
+	FLG("tests/sin.c",              "m"),
 };
 #undef FLG
 // 配置区结束
@@ -135,33 +137,32 @@ int build_file(Path_t source, Path_t (*obj_hander)(Path_t), Path_t (*elf_hander)
 			strlcat(cmd, flag->flg_comp, sizeof(cmd));
 		}
 		if (run_cmd(cmd) != 0) return -4;
-		stat |= 1;
+		stat |= 0b1;
 	}
-	if (!elf_hander || flag->no_elf) return 1;
+	if (!elf_hander || flag->no_elf) return stat;
 
 	SV_t prefix, deps = sv_from_cstr(flag->deps), left;
-	Path_t elf = {0};
 	int size = 0;
 	for (char *p = source.path; p && *p; p++) if (*p == '/') size = p-source.path;
 	prefix = (SV_t){.p=source.path, .len=size};
+	size = 0;
 	while (deps.len > 0) {    /* 检查明确指定的依赖文件 */
 		sv_trim_left_by_type(&deps, isspace);    /* 跳过空格 */
-		while (deps.len > 0 && isspace(deps.p[0])) sv_chop_left(&deps, 1);
 		if (deps.len <= 0) break;
 		left = sv_chop_by_type(&deps, isspace);
 		if(left.len <= 0) break;
-		strncpy(elf.path, prefix.p, prefix.len);    /* 这里依旧临时借用(Path_t)elf */
-		path_join(elf, left);
-		printf("[INFO] CHECK DEP: %s\n", elf.path);
-		build_file(elf, obj_hander, NULL, cflags);    /* 设置elf_hander为NULL防递归 */
+		if (build_file(path_join(path_from_sv(prefix), left), obj_hander, NULL, cflags) > 0)    /* 设置elf_hander为NULL防递归 */
+			stat |= 0b100;    /* 标记依赖更新 */
+		size++;
 	}
-	elf = elf_hander(source);
+
+	Path_t elf = elf_hander(source);
 	ret = is_newer(elf.path, 1, (const char*[]){obj.path});
 	if (ret < 0) {
 		fprintf(stderr, "[WARN] 文件缺失 %s\n", obj.path);
 		return -5;
 	}
-	if (ret > 0) {
+	if (ret > 0 || stat & 0b100) {
 		sprintf(cmd, COMPILOR" -o \"%s\" \"%s\"", elf.path, obj.path);
 		if (cflags.flg_link) {
 			strlcat(cmd, " ", sizeof(cmd));
@@ -171,15 +172,27 @@ int build_file(Path_t source, Path_t (*obj_hander)(Path_t), Path_t (*elf_hander)
 			strlcat(cmd, " ", sizeof(cmd));
 			strlcat(cmd, flag->flg_link, sizeof(cmd));
 		}
+		deps = sv_from_cstr(flag->deps);
+		while (deps.len > 0) {
+			sv_trim_left_by_type(&deps, isspace);
+			if (deps.len <= 0) break;
+			left = sv_chop_by_type(&deps, isspace);
+			if(left.len <= 0) break;
+			strlcat(cmd, " \"", sizeof(cmd));
+			strlcat(cmd, obj_hander(path_join(path_from_sv(prefix), left)).path, sizeof(cmd));
+			strlcat(cmd, "\"", sizeof(cmd));
+		}
 		deps = sv_from_cstr(flag->libs);
 		while (deps.len > 0) {
 			sv_trim_left_by_type(&deps, isspace);
+			if (deps.len <= 0) break;
 			left = sv_chop_by_type(&deps, isspace);
+			if(left.len <= 0) break;
 			strlcat(cmd, " -l", sizeof(cmd));
 			strncat(cmd, left.p, left.len);
 		}
 		if (run_cmd(cmd) != 0) return -6;
-		stat |= 1 << 1;
+		stat |= 0b10;
 	}
 	return stat;
 }
