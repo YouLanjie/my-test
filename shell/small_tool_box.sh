@@ -13,26 +13,51 @@ help() {
 }
 
 get_mem_by_grep() {
-	tag=$1
-	if [[ $1 == "" ]];then
-		echo "请输入匹配的tag（默认为msedge）"
-		read tag
-	fi
+	local tag=""
+	local list=""
+	local verbose=""
+	local fullcmd=""
+	while getopts "flvt:" OPTION; do
+		case $OPTION in
+			f) fullcmd="t" ;;
+			t) tag="$OPTARG" ;;
+			l) list="t" ;;
+			v) verbose="t" ;;
+		esac
+	done
 	if [[ $tag == "" ]];then
-		tag="msedge"
+		echo "搜索 TAG 为空"
+		echo "Usage: ${FUNCNAME[0]} -t <TAG>"
+		return 1
 	fi
 	echo "TAG:     '$tag'"
-	pslist=$(ps auxww)
-	pslist=$(echo "$pslist"|grep "$tag")
+	local pslist=""
+	if [[ $fullcmd != "" ]];then
+		pslist="$(ps axww -o pid,user,pcpu,rss,tty,cmd)"
+	else
+		pslist="$(ps axww -o pid,user,pcpu,rss,tty,comm)"
+	fi
+	local headline=$(echo "$pslist"|head -n 1)
+	pslist=$(echo "$pslist"|sed '1d'|grep "$tag")
 	if [[ $pslist == "" ]];then
 		echo "WARN: no matches of '$tag'" >&2
 		return 1
 	fi
-	sum=$(echo "$pslist"|awk '{print $2}')
+	if [[ $list != "" ]];then
+		echo "=========="
+		echo "Process List"
+		echo "$headline"
+		echo "$pslist"
+		echo "=========="
+	fi
+	sum=$(echo "$pslist"|awk '{print $1}')
 	for i in $sum
 	do
 		if [[ ! -f "/proc/$i/status" ]];then continue;fi
 		if [[ $i == $$ ]];then continue;fi
+		if [[ $verbose != "" ]];then
+			echo "Add: $i" >&2
+		fi
 		cat /proc/$i/status|grep 'Swap\|RSS'
 	done|awk '{type[$1]+=$2;type["Total:"]+=$2}END{for (t in type) printf "%-8s %s MB\n",t,type[t]/1024}'
 }

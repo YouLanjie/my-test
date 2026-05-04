@@ -150,22 +150,22 @@ int main(int argc, char *argv[])
 	char filename[PATH_MAX] = "",
 	     input[PATH_MAX] = "";
 	struct Melody_opts_t args = {.no_fade=0};
-	while ((ch = getopt(argc, argv, "hi:I:o::nmHPxA:")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "hi:I:o:nmHPxA:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
 			printf("Usage: music_synth [Option]\n"
 			       "Option:\n"
-			       "    -i <NUM>    选择曲子\n"
-			       "    -I <FILE>   输入文件(曲谱)\n"
-			       "    -o [<FILE>] 输出文件(output.wav)\n"
-			       "    -n          取消音符淡入淡出,可能产生杂音\n"
-			       "    -m          平滑滑音，滑音频率匀速增长\n"
-			       "    -H          取消泛音\n"
-			       "    -P          打印音符(格式化)\n"
-			       "    -x          打印调试信息\n"
-			       "    -A <NUM>    音量系数(默认1.0)\n"
-			       "    -h          显示帮助\n"
+			       "    -i <NUM>  选择曲子\n"
+			       "    -I <FILE> 输入文件(曲谱)\n"
+			       "    -o <FILE> 输出文件(为空时使用output.wav)\n"
+			       "    -n        取消音符淡入淡出,可能产生杂音\n"
+			       "    -m        平滑滑音，滑音频率匀速增长\n"
+			       "    -H        取消泛音\n"
+			       "    -P        打印音符(格式化)\n"
+			       "    -x        打印调试信息\n"
+			       "    -A <NUM>  音量系数(默认1.0)\n"
+			       "    -h        显示帮助\n"
 			       "  NUM: 0: 小星星\n"
 			       "       1: 中国人民志愿军战歌\n"
 			       "       2: 20s音频测试\n"
@@ -181,7 +181,7 @@ int main(int argc, char *argv[])
 			if (amplitude > 100 || amplitude < 0) amplitude = 1.0;
 			break;
 		case 'o':
-			if (optarg) strlcpy(filename, optarg, sizeof(filename));
+			if (optarg && *optarg) strlcpy(filename, optarg, sizeof(filename));
 			else strlcpy(filename, "output.wav", sizeof(filename));
 			break;
 		case 'i': id = (int)strtod(optarg, NULL) % (sizeof(NOTELIST)/sizeof(NOTELIST[0])); break;

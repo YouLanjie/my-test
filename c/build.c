@@ -50,29 +50,34 @@ typedef struct {
 
 #define LIB(l, ...) (CLIBS_t){.libname=l, .libfile=BUILD_DIR "lib"l".a", .sources={__VA_ARGS__}}
 #define MUSDIR SOURCE_DIR"musicSynth/lib/"
+#define R3DDIR SOURCE_DIR"render3d/lib/"
 CLIBS_t CLIBS[] = {
 	LIB("ctools", LIB_DIR"tools.c", LIB_DIR"print_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c"),
 	LIB("cmenu", LIB_DIR"menu.c"),
 	LIB("cmusicsynth", MUSDIR"core.c", MUSDIR"wave_func.c", MUSDIR"note_parser.c", MUSDIR"melody.c"),
+	LIB("render3d", R3DDIR"camera.c", R3DDIR"draw_ascii.c", R3DDIR"object.c", R3DDIR"vec.c"),
 };
+#undef R3DDIR
 #undef MUSDIR
 #undef LIB
 
 #define FLG(f, l, ...) (CFLAGS_t){.filename=SOURCE_DIR f, .libs=l, __VA_ARGS__}
 #define MUS(f, l, ...) FLG("musicSynth/" f, l" m cmusicsynth", .flg_comp="-fopenmp", .flg_link="-fopenmp", __VA_ARGS__)
 CFLAGS_t CFILEFLAGS[] = {
-	MUS("lib/core.c",         "m\0",),
-	MUS("alsa_play.c",        "asound",),
-	MUS("music_synth.c",      ,),
+	MUS("lib/core.c",          "m\0",),
+	MUS("alsa_play.c",         "asound",),
+	MUS("music_synth.c",       ,),
 
-	FLG("tests/libav_test.c", "avformat avcodec avutil swresample m"),
-	FLG("tests/social.c",     "m"),
-	FLG("tests/try_iconv.c",  "iconv"),
-	FLG("lrc.c",              "SDL2_mixer SDL2"),
-	FLG("tetris.c",           "ncurses"),
-	FLG("render3d.c",         "m"),
-	FLG("tests/input.c",      "m"),
-	FLG("tests/sin.c",        "m"),
+	FLG("render3d/render3d.c", "m render3d"),
+
+	FLG("tests/libav_test.c",  "avformat avcodec avutil swresample m"),
+	FLG("tests/social.c",      "m"),
+	FLG("tests/try_iconv.c",   "iconv"),
+	FLG("tests/input.c",       "m"),
+	FLG("tests/sin.c",         "m"),
+
+	FLG("lrc.c",               "SDL2_mixer SDL2"),
+	FLG("tetris.c",            "ncurses"),
 };
 #undef MUS
 #undef MUSDEP
@@ -233,9 +238,13 @@ void build_libs()
 			fprintf(stderr, "[WARN] 库源文件缺失: %s\n", CLIBS[i].sources[-i-1]);
 			continue;
 		}
+		size_t j = 0;
+		for (j = 0; j < ARRAY_LEN(CLIBS[i].sources) && CLIBS[i].sources[j] && ret <= 0; j++) {
+			strlcpy(path.path, CLIBS[i].sources[j], sizeof(path.path));
+			ret = is_newer(CLIBS[i].libfile, 1, (const char*[]){path_hander_obj_replace(path).path});
+		}
 		if (ret == 0) continue;
 		sprintf(cmd, "ar rcs \"%s\" ", CLIBS[i].libfile);
-		uint64_t j = 0;
 		for (j = 0; j < ARRAY_LEN(CLIBS[i].sources) && CLIBS[i].sources[j]; j++) {
 			strlcpy(path.path, CLIBS[i].sources[j], sizeof(path.path));
 			while (pcount >= MAX_PTR) if (wait(NULL) > 0) pcount--;

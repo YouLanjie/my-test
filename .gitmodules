@@ -1,3 +1,0 @@
-[submodule "src_c/lib"]
-	path = src_c/lib
-	url = git@github.com:youlanjie/C-head.git
