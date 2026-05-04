@@ -26,8 +26,8 @@ typedef struct {
 } Vec_t;
 /* 点、线、面（仅支持三点面） */
 typedef Vec_t Point_t;
-typedef Vec_t *Line_t;            /* 指向一系列点 */
-typedef Vec_t (*Surface_t)[3];    /* 三个指向点的指针的数组 */
+typedef struct {Point_t start,end;} Line_t;  /* 两点成线 */
+typedef struct {Point_t v[3];} Surface_t;    /* 三点成面 */
 /* 二维平面点 */
 typedef Vec_t Point2d_t;
 
@@ -94,7 +94,7 @@ typedef struct {
 	/* 点线面的计数 */
 	size_t count_point;
 	size_t count_line;
-	size_t count_suface;
+	size_t count_surface;
 } Obj_t;
 Obj_t *obj_create(Point_t initial_position, size_t point_num, Point_t *points, size_t line_num, Line_t *lines, size_t surface_num, Surface_t *surfaces);
 void obj_free(Obj_t **obj);
@@ -105,8 +105,8 @@ Obj_t *obj_transform_shift(Obj_t *obj, Vec_t v);
 void obj_rotate(Obj_t *obj, Vec_t direction, double theta);
 bool obj_merge(Obj_t *obj, Obj_t *from);
 bool obj_merge_and_free(Obj_t *obj, Obj_t *from);
-Obj_t *obj_create_line_from_point(Point_t t1, Point_t t2, size_t count);
-Obj_t *obj_create_box_from_point(size_t count, Point_t points[8]);
+Obj_t *obj_create_line_from_point(Point_t t1, Point_t t2);
+Obj_t *obj_create_box_from_point(Point_t points[8]);
 void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend);
 
 #endif //RENDER3D_H

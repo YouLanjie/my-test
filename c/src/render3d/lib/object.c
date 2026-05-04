@@ -24,7 +24,7 @@ Obj_t *obj_create(Point_t initial_position,
 		.center = initial_position,
 		.count_point = point_num,
 		.count_line = line_num,
-		.count_suface = surface_num,
+		.count_surface = surface_num,
 		.points = NULL, .lines = NULL, .surfaces = NULL,
 	};
 	if (point_num) {
@@ -49,7 +49,9 @@ Obj_t *obj_create(Point_t initial_position,
 void obj_free(Obj_t **obj)
 {
 	if (!obj || !*obj) return;
-	free((*obj)->points);
+	if ((*obj)->points) free((*obj)->points);
+	if ((*obj)->lines) free((*obj)->lines);
+	if ((*obj)->surfaces) free((*obj)->surfaces);
 	free(*obj);
 	*obj = NULL;
 }
@@ -67,12 +69,13 @@ Obj_t *obj_transform_shift(Obj_t *obj, Vec_t v)
 {
 	if (!obj || !obj->points) return obj;
 	Point_t *p = obj->points;
-	for (int j = 0 ; j < (int64_t)obj->count_point; j++,p++) {
-		*p = (Point_t){
-			.x = p->x + v.x,
-			.y = p->y + v.y,
-			.z = p->z + v.z,
-		};
+	size_t j = 0;
+	for (j = 0 ; j < obj->count_point; j++,p++) {
+		*p = vec_add(*p, v);
+	}
+	for (j = 0 ; j < obj->count_line; j++) {
+		obj->lines[j].start = vec_add(obj->lines[j].start, v);
+		obj->lines[j].end = vec_add(obj->lines[j].end, v);
 	}
 	return obj;
 }
@@ -84,8 +87,19 @@ void obj_rotate(Obj_t *obj, Vec_t direction, double theta)
 	Point_t *p = obj->points;
 	direction = vec_mul(direction, 1/vec_len(direction));
 	double s = sin(theta), c = cos(theta), rc = 1-c;
-	for (size_t j = 0 ; j < obj->count_point; j++,p++) {
+	size_t j = 0;
+	for (j = 0 ; j < obj->count_point; j++,p++) {
 		/* 不使用vec_rotate，因为sin(theta)和cos(theta)都相同,避免多重计算 */
+		*p = vec_adds(vec_mul(direction, vec_point_product(direction, *p)*rc),
+			      vec_mul(vec_cross_product(direction, *p), s),
+			      vec_mul(*p, c));
+	}
+	for (j = 0 ; j < obj->count_line; j++) {
+		p = &obj->lines[j].start;
+		*p = vec_adds(vec_mul(direction, vec_point_product(direction, *p)*rc),
+			      vec_mul(vec_cross_product(direction, *p), s),
+			      vec_mul(*p, c));
+		p = &obj->lines[j].end;
 		*p = vec_adds(vec_mul(direction, vec_point_product(direction, *p)*rc),
 			      vec_mul(vec_cross_product(direction, *p), s),
 			      vec_mul(*p, c));
@@ -96,14 +110,30 @@ void obj_rotate(Obj_t *obj, Vec_t direction, double theta)
 bool obj_merge(Obj_t *obj, Obj_t *from)
 {
 	if (!obj || !from) return false;
-	Point_t *points = realloc(obj->points,
-				  sizeof(*points)*(obj->count_point+from->count_point));
-	if (!points) return false;
-	memcpy(points+obj->count_point, from->points, sizeof(*points)*from->count_point);
-	/* realloc已经释放内存了 */
-	/*free(obj->points);*/
-	obj->points = points;
-	obj->count_point += from->count_point;
+
+	if (from->count_point && from->points) {
+		Point_t *points = realloc(obj->points, sizeof(*points)*(obj->count_point+from->count_point));
+		if (!points) return false;
+		memcpy(points+obj->count_point, from->points, sizeof(*points)*from->count_point);
+		obj->points = points;
+		obj->count_point += from->count_point;
+	}
+
+	if (from->count_line && from->lines) {
+		Line_t *lines = realloc(obj->lines, sizeof(*lines)*(obj->count_line+from->count_line));
+		if (!lines) return false;
+		memcpy(lines+obj->count_line, from->lines, sizeof(*lines)*from->count_line);
+		obj->lines = lines;
+		obj->count_line += from->count_line;
+	}
+
+	if (from->count_surface && from->surfaces) {
+		Surface_t *surfaces = realloc(obj->surfaces, sizeof(*surfaces)*(obj->count_surface+from->count_surface));
+		if (!surfaces) return false;
+		memcpy(surfaces+obj->count_surface, from->surfaces, sizeof(*surfaces)*from->count_surface);
+		obj->surfaces = surfaces;
+		obj->count_surface += from->count_surface;
+	}
 	return true;
 }
 
@@ -117,24 +147,18 @@ bool obj_merge_and_free(Obj_t *obj, Obj_t *from)
 }
 
 /* count: 点云密度 */
-Obj_t *obj_create_line_from_point(Point_t t1, Point_t t2, size_t count)
+Obj_t *obj_create_line_from_point(Point_t t1, Point_t t2)
 {
-	if (count == 0 || count > 1024) return NULL;
-	Point_t center = vec_mul(vec_add(t1, t2), 0.5),
-		dt = vec_sub(t2, t1),
-		t[count];
-	for (size_t i = 0; i < count && i < (sizeof(t)/sizeof(*t)); i++) {
-		t[i] = vec_mul(dt, -0.5+(double)i/count);
-	}
-	return obj_create(center, count, t, 0, NULL, 0, NULL);
+	Point_t center = vec_mul(vec_add(t1, t2), 0.5);
+	return obj_create(center, 0, 0, 1, (Line_t[]){{t1, t2}}, 0, NULL);
 }
 
 /* 从8顶点创建立方体
  * 前四|后四：两对立面的四个顶点
  * 边：p[n]与p[n+1]相连(n<=3) */
-Obj_t *obj_create_box_from_point(size_t count, Point_t points[8])
+Obj_t *obj_create_box_from_point(Point_t points[8])
 {
-#define oclfp(i1, i2) obj_create_line_from_point(points[i1], points[i2], count)
+#define oclfp(i1, i2) obj_create_line_from_point(points[i1], points[i2])
 	Obj_t *box = oclfp(0, 4), *line = NULL;
 	obj_apply_shift(box);
 	for (int i = 1; i < 12; i++) {
@@ -156,11 +180,25 @@ Obj_t *obj_create_box_from_point(size_t count, Point_t points[8])
 void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 {
 	if (!camera || !backend) return;
+	size_t i = 0;
 	Point2d_t p;
-	for (size_t j = 0; j < obj->count_point; j++) {
-		p = camera_cast(camera, vec_add(obj->points[j], obj->center));
+	for (i = 0; i < obj->count_point; i++) {
+		p = camera_cast(camera, vec_add(obj->points[i], obj->center));
 		if (p.z <= 0) continue;
 		backend->draw(backend, (Point2d_t){p.x, p.y, p.z/camera->dept});
+	}
+	int step;
+	Vec_t v, dv;
+	for (i = 0; i < obj->count_line; i++) {
+		v = obj->lines[i].start;
+		dv = vec_sub(obj->lines[i].end, v);
+		step = 100*vec_len(dv);
+		dv = vec_mul(dv, 1./step);
+		for (int j = 0; j < step; j++) {
+			p = camera_cast(camera, vec_adds(obj->center, v, vec_mul(dv, j)));
+			if (p.z <= 0) continue;
+			backend->draw(backend, (Point2d_t){p.x, p.y, p.z/camera->dept});
+		}
 	}
 }
 

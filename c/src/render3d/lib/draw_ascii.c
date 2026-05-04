@@ -35,7 +35,7 @@ static Scr_t *scr_create(size_t width, size_t height)
 		.size = size,
 	};
 	memset(p->pixels, MAXCHR, p->size);
-	memset(p->scr, MAXCHR, p->size*sizeof(*p->scr));
+	memset(p->scr, 0, p->size*sizeof(*p->scr));
 	return p;
 }
 
@@ -49,17 +49,17 @@ static void scr_free(Scr_t *p)
 
 /* x,y : [0, MAX)
  * return: 屏幕字符指针或NULL */
-static double *scr_p(Scr_t *s, int x, int y)
+static double *scr_p(Scr_t *s, double x, double y)
 {
 	if (!s) return NULL;
 	if (x < 0 || x >= (int)s->w || y < 0 || y >= (int)s->h) return NULL;
-	return s->scr + y*s->w + x;
+	return s->scr + (int)y*s->w + (int)x;
 }
 /* 中央原点屏幕坐标系 转换成 左上角原点屏幕坐标系 */
 static double *scr_c(Scr_t *s, int x, int y)
 {
 	if (!s) return NULL;
-	return scr_p(s, s->w/2+(int)(x), s->h/2-(int)(y));
+	return scr_p(s, s->w/2.+x, s->h/2.-y);
 }
 
 /* 灰度映射 打印前安全处理 打印 重置屏幕 */
