@@ -7,15 +7,52 @@
 
 #include "lib/render3d.h"
 
+#define MAX_FRAME 100000
 uint8_t FPS = 40;
+
+/* 由于日益严重的延迟因而使用特定的时钟避免usleep的额外等待 */
+void my_sleep()
+{
+	static struct timespec t = {0};
+	if (t.tv_sec == 0 && t.tv_nsec == 0) clock_gettime(CLOCK_MONOTONIC, &t);
+	t.tv_nsec += 1e9 / FPS;
+	if (t.tv_nsec >= 1e9) {
+		t.tv_sec++;
+		t.tv_nsec -= 1e9;
+	}
+	clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &t, NULL);
+}
+
+static bool setup(RenderBackend_t **bk, Camera_t *ca, uint8_t num)
+{
+	if (!bk) return false;
+	if (*bk) (*bk)->destory(*bk);
+	*bk = NULL;
+#define BACKEND(name) backend_create_##name,
+	static RenderBackend_t *(*backend_list[])(int width, int height) = {BACKEND_LIST};
+#undef BACKEND
+	int scr_h = get_winsize_row() - 5,
+	    scr_w = get_winsize_col() - 1;
+	if (scr_h <= 10 || scr_w <= 10) {
+		LOG("终端太小(当前可用尺寸：%dx%d)", scr_w, scr_h);
+		return false;
+	}
+	*bk = backend_list[num%(sizeof(backend_list)/sizeof(backend_list[0]))](scr_w, scr_h);
+	if (ca) {
+		ca->width  = scr_w;      /* 需要让相机捕捉到的画面与终端大小相匹配减少无效运算 */
+		ca->height = scr_h*2;    /* 每行能显示的实际大小为每列的两倍 */
+	}
+	return false;
+}
 
 /* 单帧动画处理
  * 输入处理*/
-bool frame(Camera_t *camera, Obj_t *obj, double *theta, Vec_t *v)
+static bool frame(RenderBackend_t **backend, Camera_t *camera, Obj_t *obj, double *theta, Vec_t *v)
 {
-	if (!obj || !theta || !v || !camera) return false;
+	if (!obj || !theta || !v || !camera || !backend) return false;
 	static bool suspend = false;
 	static bool no_fiction = false;
+	static bool focus = true;
 
 	/* 输入处理 */
 	switch (kbhitGetchar()) {
@@ -40,11 +77,14 @@ bool frame(Camera_t *camera, Obj_t *obj, double *theta, Vec_t *v)
 	case 'K': camera_rotate(camera, (Vec_t){1,0,0}, M_PI/180); break;
 	case 'H': camera_rotate(camera, (Vec_t){0,0,1}, M_PI/180); break;
 	case 'L': camera_rotate(camera, (Vec_t){0,0,-1}, M_PI/180); break;
+	case 'F': camera_look(camera, (Point_t){0,0,-1}, (Vec_t){0,1,0}); break;
+
+	case '1': if (FPS > 1) FPS--; break;
+	case '2': if (FPS < (uint8_t)-1) FPS++; break;
+	case 'f': focus=!focus; break;
 	case '`': no_fiction=!no_fiction; break;
-	case '7': if (FPS > 1) FPS--; break;
-	case '8': if (FPS < (uint8_t)-1) FPS++; break;
-	case '9': camera->dept-=0.1; break;
-	case '0': camera->dept+=0.1; break;
+	case 'r': setup(backend, camera, (*backend)->id); break;
+	case '\t': setup(backend, camera, (*backend)->id+1); break;
 	case 'p': suspend=!suspend; break;
 	case 'q': return true; break;
 	}
@@ -52,6 +92,9 @@ bool frame(Camera_t *camera, Obj_t *obj, double *theta, Vec_t *v)
 
 	obj_rotate(obj, (Vec_t){0, 1, 0}, *theta/FPS);
 	obj_shift(obj, vec_mul(*v, 1./FPS));
+	if (focus) camera_look(camera, (Point_t){
+			       obj->center.x, obj->center.y+1, obj->center.z},
+			       (Vec_t){0,1,0});
 
 	if (!no_fiction) {
 		/* 速度衰减 */
@@ -65,11 +108,15 @@ bool frame(Camera_t *camera, Obj_t *obj, double *theta, Vec_t *v)
 	/* 类似碰撞处理 */
 #define CP obj->center
 #define BOX(var, min, max, rate) \
-	if ((CP.var > (max) && v->var > 0) || (CP.var < (min) && v->var < 0)) \
-	v->var *= (rate);
+	if ((CP.var > (max) && v->var > 0) || (CP.var < (min) && v->var < 0)) v->var *= (rate)
 	BOX(x, -5, 5, -0.7);
-	BOX(z, -50, -2, -0.7);
-	BOX(y, -1, 10, -0.5);
+	BOX(z, -50, 10, -0.7);
+	/* 地面碰撞处理 */
+	static const int ground = -1;
+	if (CP.y <= ground && v->y <= 0 && v->y > -0.5) {
+		obj->center.y = -1;
+		v->y = 0;
+	} else BOX(y, ground, 10, -0.5);
 #undef BOX
 #undef CP
 	return false;
@@ -77,7 +124,7 @@ bool frame(Camera_t *camera, Obj_t *obj, double *theta, Vec_t *v)
 
 void help(char *argv)
 {
-#define BACKEND(name) "  Backend_"#name"\t: %d\n"
+#define BACKEND(name) "  %2d : "#name"\n"
 	printf("Usage: %s\n"
 	       "    -h       打印此信息\n"
 	       "    -b <NUM> 指定渲染输出后端\n"
@@ -85,7 +132,7 @@ void help(char *argv)
 	       BACKEND_LIST,
 #undef BACKEND
 	       argv
-#define BACKEND(name) ,Backend_##name
+#define BACKEND(name) ,RDBK_##name
 	       BACKEND_LIST
 	       );
 #undef BACKEND
@@ -110,50 +157,42 @@ int main(int argc, char *argv[])
 			break;
 		}
 	}
-	int scr_h = get_winsize_row() - 5,
-	    scr_w = get_winsize_col() - 1;
-	if (scr_h <= 10 || scr_w <= 10) {
-		LOG("终端太小(当前可用尺寸：%dx%d)", scr_w, scr_h);
-		return 0;
-	}
-#define BACKEND(name) backend_create_##name,
-	RenderBackend_t *(*backend_list[])(int width, int height) = {BACKEND_LIST};
-#undef BACKEND
-	/*RenderBackend_t *backend = backend_create_ascii(scr_w, scr_h);*/
-	RenderBackend_t *backend = backend_list[chose_backend%(sizeof(backend_list)/sizeof(backend_list[0]))](scr_w, scr_h);
-	if (!backend) return 0;
+
 	Camera_t *camera = camera_create();
 	if (!camera) return 0;
-	camera->width  = scr_w;    /* 需要让相机捕捉到的画面与终端大小相匹配减少无效运算 */
-	camera->height = scr_h*2;    /* 每行能显示的实际大小为每列的两倍 */
+	RenderBackend_t *backend = NULL;
+	setup(&backend, camera, chose_backend);
+	if (!backend) return 0;
 
-	Obj_t *line = obj_create((Point_t){0, 0, 0}, 0, 0, 2,
-				 (Line_t[]){
-				 {{-2,-1,1},{-2,-1,-50}},
-				 {{2,-1,1},  {2,-1,-50}},
-				 },
+	Obj_t *line = obj_create((Point_t){0, 0, 0}, 0, NULL, 2,
+				 (Line_t[]){ {{-2,-1,1},{-2,-1,-50}}, {{2,-1,1},  {2,-1,-50}}, },
 				 0, NULL);
-	Obj_t *block = obj_create((Point_t){0, 1, -7},
-			5*17-1,
-			(Point_t[]){
-{-0.6,0.9,0},{-0.5,0.9,0},{-0.4,0.9,0},{-0.3,0.9,0},{0.1,0.9,0},
-{0.2,0.9,0},{0.3,0.9,0},{0.4,0.9,0},{-0.7,0.8,0},{0.1,0.8,0},
-{0.5,0.8,0},{-0.6,0.7,0},{-0.5,0.7,0},{-0.4,0.7,0},{0.1,0.7,0},
-{0.2,0.7,0},{0.3,0.7,0},{0.4,0.7,0},{0.5,0.7,0},{-0.3,0.6,0},
-{0.1,0.6,0},{0.5,0.6,0},{-0.7,0.5,0},{-0.6,0.5,0},{-0.5,0.5,0},
-{-0.4,0.5,0},{0.1,0.5,0},{0.2,0.5,0},{0.3,0.5,0},{0.4,0.5,0},
-{-0.9,0.2,0},{-0.1,0.2,0},{0.3,0.2,0},{0.4,0.2,0},{0.5,0.2,0},
-{0.6,0.2,0},{-0.9,0.1,0},{-0.1,0.1,0},{0.3,0.1,0},{0.7,0.1,0},
-{-0.9,0,0},{-0.1,0,0},{0.3,0,0},{0.4,0,0},{0.5,0,0},
-{-0.9,-0.1,0},{-0.4,-0.1,0},{-0.1,-0.1,0},{0.3,-0.1,0},{0.6,-0.1,0},
-{-0.9,-0.2,0},{-0.8,-0.2,0},{-0.7,-0.2,0},{-0.3,-0.2,0},{-0.2,-0.2,0},
-{-0.1,-0.2,0},{0.3,-0.2,0},{0.7,-0.2,0},{-0.9,-0.5,0},{-0.7,-0.5,0},
-{-0.5,-0.5,0},{-0.3,-0.5,0},{-0.1,-0.5,0},{0.2,-0.5,0},{0.3,-0.5,0},
-{0.5,-0.5,0},{0.7,-0.5,0},{-0.9,-0.6,0},{-0.8,-0.6,0},{-0.7,-0.6,0},
-{-0.4,-0.6,0},{-0.3,-0.6,0},{-0.2,-0.6,0},{0.1,-0.6,0},{0.2,-0.6,0},
-{0.6,-0.6,0},{-0.9,-0.7,0},{-0.7,-0.7,0},{-0.4,-0.7,0},{-0.2,-0.7,0},
-{0.2,-0.7,0},{0.5,-0.7,0},{0.7,-0.7,0},{0.1,-0.8,0},
-			}, 0, NULL, 0, NULL);
+	for (int i = 0; i < 50; i++) {
+		obj_merge_and_free(line, obj_create_line_from_point((Point_t){2,-1,i+2}, (Point_t){-2,-1,i+2}));
+		obj_merge_and_free(line, obj_create_line_from_point((Point_t){2,-1,i+2}, (Point_t){10,5,i+2}));
+		obj_merge_and_free(line, obj_create_line_from_point((Point_t){-2,-1,i+2}, (Point_t){-10,5,i+2}));
+	}
+	Obj_t *block = obj_create_image_from_str((Point_t){0, 1, -7}, 0.1,
+"####################\n"
+"####....###....#####\n"
+"###.#######.###.####\n"
+"####...####.....####\n"
+"#######.###.###.####\n"
+"###....####....#####\n"
+"####################\n"
+"####################\n"
+"#.#######.###....###\n"
+"#.#######.###.###.##\n"
+"#.#######.###...####\n"
+"#.####.##.###.##.###\n"
+"#...###...###.###.##\n"
+"####################\n"
+"####################\n"
+"#.#.#.#.#.##..#.#.##\n"
+"#...##...##..###.###\n"
+"#.#.##.#.###.##.#.##\n"
+"###########.########\n"
+"####################\n", '.');
 	obj_merge_and_free(block, obj_create_box_from_point((Point_t[]){
 {-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1},{-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1} }));
 	obj_transform_shift(block, (Vec_t){.x=0,.y=1,.z=0});    /* 让参考中心点下移一格 */
@@ -163,13 +202,14 @@ int main(int argc, char *argv[])
 	Vec_t v = (Vec_t){
 		.x = 0,
 		.y = 2.,
-		.z = 3.2,
+		.z = 3.5,
 	};
 
 	printf("\x1b[2J");
 	size_t i = 0;
 	for (i = 0; i < MAX_FRAME; ++i) {
-		if (frame(camera, block, &theta, &v)) break;
+		if (frame(&backend, camera, block, &theta, &v)) break;
+		if (!backend) break;
 		obj_cast(line, camera, backend);
 		obj_cast(block, camera, backend);
 		backend->render(backend);
@@ -184,11 +224,11 @@ int main(int argc, char *argv[])
 		       );
 		printf("=> Speed xyzr: %.3f, %6.3f, %.3f, %.3fr/s \n",
 		       v.x, v.y, v.z, (theta)/(2*M_PI));
-		usleep(SECOND/FPS);
+		my_sleep();
 	}
 	obj_free(&line);
 	obj_free(&block);
-	backend->destory(backend);
+	if (backend) backend->destory(backend);
 	printf("[INFO] 退出程序\n");
 	return 0;
 }

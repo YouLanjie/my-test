@@ -13,11 +13,6 @@
 #include "../../../include/tools.h"
 #include <math.h>
 
-/* 参数声明 */
-#define SECOND 1000000
-#define MAX_FRAME 100000
-
-
 /* 向量 */
 typedef struct {
 	double x;
@@ -61,9 +56,17 @@ void camera_free(Camera_t **p);
 Point_t camera_cast(Camera_t *camera, Point_t p);
 void camera_shift(Camera_t *camera, Vec_t direction);
 void camera_rotate(Camera_t *camera, Vec_t direction, double theta);
+void camera_look(Camera_t *camera, Point_t point, Vec_t hold);
 
 
 /* 渲染后端 */
+#define BACKEND_LIST \
+	BACKEND(ascii) \
+	BACKEND(utf8)
+
+#define BACKEND(name) RDBK_##name,
+enum Backend_id {BACKEND_LIST};
+#undef BACKEND
 typedef struct RenderBackend_t RenderBackend_t;
 struct RenderBackend_t {
 	void (*draw)(RenderBackend_t *backend, Point2d_t p);  /* 绘制(p的取值范围：xy:-1~1,z:0~1) */
@@ -71,16 +74,10 @@ struct RenderBackend_t {
 	void (*clean)(RenderBackend_t *backend);              /* 清理上一帧的数据 */
 	void (*destory)(RenderBackend_t *backend);            /* 释放内存 */
 	void *data;
+	enum Backend_id id;
 };
-#define BACKEND_LIST \
-	BACKEND(ascii) \
-	BACKEND(utf8)
-
 #define BACKEND(name) RenderBackend_t *backend_create_##name(int width, int height);
 BACKEND_LIST
-#undef BACKEND
-#define BACKEND(name) Backend_##name,
-enum Backend_list {BACKEND_LIST};
 #undef BACKEND
 
 
@@ -103,10 +100,12 @@ Obj_t *obj_transform_shift(Obj_t *obj, Vec_t v);
 /* 应用移动(将物体原点搬回(0,0,0)但形状留在那个位置) */
 #define obj_apply_shift(obj) obj_shift(obj_transform_shift((obj), (obj)->center), vec_mul((obj)->center, -1))
 void obj_rotate(Obj_t *obj, Vec_t direction, double theta);
+void obj_scale(Obj_t *obj, double k);
 bool obj_merge(Obj_t *obj, Obj_t *from);
 bool obj_merge_and_free(Obj_t *obj, Obj_t *from);
 Obj_t *obj_create_line_from_point(Point_t t1, Point_t t2);
 Obj_t *obj_create_box_from_point(Point_t points[8]);
+Obj_t *obj_create_image_from_str(Point_t center, double k, const char *p, char ch);
 void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend);
 
 #endif //RENDER3D_H

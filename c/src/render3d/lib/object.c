@@ -14,7 +14,8 @@ Obj_t *obj_create(Point_t initial_position,
 		  size_t line_num,    Line_t  *lines,
 		  size_t surface_num, Surface_t *surfaces)
 {
-	if (point_num <= 0 && line_num <= 0 && surface_num <= 0) return NULL;
+	/* 允许创建空物体 */
+	/*if (point_num <= 0 && line_num <= 0 && surface_num <= 0) return NULL;*/
 	if (point_num && !points) return NULL;
 	if (line_num && !lines) return NULL;
 	if (surface_num && !surfaces) return NULL;
@@ -83,18 +84,18 @@ Obj_t *obj_transform_shift(Obj_t *obj, Vec_t v)
 /* 绕指定轴旋转 */
 void obj_rotate(Obj_t *obj, Vec_t direction, double theta)
 {
-	if (!obj || !obj->points || !vec_len(direction)) return;
-	Point_t *p = obj->points;
-	direction = vec_mul(direction, 1/vec_len(direction));
+	if (!obj || !vec_len(direction)) return;
+	Point_t *p = NULL;
 	double s = sin(theta), c = cos(theta), rc = 1-c;
 	size_t j = 0;
-	for (j = 0 ; j < obj->count_point; j++,p++) {
+	direction = vec_direct(direction);
+	for (j=0, p=obj->points; p && j < obj->count_point; j++,p++) {
 		/* 不使用vec_rotate，因为sin(theta)和cos(theta)都相同,避免多重计算 */
 		*p = vec_adds(vec_mul(direction, vec_point_product(direction, *p)*rc),
 			      vec_mul(vec_cross_product(direction, *p), s),
 			      vec_mul(*p, c));
 	}
-	for (j = 0 ; j < obj->count_line; j++) {
+	for (j = 0 ; obj->count_line && j < obj->count_line; j++) {
 		p = &obj->lines[j].start;
 		*p = vec_adds(vec_mul(direction, vec_point_product(direction, *p)*rc),
 			      vec_mul(vec_cross_product(direction, *p), s),
@@ -103,6 +104,19 @@ void obj_rotate(Obj_t *obj, Vec_t direction, double theta)
 		*p = vec_adds(vec_mul(direction, vec_point_product(direction, *p)*rc),
 			      vec_mul(vec_cross_product(direction, *p), s),
 			      vec_mul(*p, c));
+	}
+}
+
+void obj_scale(Obj_t *obj, double k)
+{
+	if (!obj) return;
+	size_t i;
+	for (i = 0; obj->count_point && i < obj->count_point; i++) {
+		obj->points[i] = vec_mul(obj->points[i], k);
+	}
+	for (i = 0; obj->count_line && i < obj->count_line; i++) {
+		obj->lines[i].start = vec_mul(obj->lines[i].start, k);
+		obj->lines[i].end = vec_mul(obj->lines[i].end, k);
 	}
 }
 
@@ -174,6 +188,45 @@ Obj_t *obj_create_box_from_point(Point_t points[8])
 	}
 	return box;
 #undef oclfp
+}
+
+Obj_t *obj_create_image_from_str(Point_t center, double k, const char *p, char ch)
+{
+	if (!p || ch == '\n') return NULL;
+	size_t count = 0;
+	for (const char *tmp=p;*tmp;tmp++) if(*tmp == ch) count++;
+	if (count == 0) return NULL;
+	Point_t *points = malloc(count*sizeof(*points));
+	if (!points) return NULL;
+	// obj_create((Point_t){0,0,0},0,NULL,0,NULL,0,NULL)
+	// O   ^  y
+	//     |
+	// ----+----> x
+	//     |
+	//     |
+	int x = 0, y = 0, max_x = 0;
+	size_t i = 0;
+	while (*p && i < count) {
+		if (*p == ch) {
+			points[i] = (Point_t){x, y, 0};
+			i++;
+			x++;
+		} else if (*p == '\n') y--, x=0;
+		else x++;
+
+		if (x > max_x) max_x = x;
+		p++;
+	}
+	Obj_t *obj = obj_create(center, 0, NULL, 0,NULL,0,NULL);    /* 先创建空物体 */
+	if (!obj) {
+		free(points);
+		return NULL;
+	}
+	obj->count_point = count;
+	obj->points = points;
+	obj_transform_shift(obj, (Vec_t){max_x/-2., y/-2., 0});
+	obj_scale(obj, k);
+	return obj;
 }
 
 /* 投影物体 */

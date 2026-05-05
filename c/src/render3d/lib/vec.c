@@ -65,6 +65,7 @@ Vec_t vec_direct(Vec_t v)
 {
 	double len = vec_len(v);
 	if (len == 1) return v;
+	else if (len == 0) return (Vec_t){0, 0, 0};
 	return vec_mul(v, 1/len);
 }
 

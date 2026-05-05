@@ -123,7 +123,8 @@ RenderBackend_t *backend_create_ascii(int width, int height)
 		.render = render,
 		.clean = clean,
 		.destory = destory,
-		.data = scr_create(width, height)
+		.data = scr_create(width, height),
+		.id = RDBK_ascii,
 	};
 	if (!p->data) {
 		free(p);

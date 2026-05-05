@@ -61,9 +61,19 @@ void camera_shift(Camera_t *camera, Vec_t direction)
 	if (!camera) return;
 	camera->position = vec_add(camera->position, direction);
 }
+
 void camera_rotate(Camera_t *camera, Vec_t direction, double theta)
 {
 	if (!camera) return;
 	camera->forward = vec_rotate(camera->forward, direction, theta);
 	camera->up = vec_rotate(camera->up, direction, theta);
 }
+
+void camera_look(Camera_t *camera, Point_t point, Vec_t hold)
+{
+	if (!camera) return;
+	if (vec_len(hold) == 0) hold = (Vec_t){0, 1, 0};    /* 默认向上保持 */
+	camera->forward = vec_direct(vec_sub(point, camera->position));
+	camera->up = vec_direct(vec_cross_product(vec_cross_product(camera->forward, hold), camera->forward));
+}
+

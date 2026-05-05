@@ -87,7 +87,8 @@ RenderBackend_t *backend_create_utf8(int width, int height)
 		.render = render,
 		.clean = clean,
 		.destory = destory,
-		.data = scr_create(width, height)
+		.data = scr_create(width, height),
+		.id = RDBK_utf8,
 	};
 	if (!p->data) {
 		free(p);
