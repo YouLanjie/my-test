@@ -11,9 +11,7 @@
 #include <sys/stat.h>
 #include "../include/string_view.h"
 
-typedef struct {
-	char path[PATH_MAX];
-} Path_t;
+typedef SVA_t Path_t;
 
 bool str_start_with(const char *s, const char *pat)
 {
@@ -30,79 +28,83 @@ bool str_end_with(const char *s, const char *pat)
 	return !strncmp(s+strlen(s)-size, pat, size);
 }
 
-Path_t path_from_cstr(const char *s)
-{
-	Path_t path;
-	strlcpy(path.path, s, sizeof(path.path));
-	return path;
-}
+#define path_from_cstr sva_from_cstr
+#define path_from_sv sva_from_sv
 
-Path_t path_from_sv(SV_t sv)
+SV_t path_basename(SV_t path)
 {
-	Path_t path = {0};
-	strncpy(path.path, sv.p, sv.len);
-	return path;
-}
-
-SV_t path_basename(Path_t path)
-{
-	SV_t s = {strlen(path.path), path.path}, last = {0, NULL};
-	while (s.len != 0) last = sv_chop_by_delim(&s, '/');
-	s = last;
+	SV_t last = {0, NULL};
+	while (path.len != 0) last = sv_chop_by_delim(&path, '/');
+	path = last;
 	last.len = 0;
-	while (last.len == 0 && s.len != 0) last = sv_chop_by_delim(&s, '.');
+	while (last.len == 0 && path.len != 0) last = sv_chop_by_delim(&path, '.');
 	return last;
 }
 
+/*
 Path_t path_normalize(const char *path)
 {
 	if (!path) return (Path_t){0};
 	Path_t ret = {0};
 	char *p = ret.path;
 	int i = 0;
-	for (; *path && i < PATH_MAX; path++) {
-		if (i && p[i-1] == '/' && *path == '/') continue;
-		if (i && str_end_with(p, "/.") && *path == '/') {
-			p[i-1] = 0;
-			i--;
+ * */
+int path_normalize(Path_t *ret, SV_t path)
+{
+	if (!ret || !path.p) return -1;
+	Path_t tmp = *ret;
+	ret->p = NULL;
+	sva_create(ret);
+	for (; *path.p && path.len; sv_chop_left(&path, 1)) {
+		if (ret->len >= ret->capacity) sva_double(ret);
+		if (*path.p != '/' || ret->len == 0) {    /* 不进入下级啥也不管 */
+			ret->p[ret->len] = *path.p;
+			ret->len++;
 			continue;
 		}
-		if (i > 2 && str_end_with(p, "/..") && *path == '/') {
-			p[i-3] = 0;
-			if (!strcmp(p, "..") || str_end_with(p, "/..") ||
-			    !strcmp(p, ".") || str_end_with(p, "/.")) {
-				p[i-3] = '/';
-				p[i] = *path;
-				i++;
+		/* 进入下级且前文不为空 */
+		if (ret->p[ret->len-1] == '/') continue;    /* 忽略重复的 */
+		if (str_end_with(ret->p, "/.")) {    /* 跳过单独'.'充数的 */
+			ret->p[ret->len-1] = 0;
+			ret->len--;
+			continue;
+		}
+		if (str_end_with(ret->p, "/..")) {    /* 撤回一个目录层级 */
+			ret->p[ret->len-3] = 0;    /* '/' -> '\0' */
+			if (!strcmp(ret->p, "..") || str_end_with(ret->p, "/..") ||
+			    !strcmp(ret->p, ".") || str_end_with(ret->p, "/.")) {
+				ret->p[ret->len-3] = '/';    /* 如果上一级目录也是..则取消一次撤回 */
+				ret->p[ret->len] = *path.p;
+				ret->len++;
 				continue;
 			}
-			for (;i >= 0 && p[i] != '/'; i--) p[i] = 0;
-			i++;
+			for (;ret->len >= 0 && ret->p[ret->len] != '/'; ret->len--) ret->p[ret->len] = 0;
+			ret->len++;
 			continue;
 		}
-		p[i] = *path;
-		i++;
+		ret->p[ret->len] = *path.p;
+		ret->len++;
 	}
-	while (p[0] != '/' && str_end_with(p, "/.")) p[strlen(p)-1] = 0;
-	if (i == 0) {
-		p[i] = '.';
-		p[i+1] = 0;
+	while (ret->p[0] != '/' && str_end_with(ret->p, "/.")) ret->p[strlen(ret->p)-1] = 0;
+	if (ret->len == 0) {
+		ret->p[ret->len] = '.';
+		ret->p[ret->len+1] = 0;
 	}
-	return ret;
+	sva_smallest(ret);
+	sva_free(&tmp);    /* 清理原内存空间 */
+	return 0;
 }
 
-Path_t path_join(Path_t path, SV_t s)
+int path_join(Path_t *ret, SV_t path, SV_t child)
 {
-	int size = strlen(path.path);
-	char sep = '/';
-	if (size <= 0 || path.path[size-1] == sep) sep = 0; 
-	if (size+s.len+(sep!=0) >= sizeof(path.path)) return path;
-	if (sep) {
-		path.path[size] = sep;
-		path.path[size+1] = 0;
-	}
-	strncat(path.path, s.p, s.len);
-	return path_normalize(path.path);
+	const static char sep = '/';
+	Path_t tmp = {0};
+	if (child.len && child.p[0] == '/') sva_from_sv(&tmp, child);
+	else sva_sprintf(&tmp, "%.*s%c%.*s",(int)path.len, path.p,
+			 sep, (int)child.len, child.p);
+	path_normalize(ret, sv_from_sva(&tmp));
+	sva_free(&tmp);
+	return 0;
 }
 
 typedef struct {
@@ -117,7 +119,7 @@ typedef struct {
 Path_st_t path_get_st(Path_t f)
 {
 	Path_st_t st = {0};
-	if (stat(f.path, &st.st) == -1) {
+	if (stat(f.p, &st.st) == -1) {
 		st.isexist = false;
 		return st;
 	}

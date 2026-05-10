@@ -56,7 +56,7 @@ void fordir(char *dirname)
 		int offset = strlen(d_name) - 1 - strlen(SUFFIX);
 		if (offset <= 0) continue;
 		if (!strcmp(SUFFIX, d_name+offset)) continue;
-		char path2[PASS_MAX];
+		char path2[PATH_MAX];
 		snprintf(path2, sizeof(path2), "%s/%s%s",
 			 OUTDIR, get_randommd5(), SUFFIX);
 		printf("LINK '%s' to '%s'\n", path, path2);
