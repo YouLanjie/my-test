@@ -7,6 +7,7 @@
 
 #include "../include/string_view.h"
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 
 void sv_chop_left(SV_t *s, size_t len)

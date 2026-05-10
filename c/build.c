@@ -242,7 +242,7 @@ int path_hander_obj_replace(Path_t* ret, SV_t path)
 int path_hander_elf(Path_t* ret,SV_t path)
 {
 	SV_t sv = path_basename(path);
-	path_join(ret, sv_from_cstr(BUILD_DIR), sv);
+	path_join(ret, sv_from_cstr(BIN_DIR), sv);
 	return 0;
 }
 
