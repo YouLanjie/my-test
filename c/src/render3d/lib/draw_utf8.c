@@ -45,7 +45,7 @@ static void render(RenderBackend_t *backend)
 	if (!backend || !backend->data) return;
 	Scr_t *s = backend->data;
 	double t, b;
-	fputs("\033[H", stdout);    /* puts自带换行符不可用 */
+	// fputs("\033[H", stdout);    /* puts自带换行符不可用 */
 	for (size_t i = 0; i < s->h; ++i) {
 		for (size_t j = 0; j < s->w; ++j) {
 			// 灰度范围：232~255

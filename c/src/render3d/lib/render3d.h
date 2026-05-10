@@ -34,8 +34,9 @@ double vec_point_product(Vec_t a, Vec_t b);
 Vec_t vec_cross_product(Vec_t a, Vec_t b);
 double vec_len(Vec_t v);
 Vec_t vec_direct(Vec_t v);
-Vec_t vec_addn_(Vec_t vecs[], size_t size);
 Vec_t vec_rotate(Vec_t v,Vec_t direction, double theta);
+Vec_t vec_add3(Vec_t v1, Vec_t v2, Vec_t v3);
+Vec_t vec_addn_(Vec_t vecs[], size_t size);
 #define vec_adds(...) vec_addn_((Vec_t[]){__VA_ARGS__}, sizeof((Vec_t[]){__VA_ARGS__})/sizeof(Vec_t))
 
 
@@ -50,9 +51,12 @@ typedef struct {
 	Point_t position;  /* 观测原点位置 */
 	Vec_t forward;     /* 相机朝向(相机坐标系z轴负方向) */
 	Vec_t up;          /* 相机向上方向(相机坐标系y轴正方向) */
+	void *private_data;
 } Camera_t;
 Camera_t *camera_create();
 void camera_free(Camera_t **p);
+void camera_lock(Camera_t *camera);
+void camera_unlock(Camera_t *camera);
 Point_t camera_cast(Camera_t *camera, Point_t p);
 void camera_shift(Camera_t *camera, Vec_t direction);
 void camera_rotate(Camera_t *camera, Vec_t direction, double theta);
@@ -60,9 +64,11 @@ void camera_look(Camera_t *camera, Point_t point, Vec_t hold);
 
 
 /* 渲染后端 */
+#ifndef BACKEND_LIST
 #define BACKEND_LIST \
 	BACKEND(ascii) \
 	BACKEND(utf8)
+#endif
 
 #define BACKEND(name) RDBK_##name,
 enum Backend_id {BACKEND_LIST};

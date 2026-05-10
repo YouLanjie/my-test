@@ -10,17 +10,46 @@
 #define MAX_FRAME 100000
 uint8_t FPS = 40;
 
-/* 由于日益严重的延迟因而使用特定的时钟避免usleep的额外等待 */
-void my_sleep()
+static inline struct timespec timespec_add(struct timespec t, struct timespec t2)
 {
-	static struct timespec t = {0};
-	if (t.tv_sec == 0 && t.tv_nsec == 0) clock_gettime(CLOCK_MONOTONIC, &t);
-	t.tv_nsec += 1e9 / FPS;
+	t.tv_nsec += t2.tv_nsec;
 	if (t.tv_nsec >= 1e9) {
 		t.tv_sec++;
 		t.tv_nsec -= 1e9;
+	} else if (t.tv_nsec < 0) {
+		t.tv_sec--;
+		t.tv_nsec += 1e9;
 	}
+	t.tv_sec += t2.tv_sec;
+	return t;
+}
+
+static inline struct timespec timespec_from_sec(double t)
+{
+	return (struct timespec){(int)t, (t-(int)t)*1e9};
+}
+
+/* 由于日益严重的延迟因而使用特定的时钟避免usleep的额外等待
+ * 返回本次需要等待的时间 
+ * */
+double my_sleep()
+{
+	static double wait_time = 0;
+	static struct timespec t = {0}, t2 = {0};
+	if (t.tv_sec == 0 && t.tv_nsec == 0) clock_gettime(CLOCK_MONOTONIC, &t);
+
+	t = timespec_add(t, timespec_from_sec(1./FPS));
+
+	clock_gettime(CLOCK_MONOTONIC, &t2);
+	t2 = timespec_add(t, (struct timespec){-t2.tv_sec, -t2.tv_nsec});
+	wait_time = t2.tv_sec + t2.tv_nsec/1e9;
+	if (wait_time < 0) {
+		clock_gettime(CLOCK_MONOTONIC, &t);
+		return wait_time;    /* 跳帧 */
+	}
+
 	clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &t, NULL);
+	return wait_time;
 }
 
 static bool setup(RenderBackend_t **bk, Camera_t *ca, uint8_t num)
@@ -169,10 +198,8 @@ int main(int argc, char *argv[])
 				 0, NULL);
 	for (int i = 0; i < 50; i++) {
 		obj_merge_and_free(line, obj_create_line_from_point((Point_t){2,-1,i+2}, (Point_t){-2,-1,i+2}));
-		obj_merge_and_free(line, obj_create_line_from_point((Point_t){2,-1,i+2}, (Point_t){10,5,i+2}));
-		obj_merge_and_free(line, obj_create_line_from_point((Point_t){-2,-1,i+2}, (Point_t){-10,5,i+2}));
 	}
-	Obj_t *block = obj_create_image_from_str((Point_t){0, 1, -7}, 0.1,
+	Obj_t *block = obj_create_image_from_str((Point_t){0.3, 1, -7}, 0.1,
 "####################\n"
 "####....###....#####\n"
 "###.#######.###.####\n"
@@ -196,7 +223,7 @@ int main(int argc, char *argv[])
 	obj_merge_and_free(block, obj_create_box_from_point((Point_t[]){
 {-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1},{-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1} }));
 	obj_transform_shift(block, (Vec_t){.x=0,.y=1,.z=0});    /* 让参考中心点下移一格 */
-	obj_rotate(block, (Vec_t){0, 1, 0}, M_PI*5);
+	/*obj_rotate(block, (Vec_t){0, 1, 0}, M_PI*5);*/
 
 	double theta = -2*M_PI/5;    /* 每秒转动的角度(rad/s) */
 	Vec_t v = (Vec_t){
@@ -207,16 +234,20 @@ int main(int argc, char *argv[])
 
 	printf("\x1b[2J");
 	size_t i = 0;
+	double busy = 0;
 	for (i = 0; i < MAX_FRAME; ++i) {
 		if (frame(&backend, camera, block, &theta, &v)) break;
 		if (!backend) break;
 		obj_cast(line, camera, backend);
 		obj_cast(block, camera, backend);
+
+		printf("\033[H");
 		backend->render(backend);
 		backend->clean(backend);
 
-		printf("=> FPS: %d, VS: %.1f, VD: %.1f, F: %ld \n",
-		       FPS, camera->scale, camera->dept, i);
+		printf("=> FPS: %d, VS: %.0f, VD: %.0f, BS: %5.1f%%, F: %ld %s\n",
+		       FPS, camera->scale, camera->dept, busy, i,
+		       busy < 100 ? "           ": "(OVERLOAD) ");
 		printf("=> Center xyz: %.3f, %.3f, %.3f \n",
 		       block->center.x,
 		       block->center.y,
@@ -224,7 +255,7 @@ int main(int argc, char *argv[])
 		       );
 		printf("=> Speed xyzr: %.3f, %6.3f, %.3f, %.3fr/s \n",
 		       v.x, v.y, v.z, (theta)/(2*M_PI));
-		my_sleep();
+		busy = (busy + (1-(my_sleep())/(1./FPS)) * 100)/2;
 	}
 	obj_free(&line);
 	obj_free(&block);

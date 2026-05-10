@@ -74,7 +74,8 @@ static void scr_print(Scr_t *s)
 	}
 	for (j = 0; j < s->h; j++) s->pixels[s->w*(j+1)-1] = '\n';
 	s->pixels[s->size-1] = 0;
-	printf("\033[H%s", s->pixels);
+	fputs(s->pixels, stdout);
+	/*printf("\033[H%s", s->pixels);*/
 }
 
 static void scr_clean(Scr_t *s)

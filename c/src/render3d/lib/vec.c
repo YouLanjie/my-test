@@ -72,12 +72,20 @@ Vec_t vec_direct(Vec_t v)
 /* 旋转向量 */
 Vec_t vec_rotate(Vec_t v,Vec_t direction, double theta)
 {
-	return vec_adds(vec_mul(direction, vec_point_product(direction, v)*(1-cos(theta))),
+	return vec_add3(vec_mul(direction, vec_point_product(direction, v)*(1-cos(theta))),
 			vec_mul(vec_cross_product(direction, v), sin(theta)),
 			vec_mul(v, cos(theta)));
 }
 
 /* 便捷多向量加法 */
+Vec_t vec_add3(Vec_t v1, Vec_t v2, Vec_t v3)
+{
+	return (Vec_t){
+		.x = v1.x+v2.x+v3.x,
+		.y = v1.y+v2.y+v3.y,
+		.z = v1.z+v2.z+v3.z,
+	};
+}
 Vec_t vec_addn_(Vec_t vecs[], size_t size)
 {
 	if (!vecs || size == 0) return (Vec_t){0, 0, 0};

@@ -91,17 +91,17 @@ void obj_rotate(Obj_t *obj, Vec_t direction, double theta)
 	direction = vec_direct(direction);
 	for (j=0, p=obj->points; p && j < obj->count_point; j++,p++) {
 		/* 不使用vec_rotate，因为sin(theta)和cos(theta)都相同,避免多重计算 */
-		*p = vec_adds(vec_mul(direction, vec_point_product(direction, *p)*rc),
+		*p = vec_add3(vec_mul(direction, vec_point_product(direction, *p)*rc),
 			      vec_mul(vec_cross_product(direction, *p), s),
 			      vec_mul(*p, c));
 	}
 	for (j = 0 ; obj->count_line && j < obj->count_line; j++) {
 		p = &obj->lines[j].start;
-		*p = vec_adds(vec_mul(direction, vec_point_product(direction, *p)*rc),
+		*p = vec_add3(vec_mul(direction, vec_point_product(direction, *p)*rc),
 			      vec_mul(vec_cross_product(direction, *p), s),
 			      vec_mul(*p, c));
 		p = &obj->lines[j].end;
-		*p = vec_adds(vec_mul(direction, vec_point_product(direction, *p)*rc),
+		*p = vec_add3(vec_mul(direction, vec_point_product(direction, *p)*rc),
 			      vec_mul(vec_cross_product(direction, *p), s),
 			      vec_mul(*p, c));
 	}
@@ -235,11 +235,13 @@ void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 	if (!camera || !backend) return;
 	size_t i = 0;
 	Point2d_t p;
+	camera_lock(camera);
 	for (i = 0; i < obj->count_point; i++) {
 		p = camera_cast(camera, vec_add(obj->points[i], obj->center));
 		if (p.z <= 0) continue;
 		backend->draw(backend, (Point2d_t){p.x, p.y, p.z/camera->dept});
 	}
+	bool has_print;
 	int step;
 	Vec_t v, dv;
 	for (i = 0; i < obj->count_line; i++) {
@@ -247,11 +249,19 @@ void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 		dv = vec_sub(obj->lines[i].end, v);
 		step = 100*vec_len(dv);
 		dv = vec_mul(dv, 1./step);
+		v = vec_add(obj->center, v);
+		has_print = false;
 		for (int j = 0; j < step; j++) {
-			p = camera_cast(camera, vec_adds(obj->center, v, vec_mul(dv, j)));
-			if (p.z <= 0) continue;
+			p = camera_cast(camera, vec_add(v, vec_mul(dv, j)));
+			if (p.z <= 0) {
+				if (has_print) break;
+				j+=10;
+				continue;
+			}
+			if (!has_print) has_print = true;
 			backend->draw(backend, (Point2d_t){p.x, p.y, p.z/camera->dept});
 		}
 	}
+	camera_unlock(camera);
 }
 
