@@ -6,6 +6,8 @@
  */
 
 #include "lib/render3d.h"
+#include <stdint.h>
+#include <stdio.h>
 
 #define MAX_FRAME 100000
 uint8_t FPS = 40;
@@ -55,7 +57,7 @@ double my_sleep()
 static bool setup(RenderBackend_t **bk, Camera_t *ca, uint8_t num)
 {
 	if (!bk) return false;
-	if (*bk) (*bk)->destory(*bk);
+	if (*bk) (*bk)->destroy(*bk);
 	*bk = NULL;
 #define BACKEND(name) backend_create_##name,
 	static RenderBackend_t *(*backend_list[])(int width, int height) = {BACKEND_LIST};
@@ -98,8 +100,8 @@ static bool frame(RenderBackend_t **backend, Camera_t *camera, Obj_t *obj, doubl
 	case '=': camera->scale+=1; break;
 	case ',': camera->dept-=1; break;
 	case '.': camera->dept+=1; break;
-	case 'W': camera->position.z-=0.01; break;
-	case 'S': camera->position.z+=0.01; break;
+	case 'W': camera->position.y+=0.01; break;
+	case 'S': camera->position.y-=0.01; break;
 	case 'A': camera->position.x-=0.01; break;
 	case 'D': camera->position.x+=0.01; break;
 	case 'J': camera_rotate(camera, (Vec_t){-1,0,0}, M_PI/180); break;
@@ -113,6 +115,7 @@ static bool frame(RenderBackend_t **backend, Camera_t *camera, Obj_t *obj, doubl
 	case 'f': focus=!focus; break;
 	case '`': no_fiction=!no_fiction; break;
 	case 'r': setup(backend, camera, (*backend)->id); break;
+	case 'c': printf("\x1b[2J"); break;
 	case '\t': setup(backend, camera, (*backend)->id+1); break;
 	case 'p': suspend=!suspend; break;
 	case 'q': return true; break;
@@ -193,12 +196,16 @@ int main(int argc, char *argv[])
 	setup(&backend, camera, chose_backend);
 	if (!backend) return 0;
 
-	Obj_t *line = obj_create((Point_t){0, 0, 0}, 0, NULL, 2,
-				 (Line_t[]){ {{-2,-1,1},{-2,-1,-50}}, {{2,-1,1},  {2,-1,-50}}, },
+	Obj_t *line = obj_create((Point_t){0, 0, 0},
+				 4, (Point_t[]){ {-2,-1,50},{-2,-1,-50}, {2,-1,50},{2,-1,-50}, },
+				 2, (Line_t[]){ {0,1}, {2,3}, },
 				 0, NULL);
 	for (int i = 0; i < 50; i++) {
-		obj_merge_and_free(line, obj_create_line_from_point((Point_t){2,-1,i+2}, (Point_t){-2,-1,i+2}));
+		obj_merge_and_free(line, obj_apply_shift(obj_create_line_from_point((Point_t){2,-1,i+2}, (Point_t){-2,-1,i+2})));
 	}
+
+#define FLG1
+#ifdef FLG1
 	Obj_t *block = obj_create_image_from_str((Point_t){0.3, 1, -7}, 0.1,
 "####################\n"
 "####....###....#####\n"
@@ -220,6 +227,20 @@ int main(int argc, char *argv[])
 "#.#.##.#.###.##.#.##\n"
 "###########.########\n"
 "####################\n", '.');
+#endif
+
+#ifndef FLG1
+	Obj_t *block = obj_create((Point_t){0.3,1,-7}, 4,
+				  (Point_t[]){
+				  {0.75,0.25,0.25},
+				  {0.25,0.25,0.75},
+				  {0.25,0.75,0.25},
+				  {0.75,0.75,0.75},
+				  },
+				  0, NULL, 0, NULL);
+	obj_transform_shift(block, (Vec_t){-0.5,-0.5,-0.5});
+	obj_scale(block, 2);
+#endif
 	obj_merge_and_free(block, obj_create_box_from_point((Point_t[]){
 {-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1},{-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1} }));
 	obj_transform_shift(block, (Vec_t){.x=0,.y=1,.z=0});    /* 让参考中心点下移一格 */
@@ -257,9 +278,9 @@ int main(int argc, char *argv[])
 		       v.x, v.y, v.z, (theta)/(2*M_PI));
 		busy = (busy + (1-(my_sleep())/(1./FPS)) * 100)/2;
 	}
-	obj_free(&line);
-	obj_free(&block);
-	if (backend) backend->destory(backend);
+	obj_free(line);
+	obj_free(block);
+	if (backend) backend->destroy(backend);
 	printf("[INFO] 退出程序\n");
 	return 0;
 }

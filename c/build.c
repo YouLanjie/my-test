@@ -5,7 +5,6 @@
  * @brief       构建脚本
  */
 
-#include "include/string_view.h"
 #include "lib/path.c"
 #include "lib/string_view.c"
 #include <stdio.h>
@@ -24,7 +23,7 @@
 typedef struct {
 	const char *libname;
 	const char *libfile;
-	const char *sources[5];
+	const char *sources[10];
 } CLIBS_t;
 
 typedef struct {

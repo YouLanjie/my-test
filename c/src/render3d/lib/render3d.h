@@ -21,8 +21,6 @@ typedef struct {
 } Vec_t;
 /* 点、线、面（仅支持三点面） */
 typedef Vec_t Point_t;
-typedef struct {Point_t start,end;} Line_t;  /* 两点成线 */
-typedef struct {Point_t v[3];} Surface_t;    /* 三点成面 */
 /* 二维平面点 */
 typedef Vec_t Point2d_t;
 
@@ -46,6 +44,7 @@ typedef struct {
 	double width;      /* 投影平面宽度(影响投影后返回值范围) */
 	double scale;      /* 观测原点到投影平面的距离(可当作焦距/缩放、视场角) */
 	double dept;       /* 可视深度 */
+	double near;       /* 最小可视距离 */
 	double offset_x;   /* 投影中轴水平偏移(左右斜着看) */
 	double offset_y;   /* 投影中轴垂直偏移(上下斜着看) */
 	Point_t position;  /* 观测原点位置 */
@@ -58,6 +57,7 @@ void camera_free(Camera_t **p);
 void camera_lock(Camera_t *camera);
 void camera_unlock(Camera_t *camera);
 Point_t camera_cast(Camera_t *camera, Point_t p);
+int camera_cast_line(Camera_t *camera, Point_t p1, Point_t p2, Point2d_t *ret_p1, Point2d_t *ret_p2);
 void camera_shift(Camera_t *camera, Vec_t direction);
 void camera_rotate(Camera_t *camera, Vec_t direction, double theta);
 void camera_look(Camera_t *camera, Point_t point, Vec_t hold);
@@ -67,7 +67,10 @@ void camera_look(Camera_t *camera, Point_t point, Vec_t hold);
 #ifndef BACKEND_LIST
 #define BACKEND_LIST \
 	BACKEND(ascii) \
-	BACKEND(utf8)
+	BACKEND(ascii_8bit) \
+	BACKEND(ascii_grey) \
+	BACKEND(utf8) \
+	BACKEND(utf8_8bit)
 #endif
 
 #define BACKEND(name) RDBK_##name,
@@ -78,7 +81,7 @@ struct RenderBackend_t {
 	void (*draw)(RenderBackend_t *backend, Point2d_t p);  /* 绘制(p的取值范围：xy:-1~1,z:0~1) */
 	void (*render)(RenderBackend_t *backend);             /* 输出一帧 */
 	void (*clean)(RenderBackend_t *backend);              /* 清理上一帧的数据 */
-	void (*destory)(RenderBackend_t *backend);            /* 释放内存 */
+	void (*destroy)(RenderBackend_t *backend);            /* 释放内存 */
 	void *data;
 	enum Backend_id id;
 };
@@ -87,20 +90,23 @@ BACKEND_LIST
 #undef BACKEND
 
 
+/* 线引用id */
+typedef size_t Line_t[2];
+/* 面引用id */
+typedef size_t Surface_t[3];
 /* 物体 */
 typedef struct {
-	Point_t center;
-	/* 点、线、面之间内存相互独立、不互相引用 */
-	Point_t *points;
-	Line_t  *lines;
-	Surface_t *surfaces;
+	Point_t    center;
+	Point_t   *points;    /* 点 */
+	Line_t    *lines;     /* 线(引用点的id) */
+	Surface_t *surfaces;  /* 面(引用点的id) */
 	/* 点线面的计数 */
 	size_t count_point;
 	size_t count_line;
 	size_t count_surface;
 } Obj_t;
 Obj_t *obj_create(Point_t initial_position, size_t point_num, Point_t *points, size_t line_num, Line_t *lines, size_t surface_num, Surface_t *surfaces);
-void obj_free(Obj_t **obj);
+void obj_free(Obj_t *obj);
 Obj_t *obj_shift(Obj_t *obj, Vec_t v);
 Obj_t *obj_transform_shift(Obj_t *obj, Vec_t v);
 /* 应用移动(将物体原点搬回(0,0,0)但形状留在那个位置) */
@@ -109,7 +115,7 @@ void obj_rotate(Obj_t *obj, Vec_t direction, double theta);
 void obj_scale(Obj_t *obj, double k);
 bool obj_merge(Obj_t *obj, Obj_t *from);
 bool obj_merge_and_free(Obj_t *obj, Obj_t *from);
-Obj_t *obj_create_line_from_point(Point_t t1, Point_t t2);
+Obj_t *obj_create_line_from_point(Point_t p1, Point_t p2);
 Obj_t *obj_create_box_from_point(Point_t points[8]);
 Obj_t *obj_create_image_from_str(Point_t center, double k, const char *p, char ch);
 void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend);
