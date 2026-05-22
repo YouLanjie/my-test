@@ -13,12 +13,9 @@
 #include <string.h>
 #include <errno.h>
 #include <dirent.h>
-#include <limits.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <ctype.h>
-#include <unistd.h>
-#include <wait.h>
+#include <ctype.h>    /* isspace */
+#include <unistd.h>   /* usleep */
+#include <wait.h>     /* wait */
 
 typedef struct {
 	const char *libname;
@@ -114,6 +111,7 @@ int run_cmd(char *cmd)
 }
 
 #define sprintfcat(buf, fmt, ...) snprintf((buf)+strlen(buf), sizeof(buf)-strlen(buf), fmt __VA_OPT__(,) __VA_ARGS__)
+typedef Path_t*(*PathHander_t)(Path_t*);
 
 /* RET:
  * <0: faild
@@ -121,36 +119,34 @@ int run_cmd(char *cmd)
  * &(1<<0): 完成obj编译
  * &(1<<1): 完成elf编译
  * */
-int build_file(SV_t sourcep, int(*obj_hander)(Path_t*,SV_t), int(*elf_hander)(Path_t*,SV_t), CFLAGS_t cflags)
+int build_file(Path_t *source, PathHander_t obj_hander, PathHander_t elf_hander, CFLAGS_t cflags)
 {
-	if (!obj_hander) return -1;
+	if (!obj_hander || !source) return -1;
 	const CFLAGS_t *flag = &(CFLAGS_t){.filename=NULL};
-	Path_t source = {0}, obj = {0};
+	Path_t obj = {0};
 	uint8_t stat = 0;
-	path_normalize(&source, sourcep);
-	for (uint64_t i = 0; i < ARRAY_LEN(CFILEFLAGS); i++) {
+	path_normalize(source);
+	for (uint64_t i = 0; i < ARRAY_LEN(CFILEFLAGS); i++, sva_free(&obj)) {
 		if (!CFILEFLAGS[i].filename) continue;
-		path_normalize(&obj, sv_from_cstr(CFILEFLAGS[i].filename));    // 借用obj
-		if (strcmp(obj.p, source.p) != 0) continue;
+		path_normalize(sva_from_cstr(&obj, CFILEFLAGS[i].filename));    // 借用obj
+		if (!sva_cmp(&obj, source)) continue;
 		flag = CFILEFLAGS+i;
-		sva_free(&obj);
 		break;
 	}
 
 	SVA_t cmd = {0};
 	char str_deps[PATH_MAX*2] = {0};
 	char str_libs[PATH_MAX] = {0};
-	obj_hander(&obj, sv_from_sva(&source));
-	int ret = is_newer(obj.p, 1, (const char*[]){source.p});
+	obj_hander(sva_strcpy(&obj, source));
+	int ret = is_newer(obj.p, 1, (const char*[]){source->p});
 	if (ret < 0) {
-		fprintf(stderr, "[WARN] 文件缺失 %s\n", source.p);
-		sva_free(&source);
+		fprintf(stderr, "[WARN] 文件缺失 %s\n", source->p);
 		sva_free(&obj);
 		return -3;
 	}
 	if (ret > 0) {
 		sva_sprintf(&cmd, "%s -c -o \"%.*s\" \"%.*s\"", COMPILOR,
-			    (int)obj.len, obj.p, (int)source.len, source.p);
+			    (int)obj.len, obj.p, (int)source->len, source->p);
 		if (cflags.flg_comp) sva_sprintfcat(&cmd, " %s", cflags.flg_comp);
 		if (flag->flg_comp) sva_sprintfcat(&cmd, " %s", flag->flg_comp);
 		if (run_cmd(cmd.p) != 0) return -4;
@@ -159,14 +155,13 @@ int build_file(SV_t sourcep, int(*obj_hander)(Path_t*,SV_t), int(*elf_hander)(Pa
 	sva_free(&cmd);
 	if (!elf_hander || flag->no_elf) {
 		sva_free(&obj);
-		sva_free(&source);
 		return stat;
 	}
 
 	SV_t prefix, deps = sv_from_cstr(flag->deps), left;
 	int size = 0;
-	for (char *p = source.p; p && *p; p++) if (*p == '/') size = p-source.p;
-	prefix = (SV_t){.p=source.p, .len=size};
+	for (size_t n = 0; n < source->len; n++) if (source->p[n] == '/') size = n;
+	prefix = (SV_t){.p=source->p, .len=size};
 	size = 0;
 	while (deps.len > 0) {    /* 检查明确指定的依赖文件 */
 		sv_trim_left_by_type(&deps, isspace);    /* 跳过空格 */
@@ -175,18 +170,18 @@ int build_file(SV_t sourcep, int(*obj_hander)(Path_t*,SV_t), int(*elf_hander)(Pa
 		if(left.len <= 0) break;
 
 		Path_t dep = {0};
-		path_join(&dep, prefix, left);
-		if (build_file(sv_from_sva(&dep), obj_hander, NULL, cflags) > 0)    /* 设置elf_hander为NULL防递归 */
+		path_join(sva_from_sv(&dep, prefix), left);
+		if (build_file(&dep, obj_hander, NULL, cflags) > 0)    /* 设置elf_hander为NULL防递归 */
 			stat |= 0b100;    /* 标记依赖更新 */
 
-		obj_hander(&dep, sv_from_sva(&dep));    /* 需确保hander不先释放dep */
+		obj_hander(&dep);    /* 需确保hander不先释放dep */
 		sva_sprintfcat(&cmd, " \"%.*s\"", (int)dep.len, dep.p);
 		sva_free(&dep);
 		size++;
 	}
 
 	Path_t elf = {0};
-	elf_hander(&elf, sv_from_sva(&source));
+	elf_hander(sva_strcpy(&elf, source));
 	deps = sv_from_cstr(flag->libs);
 	while (deps.len > 0) {
 		sv_trim_left_by_type(&deps, isspace);
@@ -206,6 +201,7 @@ int build_file(SV_t sourcep, int(*obj_hander)(Path_t*,SV_t), int(*elf_hander)(Pa
 	if (ret < 0) {
 		fprintf(stderr, "[WARN] 文件缺失 %s\n", obj.p);
 		sva_free(&obj);
+		sva_free(&elf);
 		return -5;
 	}
 	if (ret > 0 || stat & 0b1100) {
@@ -219,36 +215,39 @@ int build_file(SV_t sourcep, int(*obj_hander)(Path_t*,SV_t), int(*elf_hander)(Pa
 		stat |= 0b10;
 	}
 	sva_free(&obj);
-	sva_free(&source);
+	sva_free(&elf);
 	return stat;
 }
 
 /* 将路径变为 BUILD_DIR/xxx_xxx_xxx.o */
-int path_hander_obj_replace(Path_t* ret, SV_t path)
+Path_t *path_hander_obj_replace(Path_t* path)
 {
-	Path_t tmp = *ret;
-	ret->p = NULL;
-	sva_from_sv(ret, path);
-	for (char *p = ret->p; p && *p; p++) if (*p == '/') *p = '_';
-	SV_t sv = path_basename(sv_from_sva(ret));
+	if (!path || !path->p) return NULL;
+	for (size_t n = 0; n < path->len; n++) if (path->p[n] == '/') path->p[n] = '_';
+	SV_t sv = path_basename(sv_from_sva(path));
 	while (sv.len > 0 && (sv.p[0] == '.' || sv.p[0] == '_')) sv_chop_left(&sv, 1);
-	path_join(ret, sv_from_cstr(BUILD_DIR), sv);
-	sva_sprintfcat(ret, ".o");
-	sva_free(&tmp);
-	return 0;
+	SVA_t old = *path;    /* 保存替换前的地址 */
+	path_join(sva_from_cstr(path, BUILD_DIR), sv);
+	sva_sprintfcat(path, ".o");
+	sva_free(&old);
+	return path;
 }
 /* 将路径变为 BIN_DIR/xxx */
-int path_hander_elf(Path_t* ret,SV_t path)
+Path_t *path_hander_elf(Path_t* path)
 {
-	SV_t sv = path_basename(path);
-	path_join(ret, sv_from_cstr(BIN_DIR), sv);
-	return 0;
+	if (!path || !path->p) return NULL;
+	SVA_t basename = {0};
+	sva_from_sv(&basename, path_basename(sv_from_sva(path)));
+	sva_sprintf(path, "%s/%.*s", BIN_DIR, (int)basename.len, basename.p);
+	sva_free(&basename);
+	path_normalize(path);
+	return path;
 }
 
 void build_libs()
 {
 	SVA_t cmd = {0};
-	Path_t path = {0}, tmp = {0};
+	Path_t path = {0};
 	int ret = 0;
 	int pcount = 0;
 	for (uint64_t i = 0; i < ARRAY_LEN(CLIBS); i++) {
@@ -259,10 +258,9 @@ void build_libs()
 		}
 		size_t j = 0;
 		for (j = 0; j < ARRAY_LEN(CLIBS[i].sources) && CLIBS[i].sources[j] && ret <= 0; j++) {
-			sva_from_cstr(&path, CLIBS[i].sources[j]);
-			path_hander_obj_replace(&tmp, sv_from_sva(&path));
-			ret = is_newer(CLIBS[i].libfile, 1, (const char*[]){tmp.p});
-			sva_free(&tmp);
+			path_hander_obj_replace(sva_from_cstr(&path, CLIBS[i].sources[j]));
+			ret = is_newer(CLIBS[i].libfile, 1, (const char*[]){path.p});
+			sva_free(&path);
 		}
 		if (ret == 0) continue;
 		sva_sprintf(&cmd, "ar rcs \"%s\" ", CLIBS[i].libfile);
@@ -270,12 +268,13 @@ void build_libs()
 			sva_from_cstr(&path, CLIBS[i].sources[j]);
 			while (pcount >= MAX_PTR) if (wait(NULL) > 0) pcount--;
 			if (fork() == 0) {
-				build_file(sv_from_sva(&path), path_hander_obj_replace, NULL, (CFLAGS_t){.flg_comp=CCOMFLAGS});
+				build_file(&path, path_hander_obj_replace, NULL, (CFLAGS_t){.flg_comp=CCOMFLAGS});
+				sva_free(&path);
 				exit(0);
 			}
 			pcount++;
 
-			path_hander_obj_replace(&path, sv_from_sva(&path));
+			path_hander_obj_replace(&path);
 			sva_sprintfcat(&cmd, " \"%s\"", path.p);
 			sva_free(&path);
 		}
@@ -292,15 +291,15 @@ void fordir(char *cwd, char *dirname)
 {
 	if (!dirname) return;
 	if (!cwd) cwd = "./";
-	if (str_start_with(dirname, "lib")) return;
+	if (sv_begin_with(sv_from_cstr(dirname), "lib")) return;
 
 	static int pcount = 0;
 	Path_t path = {0};
-	path_join(&path, sv_from_cstr(cwd), sv_from_cstr(dirname));
+	path_join(sva_from_cstr(&path, cwd), sv_from_cstr(dirname));
 
 	DIR *dp = opendir(path.p);
 	if (!dp) {
-		fprintf(stderr, "ERROR 无法打开文件夹:%s\n", dirname);
+		fprintf(stderr, "ERROR 无法打开文件夹:%s\n", path.p);
 		fprintf(stderr, "ERROR 错误信息: %s\n", strerror(errno));
 		return;
 	}
@@ -316,16 +315,14 @@ void fordir(char *cwd, char *dirname)
 		if (type == DT_DIR) {
 			fordir(path.p, dp_item->d_name);
 		}
-		if (type != DT_REG || !str_end_with(dp_item->d_name,".c"))
+		if (type != DT_REG || !sv_end_with(sv_from_cstr(dp_item->d_name),".c"))
 			continue;
 		while (pcount >= MAX_PTR) if (wait(NULL) > 0) pcount--;
 		pid_t pid = fork();
 		if (pid == 0) {
-			Path_t tmp = {0};
-			path_join(&tmp, sv_from_sva(&path), sv_from_cstr(dp_item->d_name));
-			build_file(sv_from_sva(&tmp),
-				   path_hander_obj_replace, path_hander_elf,
-				   (CFLAGS_t){.flg_comp=CCOMFLAGS, .flg_link=CLINKFLAGS});
+			path_join(&path, sv_from_cstr(dp_item->d_name));
+			build_file(&path, path_hander_obj_replace, path_hander_elf, (CFLAGS_t){.flg_comp=CCOMFLAGS, .flg_link=CLINKFLAGS});
+			sva_free(&path);
 			exit(0);
 		}
 		pcount++;
@@ -334,11 +331,10 @@ void fordir(char *cwd, char *dirname)
 	return;
 }
 
-static int path_hander_self(Path_t* ret, SV_t path)
+static Path_t *path_hander_self(Path_t* ret)
 {
-	(void)path;    /* 消警告用的 */
-	sva_from_cstr(ret, "./build");
-	return 0;
+	sva_free(ret);
+	return sva_from_cstr(ret, "./build");
 }
 
 int main(int argc, char *argv[])
@@ -347,11 +343,14 @@ int main(int argc, char *argv[])
 	printf("[INFO] 构建程序 ("__FILE__") 构建时间 "__TIMESTAMP__"\n");
 	mkdir(BUILD_DIR, 0755);
 	mkdir(BIN_DIR, 0755);
-	if (build_file(sv_from_cstr(__FILE_NAME__), path_hander_obj_replace,
-		       path_hander_self, (CFLAGS_t){.flg_comp=CCOMFLAGS}) == 0b11) {
+	SVA_t self = {0};
+	sva_from_cstr(&self, __FILE_NAME__);
+	if (build_file(&self, path_hander_obj_replace, path_hander_self, (CFLAGS_t){.flg_comp=CCOMFLAGS}) == 0b11) {
 		execvp(argv[0], argv);
 		return 1;
 	}
+	sva_free(&self);
+
 	build_libs();
 	fordir(NULL, SOURCE_DIR);
 	while(wait(NULL) > 0) usleep(0010000);

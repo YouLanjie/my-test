@@ -40,7 +40,7 @@ Vec_t vec_addn_(Vec_t vecs[], size_t size);
 
 /* 相机 */
 typedef struct {
-	double height;     /* 投影平面高度(影响投影后返回值范围) */
+	double height;     /* 投影平面高度(影响投影后返回值范围,一般需要设置为与输出后端大小相等或者比它大) */
 	double width;      /* 投影平面宽度(影响投影后返回值范围) */
 	double scale;      /* 观测原点到投影平面的距离(可当作焦距/缩放、视场角) */
 	double dept;       /* 可视深度 */
@@ -53,7 +53,7 @@ typedef struct {
 	void *private_data;
 } Camera_t;
 Camera_t *camera_create();
-void camera_free(Camera_t **p);
+void camera_free(Camera_t *p);
 void camera_lock(Camera_t *camera);
 void camera_unlock(Camera_t *camera);
 Point_t camera_cast(Camera_t *camera, Point_t p);

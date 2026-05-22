@@ -6,8 +6,6 @@
  */
 
 #include "lib/render3d.h"
-#include <stdint.h>
-#include <stdio.h>
 
 #define MAX_FRAME 100000
 uint8_t FPS = 40;
@@ -84,6 +82,7 @@ static bool frame(RenderBackend_t **backend, Camera_t *camera, Obj_t *obj, doubl
 	static bool suspend = false;
 	static bool no_fiction = false;
 	static bool focus = true;
+	static Vec_t cav = {0};    /* 相机速度 */
 
 	/* 输入处理 */
 	switch (kbhitGetchar()) {
@@ -94,21 +93,24 @@ static bool frame(RenderBackend_t **backend, Camera_t *camera, Obj_t *obj, doubl
 	case 'd': v->x += 0.1; break;
 	case 'j': *theta += 0.01*2*M_PI; break;
 	case 'k': *theta -= 0.01*2*M_PI; break;
-	case '+': *v=vec_mul(*v, 0), *theta=0; break;
+	case '+': *v=vec_mul(*v, 0), *theta=0, cav=vec_mul(cav, 0); break;
 
 	case '-': camera->scale-=1; break;
 	case '=': camera->scale+=1; break;
 	case ',': camera->dept-=1; break;
 	case '.': camera->dept+=1; break;
-	case 'W': camera->position.y+=0.01; break;
-	case 'S': camera->position.y-=0.01; break;
-	case 'A': camera->position.x-=0.01; break;
-	case 'D': camera->position.x+=0.01; break;
+	case 'W': cav.y+=0.01; break;
+	case 'S': cav.y-=0.01; break;
+	case 'A': cav.x-=0.01; break;
+	case 'D': cav.x+=0.01; break;
+	case 'Q': cav.z-=0.01; break;
+	case 'E': cav.z+=0.01; break;
 	case 'J': camera_rotate(camera, (Vec_t){-1,0,0}, M_PI/180); break;
 	case 'K': camera_rotate(camera, (Vec_t){1,0,0}, M_PI/180); break;
 	case 'H': camera_rotate(camera, (Vec_t){0,0,1}, M_PI/180); break;
 	case 'L': camera_rotate(camera, (Vec_t){0,0,-1}, M_PI/180); break;
-	case 'F': camera_look(camera, (Point_t){0,0,-1}, (Vec_t){0,1,0}); break;
+	case 'F': camera->position = vec_mul(camera->position, 0),
+		  camera_look(camera, (Point_t){0,0,-1}, (Vec_t){0,1,0}); break;
 
 	case '1': if (FPS > 1) FPS--; break;
 	case '2': if (FPS < (uint8_t)-1) FPS++; break;
@@ -122,6 +124,7 @@ static bool frame(RenderBackend_t **backend, Camera_t *camera, Obj_t *obj, doubl
 	}
 	if (suspend) return false;
 
+	camera_shift(camera, cav);
 	obj_rotate(obj, (Vec_t){0, 1, 0}, *theta/FPS);
 	obj_shift(obj, vec_mul(*v, 1./FPS));
 	if (focus) camera_look(camera, (Point_t){
@@ -281,6 +284,7 @@ int main(int argc, char *argv[])
 	obj_free(line);
 	obj_free(block);
 	if (backend) backend->destroy(backend);
+	camera_free(camera);
 	printf("[INFO] 退出程序\n");
 	return 0;
 }

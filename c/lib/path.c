@@ -5,28 +5,10 @@
  * @brief       路径处理函数
  */
 
-#include <stdbool.h>
-#include <string.h>
-#include <limits.h>
-#include <sys/stat.h>
 #include "../include/string_view.h"
+#include <sys/stat.h>
 
 typedef SVA_t Path_t;
-
-bool str_start_with(const char *s, const char *pat)
-{
-	if (!s || !pat) return false;
-	if (strlen(s) < strlen(pat)) return false;
-	return !strncmp(s, pat, strlen(pat));
-}
-
-bool str_end_with(const char *s, const char *pat)
-{
-	if (!s || !pat) return false;
-	if (strlen(s) < strlen(pat)) return false;
-	int size = strlen(pat);
-	return !strncmp(s+strlen(s)-size, pat, size);
-}
 
 #define path_from_cstr sva_from_cstr
 #define path_from_sv sva_from_sv
@@ -41,70 +23,82 @@ SV_t path_basename(SV_t path)
 	return last;
 }
 
-/*
-Path_t path_normalize(const char *path)
+/* 切断 */
+SV_t path_father(SV_t path)
 {
-	if (!path) return (Path_t){0};
-	Path_t ret = {0};
-	char *p = ret.path;
+	while (path.len > 1 && path.p[path.len] == '/') path.len--;
+	while (path.len && path.p[path.len-1] != '/') sv_chop_right(&path, 1);
+	return path;
+}
+
+/* 专供normalize用的检查处理函数
+ * c: 待添加的分隔符（'/'或'\0'） */
+static inline void _path_tails_process(Path_t *path, char c)
+{
+	if (!path->p || path->p[path->len-1] == '/') return;    /* 忽略重复的 */
+	if (sv_end_with(sv_from_sva(path), "/.")) {    /* 跳过单独'.'充数的 */
+		// path->p[path->len-1] = 0;
+		path->len--;
+		return;
+	}
+	if (sv_end_with(sv_from_sva(path), "/..")) {    /* 撤回一个目录层级 */
+		// path->p[path->len-3] = 0;    /* '/' -> '\0' */
+		path->len -= 3;
+		const SV_t sv = sv_from_sva(path);
+		if (sv_cmp(sv, sv_from_cstr("..")) || sv_end_with(sv, "/..") ||
+		    sv_cmp(sv, sv_from_cstr("."))  || sv_end_with(sv, "/.")) {
+			path->len+=4;    /* 如果上一级目录也是..则取消一次撤回 */
+			path->p[path->len-1] = c;
+			path->len--;
+			return;
+		}
+		if (path->len) path->p[path->len] = 0;
+		for (;path->len >= 0 && path->p[path->len] != '/'; path->len--);
+		path->len++;
+		return;
+	}
+	path->p[path->len] = c;
+	if (c) path->len++;
+}
+
+/* 规范化path路径并保存到path */
+Path_t * path_normalize(Path_t *path)
+{
+	if (!path || !path->capacity || !path->len) return NULL;
+	const int len = path->len;
 	int i = 0;
- * */
-int path_normalize(Path_t *ret, SV_t path)
-{
-	if (!ret || !path.p) return -1;
-	Path_t tmp = *ret;
-	ret->p = NULL;
-	sva_create(ret);
-	for (; *path.p && path.len; sv_chop_left(&path, 1)) {
-		if (ret->len >= ret->capacity) sva_double(ret);
-		if (*path.p != '/' || ret->len == 0) {    /* 不进入下级啥也不管 */
-			ret->p[ret->len] = *path.p;
-			ret->len++;
+	path->len = 0;
+	for (; path->p && i < len; i++) {
+		if (path->len >= path->capacity) sva_double(path);
+		if (!path->p[i]) break;
+		if (path->p[i] != '/' || path->len == 0) {    /* 不进入下级啥也不管 */
+			path->p[path->len] = path->p[i];
+			path->len++;
 			continue;
 		}
 		/* 进入下级且前文不为空 */
-		if (ret->p[ret->len-1] == '/') continue;    /* 忽略重复的 */
-		if (str_end_with(ret->p, "/.")) {    /* 跳过单独'.'充数的 */
-			ret->p[ret->len-1] = 0;
-			ret->len--;
-			continue;
-		}
-		if (str_end_with(ret->p, "/..")) {    /* 撤回一个目录层级 */
-			ret->p[ret->len-3] = 0;    /* '/' -> '\0' */
-			if (!strcmp(ret->p, "..") || str_end_with(ret->p, "/..") ||
-			    !strcmp(ret->p, ".") || str_end_with(ret->p, "/.")) {
-				ret->p[ret->len-3] = '/';    /* 如果上一级目录也是..则取消一次撤回 */
-				ret->p[ret->len] = *path.p;
-				ret->len++;
-				continue;
-			}
-			for (;ret->len >= 0 && ret->p[ret->len] != '/'; ret->len--) ret->p[ret->len] = 0;
-			ret->len++;
-			continue;
-		}
-		ret->p[ret->len] = *path.p;
-		ret->len++;
+		_path_tails_process(path, path->p[i]);
 	}
-	while (ret->p[0] != '/' && str_end_with(ret->p, "/.")) ret->p[strlen(ret->p)-1] = 0;
-	if (ret->len == 0) {
-		ret->p[ret->len] = '.';
-		ret->p[ret->len+1] = 0;
+	if (!path->p) return NULL;
+	path->p[path->len] = 0;
+	_path_tails_process(path, '\0');
+	if (path->len == 0) {
+		while (path->capacity < 10) sva_double(path);
+		path->p[path->len] = '.';
+		path->p[path->len+1] = '/';
+		path->p[path->len+2] = 0;
 	}
-	sva_smallest(ret);
-	sva_free(&tmp);    /* 清理原内存空间 */
-	return 0;
+	sva_smallest(path);
+	return path;
 }
 
-int path_join(Path_t *ret, SV_t path, SV_t child)
+Path_t *path_join(Path_t *path, SV_t child)
 {
+	if (!path || !path->capacity || !path->p) return NULL;
 	const static char sep = '/';
-	Path_t tmp = {0};
-	if (child.len && child.p[0] == '/') sva_from_sv(&tmp, child);
-	else sva_sprintf(&tmp, "%.*s%c%.*s",(int)path.len, path.p,
-			 sep, (int)child.len, child.p);
-	path_normalize(ret, sv_from_sva(&tmp));
-	sva_free(&tmp);
-	return 0;
+	if (child.len && child.p[0] == sep) sva_sprintf(path, "%.*s", (int)child.len, child.p);
+	else sva_sprintfcat(path, "%c%.*s", sep, (int)child.len, child.p);
+	return path_normalize(path);
 }
 
 typedef struct {

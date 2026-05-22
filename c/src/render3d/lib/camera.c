@@ -40,12 +40,11 @@ Camera_t *camera_create()
 	return p;
 }
 
-void camera_free(Camera_t **p)
+void camera_free(Camera_t *p)
 {
-	if (!p || !*p) return;
-	if ((*p)->private_data) free((*p)->private_data);
-	free(*p);
-	*p = NULL;
+	if (!p) return;
+	if (p->private_data) free(p->private_data);
+	free(p);
 }
 
 void camera_lock(Camera_t *camera)

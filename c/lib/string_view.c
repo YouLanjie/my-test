@@ -65,9 +65,25 @@ void sv_trim_left_by_type(SV_t *s, int (*istype)(int c))
 
 bool sv_cmp(SV_t s1, SV_t s2)
 {
+	if (!s1.p || !s2.p) return false;
 	if (s1.len != s2.len) return false;
 	if (s1.p == s2.p) return true;
 	return strncmp(s1.p, s2.p, s1.len) == 0;
+}
+
+bool sv_begin_with(SV_t s, const char *pat)
+{
+	if (!s.p || !pat) return false;
+	if (s.len < strlen(pat)) return false;
+	return !strncmp(s.p, pat, strlen(pat));
+}
+
+bool sv_end_with(SV_t s, const char *pat)
+{
+	if (!s.p || !pat) return false;
+	if (s.len < strlen(pat)) return false;
+	const int size = strlen(pat);
+	return !strncmp(s.p+s.len-size, pat, size);
 }
 
 
@@ -76,15 +92,15 @@ bool sv_cmp(SV_t s1, SV_t s2)
  * =================== */
 
 /* 创建sva_t对象 */
-int sva_create(SVA_t *s)
+SVA_t *sva_create(SVA_t *s)
 {
-	if (!s) return -1;
+	if (!s) return NULL;
 	s->capacity = 128;
 	s->len = 0;
 	s->p = malloc(s->capacity);
 	if (!s->p) s->capacity = 0;
 	else memset(s->p, 0, s->capacity);
-	return 0;
+	return s;
 }
 
 int sva_free(SVA_t *s)
@@ -97,59 +113,75 @@ int sva_free(SVA_t *s)
 	return 0;
 }
 
-int sva_from_sv(SVA_t *s, SV_t sv)
+/* 应当仅用于初始化 */
+SVA_t *sva_from_sv(SVA_t *s, SV_t sv)
 {
-	if (!s || !sv.p) return -1;
+	if (!s || !sv.p) return NULL;
 	s->len = sv.len;
 	s->capacity = s->len+1;
 	s->p = malloc(s->capacity);
 	if (!s->p) {
 		s->capacity = 0;
 		s->len = 0;
-		return -2;
+		return NULL;
 	}
 	memcpy(s->p, sv.p, s->len);
 	s->p[s->len] = 0;
-	return 0;
+	return s;
 }
 
-int sva_from_cstr(SVA_t *s, const char *p)
+SVA_t *sva_from_cstr(SVA_t *s, const char *p)
 {
-	if (!s || !p) return -1;
+	if (!s || !p) return NULL;
 	return sva_from_sv(s, sv_from_cstr(p));
 }
 
-int sva_smallest(SVA_t *s)
+SVA_t *sva_smallest(SVA_t *s)
 {
-	if (!s) return -1;
+	if (!s) return NULL;
+	if (!s->p) return s;
 	s->capacity = s->len+1;
+	char *old_p = s->p;
 	s->p = realloc(s->p, s->capacity);
-	return 0;
+	if (!s->p) {
+		s->capacity = 0;
+		s->len = 0;
+		free(old_p);
+		return NULL;
+	}
+	return s;
 }
 
-int sva_double(SVA_t *s)
+SVA_t *sva_double(SVA_t *s)
 {
-	if (!s) return -1;
+	if (!s || s->capacity == 0 || s->p == NULL) return NULL;
 	s->capacity *= 2;
+	char *old_p = s->p;
 	s->p = realloc(s->p, s->capacity);
-	s->p[s->len] = 0;
-	return 0;
+	if (!s->p) {
+		free(old_p);
+		s->capacity = 0;
+		s->len = 0;
+		return NULL;
+	}
+	return s;
 }
 
-int sva_sprintf(SVA_t *ret, char *fmt, ...)
+SVA_t *sva_sprintf(SVA_t *ret, char *fmt, ...)
 {
-	if (!ret || !fmt) return -1;
-	if (ret->p) sva_free(ret);
+	if (!ret || !fmt) return NULL;
 	va_list ap;
 	int64_t n = 0;
 
 	va_start(ap, fmt);
 	n  = vsnprintf(NULL, 0, fmt, ap);    /* 检测所需容量 */
 	va_end(ap);
-	if (n < 0) return -2;
-	ret->capacity = n + 1;
-	ret->p = malloc(ret->capacity);
-	if (!ret->p) return ret->capacity = 0, -3;
+	if (n < 0) return NULL;
+	if ((size_t)n + 1 > ret->capacity) {
+		ret->capacity = n + 1;
+		ret->p = realloc(ret->p, ret->capacity);
+	}
+	if (!ret->p) return ret->capacity = 0, NULL;
 
 	va_start(ap, fmt);
 	n = vsnprintf(ret->p, ret->capacity, fmt, ap);
@@ -157,27 +189,27 @@ int sva_sprintf(SVA_t *ret, char *fmt, ...)
 	if (n < 0) {
 		free(ret->p);
 		ret->p = NULL, ret->capacity = 0;
-		return -4;
+		return NULL;
 	}
 	ret->len = n;
-	return 0;
+	return ret;
 }
 
 /* strcat,但是有fmt */
-int sva_sprintfcat(SVA_t *ret, char *fmt, ...)
+SVA_t *sva_sprintfcat(SVA_t *ret, char *fmt, ...)
 {
-	if (!ret || !fmt) return -1;
+	if (!ret || !fmt) return NULL;
 	va_list ap;
 	int64_t n = 0;
 
 	va_start(ap, fmt);
 	n  = vsnprintf(NULL, 0, fmt, ap);    /* 检测所需容量 */
 	va_end(ap);
-	if (n < 0) return -2;
+	if (n < 0) return NULL;
 	if (ret->len + n + 1 > ret->capacity || !ret->p) {
 		ret->capacity = ret->len + n + 1;    /* 扩增式 */
 		ret->p = realloc(ret->p, ret->capacity);
-		if (!ret->p) return ret->capacity = 0, -3;
+		if (!ret->p) return ret->capacity = 0, NULL;
 	}
 
 	va_start(ap, fmt);
@@ -186,7 +218,22 @@ int sva_sprintfcat(SVA_t *ret, char *fmt, ...)
 	if (n < 0) {
 		free(ret->p);
 		ret->p = NULL, ret->capacity = 0, ret->len = 0;
-		return -4;
+		return NULL;
 	} else ret->len += n;
-	return 0;
+	return ret;
+}
+
+SVA_t *sva_strcpy(SVA_t *ret, const SVA_t *from)
+{
+	if (!ret || !from || from->len+1 <= 0) return NULL;
+	if (ret->capacity < from->len+1 || !ret->p) {
+		ret->capacity = from->len+1;
+		ret->len = from->len;
+		if (ret->p) ret->p = realloc(ret->p, ret->capacity);
+		else ret->p = malloc(ret->capacity);
+		if (!ret->p) return ret->capacity = 0, NULL;
+	}
+	strncpy(ret->p, from->p, ret->len);
+	ret->p[ret->len] = 0;
+	return ret;
 }
