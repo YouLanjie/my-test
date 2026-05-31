@@ -63,34 +63,31 @@ get_mem_by_grep() {
 }
 
 get_mem_by_grep_and_save() {
-	tag=$1
-	if [[ $tag == "" ]];then
-		echo "请输入匹配的tag（默认为msedge）"
-		read tag
+	if [[ $1 == "-h" || $2 == "-h" ]];then
+		echo "Usage: ${FUNCNAME[0]} [tag] [outputf] [delay]"
+		return 0
 	fi
-	if [[ $tag == "" ]];then
-		tag="msedge"
-	fi
-	outputf=$2
-	if [[ $outputf == "" ]];then
-		echo "请输入保存的文件名(csv)"
-		read outputf
-	fi
+	tag=${1:-"python"}
+	outputf=${2:-"save_$(date +"%Y%m%d_%H%M%S").csv"}
+	delay=${3:-1}
 	if [[ $outputf == "" ]];then
 		exit 1
 	fi
 	echo "使用Ctrl-c退出"
 	echo "TAG: '$tag'"
+	echo "DELAY: '$delay'"
+	echo "OUTPUT: '$outputf'"
 	echo "Time,VmRSS,VmSwap,Total" >>"$outputf"
-	while echo "-----";do
-		result=$(get_mem_by_grep "$tag"|sed '1d')
-		echo "$result"
+	while line="" ;do
+		result=$(get_mem_by_grep -t "$tag"|sed '1d')
 		if [[ $result == "" ]];then
-			echo "$(date -Iseconds),,," >>"$outputf"
+			line="$(date -Iseconds),,,"
 		else
-			echo "$(date -Iseconds),$(echo "$result"|awk '{print $2}'|xargs|sed 's/ /,/g')" >>"$outputf"
+			line="$(date -Iseconds),$(echo "$result"|awk '{print $2}'|xargs|sed 's/ /,/g')"
 		fi
-		sleep 1
+		echo "$line"
+		echo "$line" >>"$outputf"
+		sleep $delay
 	done
 }
 

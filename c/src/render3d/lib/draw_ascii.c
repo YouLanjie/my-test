@@ -131,7 +131,7 @@ static void render_8bit(RenderBackend_t *backend)
 			c = c < MAXCHR ? c : MAXCHR;
 			if (lc != c) {
 				lc = c;
-				printf("\033[%dm", 31+(int)(7.*c/MAXCHR));
+				printf("\033[%dm", 37-(int)(7.*c/MAXCHR));
 			}
 			putc(CHRTABLE[c>0&&c<MAXCHR?c:MAXCHR], stdout);
 		}

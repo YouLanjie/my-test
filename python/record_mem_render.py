@@ -5,7 +5,11 @@ import argparse
 import sys
 import time
 from pathlib import Path
-import psutil
+try:
+    import psutil
+except ModuleNotFoundError:
+    psutil = None
+    print("WARN psutil模块缺失", file=sys.stderr)
 import numpy as np
 import pandas as pd
 
@@ -59,6 +63,7 @@ def get_args() -> argparse.Namespace:
     argparser.add_argument("-i", "--input", default=None, help="输入文件(不会记录，会绘图)")
     argparser.add_argument("-t", "--title", default=None, help="生成图表的标题")
     argparser.add_argument("-y", "--ylabel", default=None, help="生成图表y轴的label")
+    argparser.add_argument("--dpi", type=int, default=300, help="DPI")
     argparser.add_argument("--width", type=int, default=16, help="表宽")
     argparser.add_argument("--heigh", type=int, default=9, help="表高")
     argparser.add_argument("--dashgrep", default=None, help="使用虚线的关键词")
@@ -84,6 +89,7 @@ def render(args:argparse.Namespace):
     x_name = df_cols[0]
     y_list = df_cols[1:]
     padding = len(df[x_name])/args.width
+    from matplotlib import font_manager
     import matplotlib.pyplot as plt
     import matplotlib.ticker as ticker
     fig,ax = plt.subplots(1,1,figsize=(args.width, args.heigh))
@@ -109,8 +115,10 @@ def render(args:argparse.Namespace):
     # 添加图例
     plt.legend()
     # plt.savefig('output_chart.png', dpi=3000)  # 保存图片
-    plt.rcParams['font.sans-serif'] = ['SimHei']
-    plt.savefig(args.output, dpi=300)  # 保存图片
+    font = [f.name for f in font_manager.fontManager.ttflist if 'CJK' in f.name or 'Hei' in f.name or 'Song' in f.name]
+    if font:
+        plt.rcParams['font.sans-serif'] = font[:1]
+    plt.savefig(args.output, dpi=args.dpi)  # 保存图片
     # plt.show()
 
 def main():

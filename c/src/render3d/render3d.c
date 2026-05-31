@@ -74,83 +74,95 @@ static bool setup(RenderBackend_t **bk, Camera_t *ca, uint8_t num)
 	return false;
 }
 
+typedef struct {
+	RenderBackend_t *backend;
+	Camera_t        *camera;
+	Obj_t           *obj;
+	double          theta;
+	Vec_t           v;      /* 物体速度 */
+	Vec_t           cav;    /* 相机速度 */
+	bool            suspend;
+	bool            no_fiction;
+	bool            no_focus;
+} Runtimedata_t;
+
 /* 单帧动画处理
  * 输入处理*/
-static bool frame(RenderBackend_t **backend, Camera_t *camera, Obj_t *obj, double *theta, Vec_t *v)
+static bool frame(Runtimedata_t *dat)
 {
-	if (!obj || !theta || !v || !camera || !backend) return false;
-	static bool suspend = false;
-	static bool no_fiction = false;
-	static bool focus = true;
-	static Vec_t cav = {0};    /* 相机速度 */
+	if (!dat || !dat->obj || !dat->camera || !dat->backend) return false;
 
 	/* 输入处理 */
 	switch (kbhitGetchar()) {
-	case ' ': v->y += (v->y < 0 ? 1.5 : 0.5); break;
-	case 'w': v->z -= 0.1; break;
-	case 's': v->z += 0.1; break;
-	case 'a': v->x -= 0.1; break;
-	case 'd': v->x += 0.1; break;
-	case 'j': *theta += 0.01*2*M_PI; break;
-	case 'k': *theta -= 0.01*2*M_PI; break;
-	case '+': *v=vec_mul(*v, 0), *theta=0, cav=vec_mul(cav, 0); break;
+	case ' ': dat->v.y += (dat->v.y < 0 ? 1.5 : 0.5); break;
+	case 'w': dat->v.z -= 0.1; break;
+	case 's': dat->v.z += 0.1; break;
+	case 'a': dat->v.x -= 0.1; break;
+	case 'd': dat->v.x += 0.1; break;
+	case 'j': dat->theta += 0.01*2*M_PI; break;
+	case 'k': dat->theta -= 0.01*2*M_PI; break;
+	case '+':
+		  dat->v=vec_mul(dat->v, 0);
+		  dat->theta=0;
+		  dat->cav=vec_mul(dat->cav, 0);
+		  break;
 
-	case '-': camera->scale-=1; break;
-	case '=': camera->scale+=1; break;
-	case ',': camera->dept-=1; break;
-	case '.': camera->dept+=1; break;
-	case 'W': cav.y+=0.01; break;
-	case 'S': cav.y-=0.01; break;
-	case 'A': cav.x-=0.01; break;
-	case 'D': cav.x+=0.01; break;
-	case 'Q': cav.z-=0.01; break;
-	case 'E': cav.z+=0.01; break;
-	case 'J': camera_rotate(camera, (Vec_t){-1,0,0}, M_PI/180); break;
-	case 'K': camera_rotate(camera, (Vec_t){1,0,0}, M_PI/180); break;
-	case 'H': camera_rotate(camera, (Vec_t){0,0,1}, M_PI/180); break;
-	case 'L': camera_rotate(camera, (Vec_t){0,0,-1}, M_PI/180); break;
-	case 'F': camera->position = vec_mul(camera->position, 0),
-		  camera_look(camera, (Point_t){0,0,-1}, (Vec_t){0,1,0}); break;
+	case '-': dat->camera->scale-=1; break;
+	case '=': dat->camera->scale+=1; break;
+	case ',': dat->camera->dept-=1; break;
+	case '.': dat->camera->dept+=1; break;
+	case 'W': dat->cav.y+=0.01; break;
+	case 'S': dat->cav.y-=0.01; break;
+	case 'A': dat->cav.x-=0.01; break;
+	case 'D': dat->cav.x+=0.01; break;
+	case 'Q': dat->cav.z-=0.01; break;
+	case 'E': dat->cav.z+=0.01; break;
+	case 'J': camera_rotate(dat->camera, (Vec_t){-1,0,0}, M_PI/180); break;
+	case 'K': camera_rotate(dat->camera, (Vec_t){1,0,0}, M_PI/180); break;
+	case 'H': camera_rotate(dat->camera, (Vec_t){0,0,1}, M_PI/180); break;
+	case 'L': camera_rotate(dat->camera, (Vec_t){0,0,-1}, M_PI/180); break;
+	case 'F': dat->camera->position = vec_mul(dat->camera->position, 0),
+		  camera_look(dat->camera, (Point_t){0,0,-1}, (Vec_t){0,1,0}); break;
 
 	case '1': if (FPS > 1) FPS--; break;
 	case '2': if (FPS < (uint8_t)-1) FPS++; break;
-	case 'f': focus=!focus; break;
-	case '`': no_fiction=!no_fiction; break;
-	case 'r': setup(backend, camera, (*backend)->id); break;
+	case 'f': dat->no_focus=!dat->no_focus; break;
+	case '`': dat->no_fiction=!dat->no_fiction; break;
+	case 'r': setup(&dat->backend, dat->camera, dat->backend->id); break;
 	case 'c': printf("\x1b[2J"); break;
-	case '\t': setup(backend, camera, (*backend)->id+1); break;
-	case 'p': suspend=!suspend; break;
+	case '\t': setup(&dat->backend, dat->camera, dat->backend->id+1); break;
+	case 'p': dat->suspend=!dat->suspend; break;
 	case 'q': return true; break;
 	}
-	if (suspend) return false;
+	if (dat->suspend) return false;
 
-	camera_shift(camera, cav);
-	obj_rotate(obj, (Vec_t){0, 1, 0}, *theta/FPS);
-	obj_shift(obj, vec_mul(*v, 1./FPS));
-	if (focus) camera_look(camera, (Point_t){
-			       obj->center.x, obj->center.y+1, obj->center.z},
-			       (Vec_t){0,1,0});
+	camera_shift(dat->camera, dat->cav);
+	obj_rotate(dat->obj, (Vec_t){0, 1, 0}, dat->theta/FPS);
+	obj_shift(dat->obj, vec_mul(dat->v, 1./FPS));
+	if (!dat->no_focus) camera_look(dat->camera, (Point_t){
+		dat->obj->center.x, dat->obj->center.y+1, dat->obj->center.z},
+		(Vec_t){0,1,0});
 
-	if (!no_fiction) {
+	if (!dat->no_fiction) {
 		/* 速度衰减 */
-		v->x *= pow(0.99, 40./FPS);
-		v->z *= pow(0.99, 40./FPS);
-		*theta *= pow(0.99, 40./FPS);
+		dat->v.x *= pow(0.99, 40./FPS);
+		dat->v.z *= pow(0.99, 40./FPS);
+		dat->theta *= pow(0.99, 40./FPS);
 	}
 	/* 自然下落 */
-	v->y -= 9.8/FPS;
+	dat->v.y -= 9.8/FPS;
 
 	/* 类似碰撞处理 */
-#define CP obj->center
+#define CP dat->obj->center
 #define BOX(var, min, max, rate) \
-	if ((CP.var > (max) && v->var > 0) || (CP.var < (min) && v->var < 0)) v->var *= (rate)
+	if ((CP.var > (max) && dat->v.var > 0) || (CP.var < (min) && dat->v.var < 0)) dat->v.var *= (rate)
 	BOX(x, -5, 5, -0.7);
 	BOX(z, -50, 10, -0.7);
 	/* 地面碰撞处理 */
 	static const int ground = -1;
-	if (CP.y <= ground && v->y <= 0 && v->y > -0.5) {
-		obj->center.y = -1;
-		v->y = 0;
+	if (CP.y <= ground && dat->v.y <= 0 && dat->v.y > -0.5) {
+		dat->obj->center.y = -1;
+		dat->v.y = 0;
 	} else BOX(y, ground, 10, -0.5);
 #undef BOX
 #undef CP
@@ -193,11 +205,20 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	Camera_t *camera = camera_create();
-	if (!camera) return 0;
-	RenderBackend_t *backend = NULL;
-	setup(&backend, camera, chose_backend);
-	if (!backend) return 0;
+	Runtimedata_t data = {
+		.backend = NULL,
+		.obj = NULL,
+		.camera = camera_create(),
+		.theta = -2*M_PI/5,    /* 每秒转动的角度(rad/s) */
+		.v = (Vec_t){
+			.x = 0,
+			.y = 2.,
+			.z = 3.5,
+		},
+	};
+	if (!data.camera) return 0;
+	setup(&data.backend, data.camera, chose_backend);
+	if (!data.backend) return 0;
 
 	Obj_t *line = obj_create((Point_t){0, 0, 0},
 				 4, (Point_t[]){ {-2,-1,50},{-2,-1,-50}, {2,-1,50},{2,-1,-50}, },
@@ -207,8 +228,6 @@ int main(int argc, char *argv[])
 		obj_merge_and_free(line, obj_apply_shift(obj_create_line_from_point((Point_t){2,-1,i+2}, (Point_t){-2,-1,i+2})));
 	}
 
-#define FLG1
-#ifdef FLG1
 	Obj_t *block = obj_create_image_from_str((Point_t){0.3, 1, -7}, 0.1,
 "####################\n"
 "####....###....#####\n"
@@ -230,47 +249,35 @@ int main(int argc, char *argv[])
 "#.#.##.#.###.##.#.##\n"
 "###########.########\n"
 "####################\n", '.');
-#endif
-
-#ifndef FLG1
-	Obj_t *block = obj_create((Point_t){0.3,1,-7}, 4,
-				  (Point_t[]){
-				  {0.75,0.25,0.25},
-				  {0.25,0.25,0.75},
-				  {0.25,0.75,0.25},
-				  {0.75,0.75,0.75},
-				  },
-				  0, NULL, 0, NULL);
-	obj_transform_shift(block, (Vec_t){-0.5,-0.5,-0.5});
-	obj_scale(block, 2);
-#endif
 	obj_merge_and_free(block, obj_create_box_from_point((Point_t[]){
 {-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1},{-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1} }));
 	obj_transform_shift(block, (Vec_t){.x=0,.y=1,.z=0});    /* 让参考中心点下移一格 */
 	/*obj_rotate(block, (Vec_t){0, 1, 0}, M_PI*5);*/
-
-	double theta = -2*M_PI/5;    /* 每秒转动的角度(rad/s) */
-	Vec_t v = (Vec_t){
-		.x = 0,
-		.y = 2.,
-		.z = 3.5,
-	};
+	data.obj = block;
 
 	printf("\x1b[2J");
 	size_t i = 0;
-	double busy = 0;
+	double busy = 0, skip_farme = 0;
 	for (i = 0; i < MAX_FRAME; ++i) {
-		if (frame(&backend, camera, block, &theta, &v)) break;
-		if (!backend) break;
-		obj_cast(line, camera, backend);
-		obj_cast(block, camera, backend);
+		skip_farme = 0;
+		while (busy - skip_farme >= 100) {
+			if (frame(&data)) {
+				i = MAX_FRAME;
+				break;
+			}
+			skip_farme += 100.;
+		}
+		if (frame(&data)) break;
+		if (!data.backend) break;
+		obj_cast(line, data.camera, data.backend);
+		obj_cast(block, data.camera, data.backend);
 
 		printf("\033[H");
-		backend->render(backend);
-		backend->clean(backend);
+		data.backend->render(data.backend);
+		data.backend->clean(data.backend);
 
 		printf("=> FPS: %d, VS: %.0f, VD: %.0f, BS: %5.1f%%, F: %ld %s\n",
-		       FPS, camera->scale, camera->dept, busy, i,
+		       FPS, data.camera->scale, data.camera->dept, busy, i,
 		       busy < 100 ? "           ": "(OVERLOAD) ");
 		printf("=> Center xyz: %.3f, %.3f, %.3f \n",
 		       block->center.x,
@@ -278,13 +285,16 @@ int main(int argc, char *argv[])
 		       block->center.z
 		       );
 		printf("=> Speed xyzr: %.3f, %6.3f, %.3f, %.3fr/s \n",
-		       v.x, v.y, v.z, (theta)/(2*M_PI));
+		       data.v.x, data.v.y, data.v.z, (data.theta)/(2*M_PI));
+		printf("=> Ca P/V xyz: (%.2f,%.2f,%.2f) (%.2f,%.2f,%.2f) \n",
+		       data.camera->position.x, data.camera->position.y, data.camera->position.z,
+		       data.cav.x, data.cav.y, data.cav.z);
 		busy = (busy + (1-(my_sleep())/(1./FPS)) * 100)/2;
 	}
 	obj_free(line);
 	obj_free(block);
-	if (backend) backend->destroy(backend);
-	camera_free(camera);
+	if (data.backend) data.backend->destroy(data.backend);
+	camera_free(data.camera);
 	printf("[INFO] 退出程序\n");
 	return 0;
 }
