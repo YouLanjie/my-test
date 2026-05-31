@@ -143,6 +143,21 @@ void pcm_handle(int16_t* pcm_data, int size)
 	if (wav_file) fwrite(pcm_data, sizeof(int16_t)*2, size, wav_file);
 }
 
+int streamer_file(void *p)
+{
+	if (!p) return EOF;
+	return getc(p);
+}
+
+int streamer_str(void *vp)
+{
+	char **p = vp;
+	if (!p) return EOF;
+	if (!*p) return EOF;
+	if (**p == 0) return EOF;
+	return *(*p)++;
+}
+
 int main(int argc, char *argv[])
 {
 	int ch = 0, id = -1;
@@ -199,10 +214,13 @@ int main(int argc, char *argv[])
 	if (*input) {
 		FILE *fp = fopen(input, "r");
 		if (!fp) return 1;
-		notes = parse_notes(NULL, fp, amplitude);
+		notes = note_parser(streamer_file, fp, amplitude);
 		fclose(fp);
-	} else if (id >= 0) notes = parse_notes(NOTELIST[id], NULL, amplitude);
-	else notes = parse_notes(NULL, stdin, amplitude);
+	} else if (id >= 0) {
+		const char *p = NOTELIST[id];
+		notes = note_parser(streamer_str, &p, amplitude);
+	}
+	else notes = note_parser(streamer_file, stdin, amplitude);
 
 	WavHeader_t header = create_wav_header(0);
 	if (filename[0]) {
@@ -223,5 +241,8 @@ int main(int argc, char *argv[])
 		printf("[INFO] 曲谱总时长: %lf秒\n", (double)size/SAMPLE_RATE);
 	}
 	free_notes(notes);
+	/* 新抽象层：
+	 * 乐谱解析 -> 音符序列 -> 合成引擎 -> 输出后端
+	 * */
 	return 0;
 }

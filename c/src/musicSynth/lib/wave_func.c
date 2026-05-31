@@ -2,17 +2,72 @@
  * @file        wave_func.c
  * @author      u0_a221
  * @date        2026-05-02
- * @brief       声波函数集
+ * @brief       各种预设回调函数集
  */
 
 #include "../core.h"
+
+/* 泛音列定义设置 */
+#define HARMONIC(x)                           \
+size_t har_set_##x(const Harmonics_t ** harp) \
+{                                             \
+	if (!harp) {return 0;}                \
+	*harp = har_arr_##x;                  \
+	return ARRARY_LEN(har_arr_##x);       \
+}
+
+const static Harmonics_t har_arr_piano1[] = {
+	{1,  1,     2 },
+	{2,  0.340, 3 },
+	{3,  0.102, 4 },
+	{4,  0.085, 5 },
+	{5,  0.070, 6 },
+	{6,  0.065, 7 },
+	{7,  0.028, 8 },
+	{8,  0.085, 9 },
+
+	{9,  0.011, 10},
+	{10, 0.030, 11},
+	{11, 0.010, 12},
+	{12, 0.014, 13},
+	{13, 0.012, 14},
+	{14, 0.013, 15},
+	{15, 0.004, 16},
+}, har_arr_piano2[] = {
+	{1,  1.00, 2},
+	{2,  0.35, 3},
+	{3,  0.25, 4},
+	{4,  0.08, 5},
+	{5,  0.12, 6},
+	{6,  0.05, 7},
+	{7,  0.10, 8},
+	{8,  0.02, 9},
+}, har_arr_none[] = {
+	{1,  1.00, 0},
+}, har_arr_h3[] = {
+	{1, 1.000, 0}, {2, 0.100, 0}, {3, 0.800, 0}, {4, 0.100, 0}, {5, 0.600, 0}, {6, 0.100, 0}, {7, 0.400, 0}, {8, 0.100, 0},
+	{9, 0.200, 0}, {10, 0.050, 0}, {11, 0.100, 0}, {12, 0.020, 0}, {13, 0.050, 0}, {14, 0.010, 0}, {15, 0.020, 0}
+}, har_arr_h4[] = {
+	{1, 1, 0}, {2, 0.8, 0}, {3, 0.1, 0}, {4, 0.6, 0}, {5, 0.1, 0}, {6, 0.4, 0}, {7, 0.1, 0}, {8, 0.2, 0},
+	{9, 0.05, 0}, {10, 0.1, 0}, {11, 0.02, 0}, {12, 0.05, 0}, {13, 0.01, 0}, {14, 0.02, 0}, {15, 0, 0}
+}, har_arr_h5[] = {
+	{1, 1, 0}, {2, 0.9, 0}, {3, 0.9, 0}, {4, 0.8, 0}, {5, 0.8, 0}, {6, 0.7, 0}, {7, 0.7, 0}, {8, 0.2, 0},
+	{9, 0.2, 0}, {10, 0.1, 0}, {11, 0.1, 0}, {12, 0.05, 0}, {13, 0.05, 0}, {14, 0.01, 0}, {15, 0.01, 0}
+};
+HARMONICS_LIST
+#undef HARMONIC
+
+double flo_inverse_liner(double t)
+{
+	return 1 / (10*t + 1);
+}
 
 /**
  * 方波函数（占空比50%）
  * 周期 T，幅值 A
  * 在 [0, T/2) 输出 A，[-T/2, 0) 输出 -A
  */
-double square_wave(double t)
+double wave_square(double t)
 {
 	double x = fmod(t, M_PI) - M_PI/2;
 	return x >= 0 ? 1 : -1;
@@ -24,7 +79,7 @@ double square_wave(double t)
  * 线性上升：0 → T/2 时从 -A → A
  * 线性下降：T/2 → T 时从 A → -A
  */
-double triangle_wave(double t)
+double wave_triangle(double t)
 {
 	const static double T = M_PI, A = 1;
 	double x = fmod(t, T);
@@ -42,13 +97,13 @@ double triangle_wave(double t)
  * 锯齿波（上升沿）
  * x: [-pi/2, pi/2) -> [-1, 1) (线性上升)
  */
-double sawtooth_wave(double t)
+double wave_sawtooth(double t)
 {
 	double x = fmod(t, M_PI) - M_PI/2;
 	return 2.0 * (x/M_PI - floor(x/M_PI+0.5));
 }
 
-double noise_wave(double t)
+double wave_noise(double t)
 {
 	(void)t;
 	return 2*(double)rand()/RAND_MAX-1;

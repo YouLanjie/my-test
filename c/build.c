@@ -337,6 +337,7 @@ static Path_t *path_hander_self(Path_t* ret)
 	return sva_from_cstr(ret, "./build");
 }
 
+#ifndef BUILD_C_AS_LIB
 int main(int argc, char *argv[])
 {
 	(void)argc;
@@ -356,4 +357,4 @@ int main(int argc, char *argv[])
 	while(wait(NULL) > 0) usleep(0010000);
 	return 0;
 }
-
+#endif

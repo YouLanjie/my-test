@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <stddef.h>
 #ifndef _CORE_H
 #define _CORE_H
 
@@ -52,83 +53,122 @@ typedef struct {
  * · 使用 tanh(x) 进行波形塑形/过载，哦也..
  * */
 
+/* :bq=type; 指定 */
+enum BiquadType { BQ_NOSET=0, BQ_LP, BQ_HP, BQ_BP, BQ_MAX};
 /* 滤波器结构体 */
 typedef struct {
 	double b0, b1, b2;   // 前向系数（分子）
 	double a1, a2;       // 反馈系数（分母，注意差分方程中为 -a1, -a2）
 	double x1, x2;       // 前两个输入样本
 	double y1, y2;       // 前两个输出样本
-} Biquad;
-enum BiquadType { BQ_LP=1, BQ_HP, BQ_BP, BQ_MAX};    /* :bq=num; 指定 */
+	double fc, bw;       // 频率与带宽
+	enum BiquadType bq_type;
+} Biquad_t;
+// 滤波器函数
+void biquad_set(Biquad_t *bq, char *key, char *value);
+void biquad_compile(Biquad_t *p);
+double biquad_apply(Biquad_t *f, double x);
 
+/* 包络器 */
+typedef struct {
+	double attack;     /* 起振(秒) */
+	double decay;      /* 衰减(秒) */
+	double sustain;    /* 持续(保持的声音大小,0~1) */
+	double release;    /* 释放(秒) */
+} ADSR_t;
 
-/* 音符数据 */
-typedef struct Note {
-	char ch;
-	int  ind;
-	int  line;
-	double freq;
+/* 泛音列配置 */
+typedef struct {
+	double freq_times;
 	double amplitude;
+	double decay_speed;
+	// size_t len;
+	// double amplitude;
+	// double (*decay_func)(size_t ind,double sec);
+} Harmonics_t;
+
+/* 存储振荡器产生的PCM数据(单声道f64)
+ * 未经过滤波器、ADSR
+ * 独立成链表，可被查找 */
+typedef struct NoteData {
+	double *pwav;
+	size_t  sample_num;    /* pwav数组长度 */
+	size_t  ref_count;
+
+	/* 获取泛音列函数(返回长度，参数存表，基本本倍率和衰减速度) */
+	size_t (*har_func)(const Harmonics_t**);
+	double (*wave_func)(double);        /* 波函数 */
+	double (*flo_freq_func)(double);    /* LFO包络 */
+	double   portamento_from;           /* 滑音(<=0时忽略) */
+	double   freq;
 	double   type;		/* type分音符 */
+	uint16_t speed;		/* 速度，n拍/分钟 */
 	uint8_t  notes;		/* 以notes分音符为一拍 */
 	uint8_t  beates;	/* 每小节beates拍 */
-	uint16_t speed;		/* 速度，n拍/分钟 */
-	uint64_t duration;
-	uint8_t  track;
-	uint8_t  flag;		/* NFLG_* flags */
-	int8_t  instrument;
-	int8_t  wave_func;
-	int8_t  bq;
-	double   bq_freq;
-	int8_t   harmonics;
-	int16_t *pwav;
+
+	struct NoteData *pNext;
+} NoteData_t;
+
+/* 存储乐谱数据 */
+typedef struct Note {
+	double      amplitude;
+	NoteData_t *pcm_data;
+	Biquad_t   *biquad;
+	ADSR_t      adsr;
+
+	uint8_t track;
+	bool flg_left;
+	bool flg_right;
+	bool flg_legato;        /* 连音 */
+	bool flg_be_legato;     /* 被连音 */
+
+	int ch;
+	int ind;
+	int line;
+
 	struct Note *pNext;
 } Note_t;
-// (Note_t).flag 对应值含义
-#define NFLG_LEFT (1 << 0)    /* 左声道 */
-#define NFLG_RIGHT (1 << 1)    /* 右声道 */
-#define NFLG_LEGATO (1 << 2)    /* 连音 */
-#define NFLG_BE_LEGATO (1 << 3)    /* 被连音 */
-#define NFLG_PORTAMENTO (1 << 4)    /* 滑音 */
-
-enum Instruments {
-	INST_SIN, INST_DRUM, INST_HIHAT, INST_MAX
-};
-enum Harmonics {
-	HAR_PIANO, HAR_NONE,
-	HAR_3, HAR_4, HAR_5,
-	HAR_MAX, HAR_NOSET=-1
-};
-enum WaveFuncs {
-	WF_SIN, WF_SQUARE,
-	WF_TRIANGLE,
-	WF_SAWTOOTH, WF_NOISE,
-	WF_MAX
-};
 
 #define sigmoid(x) (1 - 1/(1+exp(x)))
+#define ARRARY_LEN(arr) (sizeof(arr)/sizeof(arr[0]))
+#define CALLCLS(obj, func, ...) (obj)->func((obj) __VA_OPT__(,) __VA_ARGS__)
+
+#define LOG(fmt, ...) fprintf(stderr, "%s:%d:%s: " fmt "\n", __FILE__, __LINE__, __FUNCTION__ __VA_OPT__(,) __VA_ARGS__)
+#define LOGVAR(typ, var) LOG("var '%s' = " typ " (as %s)", #var, (var), #typ)
+// #define CALL(func, ...) (LOG("call '%s' at (%p)", #func, (func)), (func)(__VA_ARGS__))
+
+
+#define HARMONICS_LIST   \
+	HARMONIC(piano1) \
+	HARMONIC(piano2) \
+	HARMONIC(none)   \
+	HARMONIC(h3)     \
+	HARMONIC(h4)     \
+	HARMONIC(h5)
+/* 泛音列表 */
+#define HARMONIC(x) size_t har_set_##x(const Harmonics_t ** harp);
+HARMONICS_LIST
+#undef HARMONIC
+
+// 低频信号函数集
+double flo_inverse_liner(double t);
 
 // 声波函数集
-double square_wave(double t);
-double triangle_wave(double t);
-double sawtooth_wave(double t);
-double noise_wave(double t);
+double wave_square(double t);
+double wave_triangle(double t);
+double wave_sawtooth(double t);
+double wave_noise(double t);
 
 // txt曲谱解释函数
 void print_note(Note_t *p);
 void check_notes(Note_t *p, bool print);
-Note_t *parse_notes(const char *str, FILE *fp, double base_amplitude);
-void free_notes(Note_t *p);
-
-// 滤波器函数
-void create_biquad(Biquad *p, enum BiquadType type, double fc, double bw);
-double apply_biquad(Biquad *f, double x);
+void note_free(Note_t *p);
+Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitude);
 
 // 声音生成处理
-double gen_wave(double x, double volume, double f, Note_t *p, bool no_har);
-double adsr_envelope(int current, int total, bool no_fade);
+void note_gen_wave(NoteData_t *p);
+double adsr_get_envelope(ADSR_t *adsr,int current, int total);
 double get_portamento_freq(double start, double end, double x, bool smooth);
-int create_note_wave(Note_t **pp, bool no_fade, bool smooth, bool no_har);
 
 // 旋律整体处理、轨道处理
 struct Melody_opts_t {
@@ -138,10 +178,19 @@ struct Melody_opts_t {
 	bool print_formated_note;
 	bool print_debug_info;
 };
-void merge_tracks(Note_t *tracks[UINT8_MAX], int duration, uint64_t offset, bool print_merge_info);
-void clean_tracks_wav(Note_t *(*tracks)[UINT8_MAX], bool print);
-uint64_t melody_0(Note_t *pH, void (*pcm_handle)(int16_t*,int), struct Melody_opts_t opts);
-#define melody(pH,pcm_handle,...) melody_0(pH, pcm_handle, (struct Melody_opts_t){__VA_ARGS__})
+
+typedef struct Music_t {
+	Note_t *notes;      /* 音符列指针头 */
+	size_t position;    /* 位置（采样点精度）(能指示的最大时间超过10万年所以无所畏惧) */
+	size_t track_position;  /* 轨道分支位置 */
+	size_t main_offset;     /* 主位置音符内向后偏移到position */
+	Note_t *tracks[INT8_MAX];
+	size_t buffer_len;
+	double *buffer;
+
+	int16_t *pcmf16_buffer;
+	void   (*pcm_handle)(int16_t*,int);
+} MusicCtx_t;
 
 // wav文件头生成
 WavHeader_t create_wav_header(uint32_t duration);

@@ -7,6 +7,7 @@
  */
 
 #include "../core.h"
+#include <math.h>
 #ifndef DISABLE_OMP
 #include <omp.h>
 #endif
@@ -43,17 +44,17 @@ WavHeader_t create_wav_header(uint32_t duration)
  * fc   : 中心频率/截止频率 (Hz)
  * bw   : 带宽 (Hz)，仅对带通有效，其他类型可传0使用默认Q
  */
-void create_biquad(Biquad *p, enum BiquadType type, double fc, double bw)
+void biquad_compile(Biquad_t *p)
 {
 	if (!p) return;
-	if (!fc) {
+	if (!p->fc) {
 		static const double def_f[BQ_MAX] = {0, 150, 8000, 4000};
-		fc = def_f[type];
+		p->fc = def_f[p->bq_type];
 	}
-	double w0 = 2 * M_PI * fc / SAMPLE_RATE;
+	double w0 = 2 * M_PI * p->fc / SAMPLE_RATE;
 	double cosw0 = cos(w0);
 	double sinw0 = sin(w0);
-	double Q = (type == BQ_BP && bw > 0) ? fc / bw : 0.707;	// Butterworth Q
+	double Q = (p->bq_type == BQ_BP && p->bw > 0) ? p->fc / p->bw : 0.707;	// Butterworth Q
 	double alpha = sinw0 / (2 * Q);
 
 	double a0 = 1 + alpha;
@@ -62,7 +63,7 @@ void create_biquad(Biquad *p, enum BiquadType type, double fc, double bw)
 
 	double b0, b1, b2;
 
-	switch (type) {
+	switch (p->bq_type) {
 	case BQ_LP:		// 低通
 		b0 = (1 - cosw0) / 2;
 		b1 = 1 - cosw0;
@@ -79,12 +80,13 @@ void create_biquad(Biquad *p, enum BiquadType type, double fc, double bw)
 		b2 = -alpha;
 		break;
 	default:
-		*p = (Biquad){};
+		*p = (Biquad_t){};
 		return;		// 未知类型
 	}
 
 	// 归一化系数
-	*p = (Biquad){
+	*p = (Biquad_t){
+		.bq_type = p->bq_type,
 		.b0 = b0 / a0,
 		.b1 = b1 / a0,
 		.b2 = b2 / a0,
@@ -94,9 +96,33 @@ void create_biquad(Biquad *p, enum BiquadType type, double fc, double bw)
 	};
 }
 
+void biquad_set(Biquad_t *bq, char *key, char *value)
+{
+	if (!bq || !value) return;
+	if (!key || !*key) {
+		if (strcmp(value, "low-pass") == 0) bq->bq_type = BQ_LP;
+		else if (strcmp(value, "high-pass") == 0) bq->bq_type = BQ_HP;
+		else if (strcmp(value, "band-pass") == 0) bq->bq_type = BQ_BP;
+		else {
+			bq->bq_type = BQ_NOSET;
+			LOG("不可用的滤波器：%s", value);
+		}
+		return;
+	}
+	if (bq->bq_type == BQ_NOSET) return;
+
+	if (strcmp(key, "freq") == 0) {
+		bq->fc = atof(value);
+	} else if (strcmp(key, "bw") == 0) {
+		bq->bw = atof(value);
+	} else return;
+	biquad_compile(bq);
+	return;
+}
+
 /* 应用滤波器
  * x：相位 */
-double apply_biquad(Biquad *f, double x)
+double biquad_apply(Biquad_t *f, double x)
 {
 	double y = f->b0*x + f->b1*f->x1 + f->b2*f->x2 \
 		   - f->a1*f->y1 - f->a2*f->y2;
@@ -106,100 +132,6 @@ double apply_biquad(Biquad *f, double x)
 	f->y2 = f->y1;
 	f->y1 = y;
 	return y;
-}
-
-
-/* 
- * 生成固定声波
- * volume: 0% ~ 100% (通常取 0.0 ~ 1.0)
- * 数学模型: f(x) = A*sin(ω*x)
- * x: 时间 (秒)
- * f: 基频频率 (Hz)
- * 返回值: 16位线性PCM样本值（已乘以 INT16_MAX 和 volume）
- */
-double gen_wave(double x, double volume, double f, Note_t *p, bool no_har)
-{
-	// 各乐器前15次谐波幅度（包含基频）
-	// 指针数组，方便通过枚举索引获取对应数组
-	static const double har_amps[HAR_MAX][15] = {
-		{1,0.340,0.102,0.085,0.070,0.065,0.028,0.085,
-			0.011,0.030,0.010,0.014,0.012,0.013,0.004},
-		{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-		{1.000, 0.100, 0.800, 0.100, 0.600, 0.100, 0.400, 0.100,
-			0.200, 0.050, 0.100, 0.020, 0.050, 0.010, 0.020},
-		{1,0.8,0.1,0.6,0.1,0.4,0.1,0.2,0.05,0.1,0.02,0.05,0.01,0.02,0},
-		{1,0.9,0.9,0.8,0.8,0.7,0.7,0.2,0.2,0.1,0.1,0.05,0.05,0.01,0.01},
-	};
-	static double (*wave_funcs[WF_MAX])(double) = {
-		sin, square_wave, triangle_wave, sawtooth_wave,
-		noise_wave,
-	};
-
-	if (f < 0) return 0;
-
-	int8_t instrument = p->instrument;
-	int8_t wave_func = p->wave_func;
-	int8_t harmonics = p->harmonics;
-	double value = 0;
-	switch (instrument) {
-	case INST_SIN:
-		if (harmonics == HAR_NOSET) harmonics = HAR_PIANO;
-		break;
-	case INST_DRUM:
-		f = f / (10*x + 1);
-		if (harmonics == HAR_NOSET) harmonics = HAR_NONE;
-		break;
-	case INST_HIHAT:
-		/* 未完成 */
-		wave_func = WF_SQUARE;
-		if (harmonics == HAR_NOSET) harmonics = HAR_NONE;
-		if (!p->bq) p->bq = BQ_HP;
-		double (*func)(double) = wave_funcs[wave_func];
-		double f2 = f;
-		for (int i = 1; i < 8; ++i) {
-			value += har_amps[HAR_PIANO][i] * func(2 * M_PI * f2 * x);
-			f2 += rand() % 50;
-		}
-		value = tanh(value);
-		break;
-	}
-	if (harmonics == HAR_NOSET) harmonics = HAR_PIANO;
-	instrument %= INST_MAX;
-	wave_func %= WF_MAX;
-	harmonics %= HAR_MAX;
-
-	const double *harmonicsp = har_amps[harmonics];
-	value += harmonicsp[0] * wave_funcs[wave_func](2 * M_PI * f * x);
-	// 基频 + 14个泛音
-	// 44100 / 2 = 22050 (No Check)
-	if (no_har)    // 若禁止泛音，只使用基频
-		return INT16_MAX * volume * value;
-	double (*func)(double) = wave_funcs[wave_func];
-#ifndef DISABLE_OMP
-/* 需使用 -fopenmp 编译参数 */
-#pragma omp simd reduction(+:value)
-#endif
-	for (int i = 1; i < 15; i++) {
-		value += harmonicsp[i] * func(2 * M_PI * (i + 1) * f * x);
-	}
-	return INT16_MAX * volume * value;
-}
-
-double adsr_envelope(int current, int total, bool no_fade)
-{
-	if (current < 0 || current > total)
-		return 0;
-	if (no_fade) return 1.0;
-	double t = (double)current / total;
-	double attack = 0.01, decay = 0.1, sustain = 0.7, release = 0.2;
-	if (t < attack)
-		return t / attack;	// 起振（线性增长）
-	else if (t < attack + decay)
-		return 1.0 - (1.0 - sustain) * (t - attack) / decay;	// 衰减
-	else if (t < 1.0 - release)
-		return sustain;	// 持续
-	else
-		return sustain * (1.0 - (t - (1.0 - release)) / release);	// 释放
 }
 
 /*
@@ -223,88 +155,68 @@ double get_portamento_freq(double start, double end, double x, bool smooth)
 }
 
 
-#define pduration(p) (SAMPLE_RATE*((double)p->notes/p->type)*((double)60/p->speed))
-/*
- * 解读字符串形式的音符并产生对应声波
- * RET: duration (单位：1/SAMPLE_RATE s)
- * memsize = duration*sizeof(uint16_t)*2
- *              时长    notes   双声道
- * */
-int create_note_wave(Note_t **pp, bool no_fade, bool smooth, bool no_har)
-{
-	if (!pp || !*pp) return -1;
-	Note_t *p = *pp;
-	uint32_t sample_num = pduration(p);
-	if (p->flag&(NFLG_LEGATO|NFLG_PORTAMENTO)) {
-		uint8_t flag = p->flag&(NFLG_LEGATO|NFLG_PORTAMENTO);
-		sample_num = 0;
-		for (Note_t *p2 = p;
-		     p2 && p2->flag&flag && p2->track == p->track;
-		     p2=p2->pNext) {
-			sample_num += pduration(p2);
-			*pp = p2;
-		}
-		if ((*pp)->pNext) {
-			*pp = (*pp)->pNext;
-			sample_num += pduration((*pp));
-		}
-	}
+#define note_sample_len_get(p) \
+	(SAMPLE_RATE*((double)p->notes/p->type)*((double)60/p->speed))
 
-	/* 缓冲区大小，同时控制声音片段大小
-	 * 缓冲区越大声音持续越久，也越慢 */
-	if (sample_num == 0) return -2;
-	int16_t *buffer = malloc(sizeof(int16_t)*(sample_num * 2));    /* 双声道 */
-	if (!buffer) return -3;
-	memset(buffer, 0, sizeof(uint16_t)*(sample_num * 2));
-	int flag_slide = 0;    /* 启用滑音时的初始频率 */
-	int duration_offset = 0;
-	for (; p ; p = p->pNext) {
-		if (p->flag&NFLG_PORTAMENTO) {    /* 滑音 != 连音 */
-			flag_slide = p->freq;
-			continue;
-		}
-		uint32_t duration = pduration(p);
-#ifndef DISABLE_OMP
-/* 需编译和链接时使用 -fopenmp 编译参数 */
-#pragma omp parallel for
-#endif
-		for (uint32_t i = 0; i < sample_num; i++) {    /* 生成每个采样点声波的相位 */
-			double env = adsr_envelope(i, sample_num, no_fade)*p->amplitude;
-			double freq = flag_slide ? get_portamento_freq(flag_slide, p->freq, (double)i/sample_num, smooth) : p->freq;
-			int16_t phase = (int16_t)gen_wave((double)i/SAMPLE_RATE, env, freq, p, no_har);
-			if (p->flag&NFLG_BE_LEGATO)    /* fade in */
-				phase *= sigmoid((int32_t)(i-duration_offset)/((double)SAMPLE_RATE/100));
-			if (p->flag&NFLG_LEGATO)    /* fade out */
-				phase *= sigmoid((int32_t)(duration_offset+duration-i)/((double)SAMPLE_RATE/100));
-			if (p->flag&NFLG_LEFT)  buffer[i * 2] += phase;    /* 左声道 */
-#ifdef ENABLE_REVERPHASE
-			if (p->flag&NFLG_RIGHT) buffer[i*2+1] -= phase;    /* 右声道 */
-#else
-			if (p->flag&NFLG_RIGHT) buffer[i*2+1] += phase;    /* 右声道 */
-#endif
-		}
-		if (p->bq) {
-			Biquad bq_l = {}, bq_r = {};
-			create_biquad(&bq_l, p->bq, p->bq_freq, 0);
-			create_biquad(&bq_r, p->bq, p->bq_freq, 0);
-			for (uint32_t i = 0; i < sample_num; i++) {
-				buffer[i * 2] = apply_biquad(&bq_l, buffer[i * 2]);
-				buffer[i*2+1] = apply_biquad(&bq_r, buffer[i*2+1]);
-			}
-		}
-		duration_offset += duration;
-		if (!p) continue;
-		if (p == *pp) break;
+/* 
+ * 生成固定声波并填充到给定的 NoteData_t
+ * 数学模型: f(x) = A*sin(ω*x)
+ * x: 时间 (秒)
+ * f: 基频频率 (Hz)
+ */
+void note_gen_wave(NoteData_t *p)
+{
+	if (!p || p->freq < 0 || p->pwav || !p->wave_func) return;
+	// 各乐器前n次谐波幅度（包含基频）
+	const Harmonics_t *har;
+	size_t n = 0;
+	if (p->har_func) n = p->har_func(&har);
+	if (n == 0) {
+		n = 1;
+		har = (Harmonics_t[]){{1, 1, 0}};
 	}
-	if (!p) {
-		free(buffer);
-		return -4;
+	p->sample_num = note_sample_len_get(p);
+	double *buffer = malloc(sizeof(*buffer)*p->sample_num);
+	if (!buffer) return;
+	memset(buffer, 0, sizeof(*buffer)*p->sample_num);
+
+	double f = 0, sec = 0;
+	size_t i = 0, j = 0;
+// #ifndef DISABLE_OMP
+// /* 需编译和链接时使用 -fopenmp 编译参数 */
+// #pragma omp parallel for
+// #endif
+	for (; i < p->sample_num; i++) {    /* 生成每个采样点声波的相位 */
+		sec = (double)i/p->sample_num;
+		f = p->portamento_from>0 ? get_portamento_freq(p->portamento_from, p->freq, sec, false) : p->freq;
+		if (p->flo_freq_func) f *= p->flo_freq_func(sec);
+// #ifndef DISABLE_OMP
+// /* 需使用 -fopenmp 编译参数 */
+// #pragma omp simd reduction(+:buffer[i])
+// #endif
+		for (j = 0; j < n; j++) {
+			buffer[i] +=
+				har[j].amplitude * p->wave_func(M_2_PI * har[j].freq_times * f * sec) *
+				exp((-1-har[j].decay_speed) * sec);
+		}
 	}
-	p->duration = sample_num;
 	p->pwav = buffer;
-	/*printf("[%d/%d %dbpm:%d] 1/%-3.2lg %5.1lfHz (%0.4lg%%) [%s] [%p(%d)]\n",*/
-	       /*p->notes,p->beates,p->speed,p->track,p->type,*/
-	       /*p->freq, p->amplitude*100, i2b(p->flag, 1, buf, 30),*/
-	       /*p->pwav, sample_num);*/
-	return sample_num;
+	return;
 }
+
+double adsr_get_envelope(ADSR_t *adsr,int current, int total)
+{
+	if (current < 0 || current > total)
+		return 0;
+	if (!adsr) return 1;
+	double t = (double)current / total;
+	if (t < adsr->attack)
+		return t /adsr-> attack;	// 起振（线性增长）
+	else if (t < adsr->attack + adsr->decay)
+		return 1.0 - (1.0 - adsr->sustain) * (t - adsr->attack) / adsr->decay;	// 衰减
+	else if (t < 1.0 - adsr->release)
+		return adsr->sustain;	// 持续
+	else
+		return adsr->sustain * (1.0 - (t - (1.0 - adsr->release)) / adsr->release);	// 释放
+}
+
