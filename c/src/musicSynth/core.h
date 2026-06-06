@@ -101,7 +101,6 @@ typedef struct NoteData {
 	size_t (*har_func)(const Harmonics_t**);
 	double (*wave_func)(double);        /* 波函数 */
 	double (*flo_freq_func)(double);    /* LFO包络 */
-	double   portamento_from;           /* 滑音(<=0时忽略) */
 	double   freq;
 	double   type;		/* type分音符 */
 	uint16_t speed;		/* 速度，n拍/分钟 */
@@ -124,6 +123,8 @@ typedef struct Note {
 	bool flg_right;      /* 右声道 */
 	bool flg_legato;     /* 连音 */
 	bool flg_be_legato;  /* 被连音 */
+	bool flg_portamento; /* 滑音 */
+	bool flg_be_portam;  /* 被滑音 */
 
 	int ch;
 	int ind;
@@ -133,11 +134,13 @@ typedef struct Note {
 } Note_t;
 
 #define sigmoid(x) (1 - 1/(1+exp(x)))
-#define ARRARY_LEN(arr) (sizeof(arr)/sizeof(arr[0]))
+#define ARRAY_LEN(arr) (sizeof(arr)/sizeof(arr[0]))
 #define CALLCLS(obj, func, ...) (obj)->func((obj) __VA_OPT__(,) __VA_ARGS__)
 
 #define LOG(fmt, ...) fprintf(stderr, "%s:%d:%s: " fmt "\n", __FILE__, __LINE__, __FUNCTION__ __VA_OPT__(,) __VA_ARGS__)
+#define LOG2(fmt, ...) fprintf(stderr, "%s:%d: " fmt "\n", __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
 #define LOGVAR(typ, var) LOG("var '%s' = " typ " (as %s)", #var, (var), #typ)
+#define LOGVAR2(typ, var) LOG2("var '%s' = " typ " (as %s)", #var, (var), #typ)
 // #define CALL(func, ...) (LOG("call '%s' at (%p)", #func, (func)), (func)(__VA_ARGS__))
 
 

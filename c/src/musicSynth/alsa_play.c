@@ -128,11 +128,10 @@ int read_play_wave(char *filename)
 	return 0;
 }
 
-snd_pcm_t *pcm = NULL;
-
-void pcm_handle(int16_t* pcm_data, int size)
+int streamer_file(void *p)
 {
-	if (pcm) play_wav(pcm, pcm_data , size);
+	if (!p) return EOF;
+	return getc(p);
 }
 
 int main(int argc, char *argv[])
@@ -181,17 +180,28 @@ int main(int argc, char *argv[])
 	} else if (!*input) return 0;
 	FILE *fp = fopen(input, "r");
 	if (!fp) return 1;
-	Note_t *notes = parse_notes(NULL, fp, amplitude);
+	MusicCtx_t *ctx = music_ctx_create(1024*50);  /*SAMPLE_RATE*/
+	ctx->notes = note_parser(streamer_file, fp, amplitude);
 	fclose(fp);
 
-	pcm = init();
-	if (! pcm) return 1;
-	melody_0(notes, pcm_handle, args);
-	free_notes(notes);
-	if (pcm) {
-		// 等待播放完成并关闭设备
-		snd_pcm_drain(pcm);
-		snd_pcm_close(pcm);
+	snd_pcm_t *pcm = init();
+	if (! pcm) {
+		music_ctx_free(ctx);
+		return 1;
 	}
+	size_t total_size = 0, size = 0;
+	while ((size = music_ctx_gen_pcm(ctx))) {
+		music_ctx_pcm_to_i16(ctx, 3);
+		play_wav(pcm, ctx->pcmf16_buffer, size);
+		total_size += size;
+		fprintf(stderr, "TS: %.2lfs, CS: %lu, pos: %.2lfs \r",
+			(double)total_size/SAMPLE_RATE, size,
+			(double)ctx->position/SAMPLE_RATE);
+	}
+	fprintf(stderr, "\n[Quit]");
+	music_ctx_free(ctx);
+	// 等待播放完成并关闭设备
+	snd_pcm_drain(pcm);
+	snd_pcm_close(pcm);
 	return 0;
 }

@@ -13,7 +13,7 @@ size_t har_set_##x(const Harmonics_t ** harp) \
 {                                             \
 	if (!harp) {return 0;}                \
 	*harp = har_arr_##x;                  \
-	return ARRARY_LEN(har_arr_##x);       \
+	return ARRAY_LEN(har_arr_##x);       \
 }
 
 const static Harmonics_t har_arr_piano1[] = {

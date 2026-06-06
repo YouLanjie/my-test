@@ -17,7 +17,7 @@ void print_note(Note_t *note)
 		p->notes,p->beates,p->speed,note->track,p->type,
 		p->freq, note->amplitude*100,
 		note->flg_left, note->flg_right, note->flg_legato,
-		note->flg_be_legato, p->portamento_from > 0,
+		note->flg_be_legato, note->flg_portamento,
 		note->line, note->ind, note->ch);
 }
 
@@ -44,7 +44,7 @@ void check_notes(Note_t *note, bool print)
 			for (double i=p->type; i && i<4; i*=2) printf("*");
 			for (double i=p->type; (int)i!=floor(i); i*=3) printf(".");
 			if (note->flg_legato) printf("~");
-			else if (note->pcm_data && note->pcm_data->portamento_from>0)
+			else if (note->pcm_data && note->flg_portamento)
 				printf("s");
 			else printf(" ");
 		}
@@ -104,7 +104,6 @@ bool notedata_cmp(NoteData_t *n1, NoteData_t *n2)
 	if (n1->har_func != n2->har_func) return false;
 	if (n1->wave_func != n2->wave_func) return false;
 	if (n1->flo_freq_func != n2->flo_freq_func) return false;
-	if (n1->portamento_from != n2->portamento_from) return false;
 	if (n1->freq != n2->freq) return false;
 	if (n1->type != n2->type) return false;
 	if (n1->speed != n2->speed) return false;
@@ -273,7 +272,6 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitud
 		.flo_freq_func = NULL,
 		.freq = 0,
 		.pNext = NULL,
-		.portamento_from = -1,
 	}, cur_notedata = notedata;
 	/* 顺便存储指针位置等 */
 	Note_t note = {
@@ -315,12 +313,6 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitud
 
 		if (note_freq[note.ch]) {    /* 新的音符 */
 			notedata.freq = note_freq[note.ch];
-			if (p && cur_notedata.portamento_from > 0 && cur_notedata.freq <= 0) {
-				/* 处理滑音 */
-				cur_notedata.freq = notedata.freq;
-				continue;
-			}
-
 			/* 旧节点pcm_data分配 */
 			if (p && !note_get_nd(pH, p, &cur_notedata, &notedata)) {
 				note_free(pH);
@@ -343,6 +335,7 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitud
 			if (p) {
 				p->pNext = note.pNext;
 				if (p->flg_legato) note.pNext->flg_be_legato = true;
+				if (p->flg_portamento) note.pNext->flg_be_portam = true;
 				if (fade) note.pNext->amplitude = p->amplitude*(1.0+fade);
 			}
 			p = note.pNext;
@@ -356,16 +349,16 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitud
 		case '/': cur_notedata.type *= 2; break;
 		case '*': cur_notedata.type /= 2; break;
 		case '.': cur_notedata.type /= (3.0/2.0); break;
-		case '~': p->flg_legato = !p->flg_legato; break;
-		case 's': cur_notedata.portamento_from=cur_notedata.freq, cur_notedata.freq=0; break;
+		case '~': p->flg_legato^=1; break;
+		case 's': p->flg_portamento^=1; break;
 		case '+': p->amplitude += p->amplitude + 0.1 <= 1 ? 0.1 : 0; break;
 		case '-': p->amplitude -= p->amplitude - 0.1 >= 0 ? 0.1 : 0; break;
 		case 'l': cur_notedata.freq/=change_freq; break;    /* 跨半音 */
 		case 'u': cur_notedata.freq*=change_freq; break;
 		case 'L': cur_notedata.freq/=2; break;              /* 跨八度 */
 		case 'U': cur_notedata.freq*=2; break;
-		case '[': p->flg_left = !p->flg_left; break;
-		case ']': p->flg_right = !p->flg_left; break;
+		case '[': p->flg_left^=1; break;
+		case ']': p->flg_right^=1; break;
 		case '<': fade += 0.005; break;
 		case '>': fade -= 0.005; break;
 		case '=': fade = 0; break;

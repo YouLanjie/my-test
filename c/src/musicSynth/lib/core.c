@@ -8,10 +8,9 @@
 
 #include "../core.h"
 #include <math.h>
-#include <stdint.h>
-#ifndef DISABLE_OMP
+/* #ifndef DISABLE_OMP
 #include <omp.h>
-#endif
+#endif */
 
 uint32_t SAMPLE_RATE = 44100;
 
@@ -199,7 +198,7 @@ void note_gen_wave(NoteData_t *p)
 // #endif
 	for (; i < p->sample_num; i++) {    /* 生成每个采样点声波的相位 */
 		sec = (double)i/SAMPLE_RATE;
-		f = p->portamento_from>0 ? get_portamento_freq(p->portamento_from, p->freq, sec, false) : p->freq;
+		f = p->freq;
 		if (p->flo_freq_func) f *= p->flo_freq_func(sec);
 // #ifndef DISABLE_OMP
 // /* 需使用 -fopenmp 编译参数 */

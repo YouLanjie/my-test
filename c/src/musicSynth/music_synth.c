@@ -204,7 +204,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	MusicCtx_t *ctx = music_ctx_create(1024*50);
+	MusicCtx_t *ctx = music_ctx_create(1024*50);  /*SAMPLE_RATE*/
 	if (*input) {
 		FILE *fp = fopen(input, "r");
 		if (!fp) return 1;
