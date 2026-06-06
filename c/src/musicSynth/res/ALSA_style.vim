@@ -1,16 +1,19 @@
 " Vim syntax file
 " Language:	Text(ALSA music text)
 
+syn keyword tkey note contained
 syn keyword tkey speed contained
-syn keyword tkey track contained
-syn keyword tkey amp contained
+syn keyword tkey wave_func contained
+syn keyword tkey har contained
 syn keyword tkey beates contained
 syn keyword tkey notes contained
 syn keyword tkey type contained
-syn keyword tkey inst contained
-syn keyword tkey wfunc contained
+
+syn keyword tkey track contained
+syn keyword tkey amp contained
+
 syn keyword tkey bq contained
-syn keyword tkey bq_freq contained
+syn keyword tkey inst contained
 hi tkey guifg=cyan
 
 syn match tctrl '[\*/.<>=~0]'

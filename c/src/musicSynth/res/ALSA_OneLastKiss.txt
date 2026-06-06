@@ -1,4 +1,4 @@
-:speed=110;
+:note.speed=110;
 
 :---前奏---;
 :track=1;
@@ -49,9 +49,9 @@ e*. 0
 0**
 
 :--对齐原曲间隔--;
-:speed=82;
+:note.speed=82;
 0**
-:speed=112;
+:note.speed=112;
 
 :---PART1---;
 :track=1;

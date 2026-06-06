@@ -137,11 +137,16 @@ int streamer_file(void *p)
 int main(int argc, char *argv[])
 {
 	int ch = 0;
-	double amplitude = 1.0;
 	char input[PATH_MAX] = "",
 	     wavfile[PATH_MAX] = "";
-	struct Melody_opts_t args = {.no_fade=0};
-	while ((ch = getopt(argc, argv, "hi:f:nmHPxA:")) != -1) {	/* 获取参数 */
+	bool flg_print_formated_note = false;
+	MusicCtx_t *ctx = music_ctx_create(1024*50);  /*SAMPLE_RATE*/
+	if (!ctx) {
+		LOG("乐曲上下文ctx创建失败");
+		return 1;
+	}
+
+	while ((ch = getopt(argc, argv, "hi:f:nmHPA:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -153,23 +158,22 @@ int main(int argc, char *argv[])
 			       "    -m          平滑滑音，滑音频率匀速增长\n"
 			       "    -H          取消泛音\n"
 			       "    -P          打印音符(格式化)\n"
-			       "    -x          打印调试信息\n"
 			       "    -A <NUM>    音量系数(默认1.0)\n"
 			       "    -h          显示帮助\n"
 			       );
 			return ch == '?' ? -1 : 0;
 			break;
 		case 'A':
-			amplitude = strtof(optarg, NULL);
-			if (amplitude > 100 || amplitude < 0) amplitude = 1.0;
+			ctx->amplitude = strtof(optarg, NULL);
+			if (ctx->amplitude > 100 || ctx->amplitude < 0) ctx->amplitude = 1.0;
 			break;
 		case 'i': strlcpy(input, optarg, sizeof(input)); break;
 		case 'f': strlcpy(wavfile, optarg, sizeof(input)); break;
-		case 'n': args.no_fade = true; break;
-		case 'm': args.smooth = true; break;
-		case 'H': args.no_har = true; break;
-		case 'x': args.print_debug_info = true; break;
-		case 'P': args.print_formated_note = true; break;
+		case 'n': ctx->flg_no_fade = true; break;
+		case 'm': ctx->flg_smooth = true; break;
+		case 'H': ctx->flg_no_har = true; break;
+		case 'P': flg_print_formated_note = true; break;
+		// case 'x': ctx->flg_print_debug_info = true; break;
 		default:
 			break;
 		}
@@ -180,9 +184,29 @@ int main(int argc, char *argv[])
 	} else if (!*input) return 0;
 	FILE *fp = fopen(input, "r");
 	if (!fp) return 1;
-	MusicCtx_t *ctx = music_ctx_create(1024*50);  /*SAMPLE_RATE*/
-	ctx->notes = note_parser(streamer_file, fp, amplitude);
+	ctx->notes = note_parser(streamer_file, fp);
 	fclose(fp);
+
+	do {
+		size_t count1 = 0, count2 = 0, count3 = 0;
+		Note_t *p = ctx->notes;
+		if (!p) break;
+		while (p) {
+			count1++;
+			if (p->track == 0 && p->pcm_data) count3 += p->pcm_data->sample_num;
+			p = p->pNext;
+		}
+		if (!ctx->notes) break;
+		NoteData_t *nd = ctx->notes->pcm_data;
+		while (nd) {
+			count2++;
+			nd = nd->pNext;
+		}
+		printf("[INFO] 全谱共计%lu个音符，不同的音符有%lu个\n", count1, count2);
+		printf("[INFO] 音符复用率大约为%.2lf%%\n", (1-(double)count2/count1)*100);
+		printf("[INFO] 曲谱预计时长为%.2lfs\n", (double)count3/SAMPLE_RATE);
+		check_notes(ctx->notes, flg_print_formated_note);
+	} while(0);
 
 	snd_pcm_t *pcm = init();
 	if (! pcm) {
@@ -191,7 +215,7 @@ int main(int argc, char *argv[])
 	}
 	size_t total_size = 0, size = 0;
 	while ((size = music_ctx_gen_pcm(ctx))) {
-		music_ctx_pcm_to_i16(ctx, 3);
+		music_ctx_pcm_to_i16(ctx);
 		play_wav(pcm, ctx->pcmf16_buffer, size);
 		total_size += size;
 		fprintf(stderr, "TS: %.2lfs, CS: %lu, pos: %.2lfs \r",

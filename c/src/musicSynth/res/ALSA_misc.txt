@@ -1,7 +1,7 @@
 :--Overworld day--;
-:beates=4;
-:type=4;
-:speed=150;
+:note.beates=4;
+:note.type=4;
+:note.speed=150;
 :track=1;
 0**
 0**
@@ -59,9 +59,9 @@ D 0/ E 0/ 5//~2//~B//~G//
 2/ G 0/ 0*
 
 :--哆啦A梦--;
-:speed=90;
-:beates=12;
-:type=8;
+:note.speed=90;
+:note.beates=12;
+:note.type=8;
 :track=0;
 g C/ C E/ A E/ G.
 G B/ G E/ F E/ D.
@@ -70,9 +70,9 @@ F F/ F E/ a b/~b/ C
 D.~D.~D.~D.
 
 :--Higher - Tobu--;
-:beates=4;
-:type=4;
-:speed=125;
+:note.beates=4;
+:note.type=4;
+:note.speed=125;
 
 :-(1)-;
 :track=1;
@@ -152,7 +152,7 @@ d/0//d/0//e/ 0//e/0// e/0/
 0/7/0//6/0// 5/0//4/0//3//7//
 
 :<OLK>;
-:speed=110;
+:note.speed=110;
 :track=1;
 :amp=0.12;
 a a a/.a//~ a/a/
@@ -198,7 +198,7 @@ A/ 0// A// 0/ A/ 0// 3// 0/ A/ 3/
 2/ 1/ 1/ 2//~3// 2/ 1/ 2
 
 :-(9)-;
-:speed=125;
+:note.speed=125;
 :track=1;
 e/0//e/0//c/ 0//c/0// c/0/
 b/0//b/0//g/ 0//g/0// g/0/
@@ -235,7 +235,7 @@ E/.G/.B/.A/. 2/.0//
 5/.4u/.5/.4/. 3/.0//
 
 :<TE>;
-:speed=115;
+:note.speed=115;
 :track=1;
 E/. 0// 0 0 0
 F/. 0// 0 0 0
@@ -283,7 +283,7 @@ G/G/ 0/G/ G/E/~ E
 0 0 0 0
 
 :-(13)-;
-:speed=125;
+:note.speed=125;
 :track=1;
 eL/ 0// eL/ 0// gL/ 0// gL/ 0// gL/ 0/
 aL/ 0// aL/ 0// gL/ 0// gL/ 0// gL/ 0/
@@ -317,7 +317,7 @@ bL/ 0// bL/ 0// c/ 0// c/ 0// c/ 0/
 :track=0;
 E/. G/. B/. A/. 2/. 0//
 
-:speed=150;
+:note.speed=150;
 :track=1;
 0/g/ g/0/ g/g/ 0/g/
 0/0/ g/0/ 0/g/ 0/g/

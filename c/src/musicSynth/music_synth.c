@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 const char *NOTELIST[] = {
 	"C C G G A A G*  F F E E D D C*\n"   /* 一闪一闪亮晶晶 */ /* 满天都是小星星 */
@@ -154,11 +155,16 @@ int streamer_str(void *vp)
 int main(int argc, char *argv[])
 {
 	int ch = 0, id = -1;
-	double amplitude = 1.0;
 	char filename[PATH_MAX] = "",
 	     input[PATH_MAX] = "";
-	struct Melody_opts_t args = {.no_fade=0};
-	while ((ch = getopt(argc, argv, "hi:I:o:nmHPxA:")) != -1) {	/* 获取参数 */
+	bool flg_print_formated_note = false;
+	MusicCtx_t *ctx = music_ctx_create(SAMPLE_RATE);
+	if (!ctx) {
+		LOG("乐曲上下文ctx创建失败");
+		return 1;
+	}
+
+	while ((ch = getopt(argc, argv, "hi:I:o:nmHPA:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -171,7 +177,6 @@ int main(int argc, char *argv[])
 			       "    -m        平滑滑音，滑音频率匀速增长\n"
 			       "    -H        取消泛音\n"
 			       "    -P        打印音符(格式化)\n"
-			       "    -x        打印调试信息\n"
 			       "    -A <NUM>  音量系数(默认1.0)\n"
 			       "    -h        显示帮助\n"
 			       "  NUM: 0: 小星星\n"
@@ -185,64 +190,99 @@ int main(int argc, char *argv[])
 			return ch == '?' ? -1 : 0;
 			break;
 		case 'A':
-			amplitude = strtof(optarg, NULL);
-			if (amplitude > 100 || amplitude < 0) amplitude = 1.0;
+			ctx->amplitude = strtof(optarg, NULL);
+			if (ctx->amplitude > 100 || ctx->amplitude < 0) ctx->amplitude = 1.0;
 			break;
 		case 'o':
-			if (optarg && *optarg) strlcpy(filename, optarg, sizeof(filename));
-			else strlcpy(filename, "output.wav", sizeof(filename));
+			if (optarg && *optarg) strncpy(filename, optarg, sizeof(filename));
+			else strncpy(filename, "output.wav", sizeof(filename));
 			break;
-		case 'i': id = (int)strtod(optarg, NULL) % (sizeof(NOTELIST)/sizeof(NOTELIST[0])); break;
-		case 'I': strlcpy(input, optarg, sizeof(input)); break;
-		case 'n': args.no_fade = true; break;
-		case 'm': args.smooth = true; break;
-		case 'H': args.no_har = true; break;
-		case 'x': args.print_debug_info = true; break;
-		case 'P': args.print_formated_note = true; break;
+		case 'i': id = (int)strtod(optarg, NULL) % ARRAY_LEN(NOTELIST); break;
+		case 'I': strncpy(input, optarg, sizeof(input)); break;
+		case 'n': ctx->flg_no_fade = true; break;
+		case 'm': ctx->flg_smooth = true; break;
+		case 'H': ctx->flg_no_har = true; break;
+		case 'P': flg_print_formated_note = true; break;
+		// case 'x': ctx->flg_print_debug_info = true; break;
 		default:
 			break;
 		}
 	}
 
-	MusicCtx_t *ctx = music_ctx_create(1024*50);  /*SAMPLE_RATE*/
 	if (*input) {
 		FILE *fp = fopen(input, "r");
-		if (!fp) return 1;
-		ctx->notes = note_parser(streamer_file, fp, amplitude);
+		if (!fp) {
+			music_ctx_free(ctx);
+			LOG("输入文件打开失败: %s", input);
+			return 1;
+		}
+		ctx->notes = note_parser(streamer_file, fp);
 		fclose(fp);
 	} else if (id >= 0) {
 		const char *p = NOTELIST[id];
-		ctx->notes = note_parser(streamer_str, &p, amplitude);
+		ctx->notes = note_parser(streamer_str, &p);
 	}
-	else ctx->notes = note_parser(streamer_file, stdin, amplitude);
+	else ctx->notes = note_parser(streamer_file, stdin);
 
-	/* do {
+	if (!ctx->notes) {
+		LOG("曲谱为空");
+		music_ctx_free(ctx);
+		return 1;
+	}
+
+	size_t sample_num = 0;
+	do {
+		size_t count1 = 0, count2 = 0, count3 = 0;
 		Note_t *p = ctx->notes;
+		if (!p) break;
 		while (p) {
-			print_note(p);
+			count1++;
+			if (p->track == 0 && p->pcm_data) count3 += p->pcm_data->sample_num;
 			p = p->pNext;
 		}
-	} while(0); */
+		if (!ctx->notes) break;
+		NoteData_t *nd = ctx->notes->pcm_data;
+		while (nd) {
+			count2++;
+			nd = nd->pNext;
+		}
+		sample_num = count3;
+		check_notes(ctx->notes, flg_print_formated_note);
+		printf("[INFO] 全谱共计%lu个音符，不同的音符有%lu个\n", count1, count2);
+		printf("[INFO] 音符复用率大约为%.2lf%%\n", (1-(double)count2/count1)*100);
+		printf("[INFO] 曲谱预计时长为%.2lfs\n", (double)count3/SAMPLE_RATE);
+	} while(0);
 
 	WavHeader_t header = create_wav_header(0);
 	FILE *wav_file = NULL;
 	if (filename[0]) wav_file = fopen(filename, "wb");
 	if (!wav_file) {
-		fprintf(stderr, "[ERROR] 打开文件 '%s' 时遇到问题: %s\n", filename, strerror(errno));
+		if (filename[0]) fprintf(stderr, "[ERROR] 打开文件 '%s' 时遇到问题: %s\n", filename, strerror(errno));
+		else LOG("未设置输出文件名");
 		music_ctx_free(ctx);
 		return 1;
 	}
 	printf("[INFO] 结果输出到 '%s'\n", filename);
 	fwrite(&header, sizeof(header), 1, wav_file);
 
+	clock_t start = clock(), now;
 	size_t total_size = 0, size = 0;
+	if (!sample_num) sample_num = 1;
 	while ((size = music_ctx_gen_pcm(ctx))) {
-		music_ctx_pcm_to_i16(ctx, 3);
+		music_ctx_pcm_to_i16(ctx);
 		fwrite(ctx->pcmf16_buffer, sizeof(int16_t)*2, size, wav_file);
 		total_size += size;
-		fprintf(stderr, "TS: %.2lfs, CS: %lu, pos: %.2lfs \r",
-			(double)total_size/SAMPLE_RATE, size,
-			(double)ctx->position/SAMPLE_RATE);
+		/* fprintf(stderr, "TS: %.2lfs, CS: %lu, pos: %.2lfs \r",
+		       (double)total_size/SAMPLE_RATE, size,
+		       (double)ctx->position/SAMPLE_RATE); */
+		now = clock();
+		fprintf(stderr, "%4.1lf%% [%-40.*s] (%.1fs/%.1fs) ETA %.1lfs \r",
+			(double)total_size/sample_num*100.,
+			(int)(40*total_size/sample_num),
+			"########################################",
+			(double)total_size/SAMPLE_RATE,
+			(double)sample_num/SAMPLE_RATE,
+			(double)(sample_num-total_size)/total_size*(now-start)/CLOCKS_PER_SEC);
 	}
 	fprintf(stderr, "\n");
 

@@ -33,6 +33,7 @@ MusicCtx_t *music_ctx_create(size_t bufflen)
 		.buffer = malloc(sizeof(*p->buffer)*bufflen*2),
 		.pcmf16_buffer = malloc(sizeof(*p->pcmf16_buffer)*bufflen*2),
 		.pcm_handle = NULL,
+		.amplitude = 1.0,
 	};
 	if (!p->buffer || !p->pcmf16_buffer) {
 		music_ctx_free(p);
@@ -94,18 +95,15 @@ static bool music_ctx_note2buf(MusicCtx_t *ctx, Note_t *p, size_t *i, size_t off
 
 	double value = 0;
 	for (; *i < ctx->buffer_len && *i+offset < p->pcm_data->sample_num; (*i)++) {
-		if (!p->pcm_data->pwav) note_gen_wave(p->pcm_data);
+		if (!p->pcm_data->pwav) note_gen_wave(p->pcm_data, ctx->flg_no_har);
 		if (!p->pcm_data->pwav) {
 			*i += p->pcm_data->sample_num - (*i+offset);
 			if (*i > ctx->buffer_len) *i = ctx->buffer_len;
 			return true;
 		}
-		value = p->pcm_data->pwav[*i+offset] * adsr_get_envelope(&p->adsr, *i+offset, p->pcm_data->sample_num);
+		value = p->pcm_data->pwav[*i+offset];
+		if (!ctx->flg_no_fade) value *= adsr_get_envelope(&p->adsr, *i+offset, p->pcm_data->sample_num);
 		if (p->biquad) value = biquad_apply(p->biquad, value);
-			// if (p->flg_be_legato)    /* fade in */
-			// 	value *= sigmoid(INDEX/(SAMPLE_RATE/100.) - 1);
-			// if (p->flg_legato)    /* fade out */
-			// 	value *= sigmoid((p->pcm_data->sample_num-INDEX)/(SAMPLE_RATE/100.)-1);
 		value *= p->amplitude;
 		if (p->flg_left)  ctx->buffer[*i*2]   += value;
 		if (p->flg_right) ctx->buffer[*i*2+1] += value;
@@ -129,7 +127,7 @@ static bool music_ctx_group_synth(MusicCtx_t *ctx, Note_t *p, Note_t *pl, size_t
 	const Harmonics_t *har;
 	size_t n = 0, j = 0;
 	if (p->pcm_data->har_func) n = p->pcm_data->har_func(&har);
-	if (n == 0) {
+	if (n == 0 || ctx->flg_no_har) {
 		n = 1;
 		har = (Harmonics_t[]){{1, 1, 0}};
 	}
@@ -143,23 +141,20 @@ static bool music_ctx_group_synth(MusicCtx_t *ctx, Note_t *p, Note_t *pl, size_t
 	       f = 0;
 
 	while (p && p->pcm_data && *i+offset < duration) {
-#ifndef DISABLE_OMP
-/* 需编译和链接时使用 -fopenmp 编译参数 */
-#pragma omp parallel for
-#endif
 		for (; *i < ctx->buffer_len; (*i)++) {
 			if (*i+offset >= duration) break;
 
 			t = (double)(*i+offset) / SAMPLE_RATE;    // 当前时间（秒）
-			f = p->flg_portamento ? get_portamento_freq(p->pcm_data->freq, p->pNext->pcm_data->freq, (double)(*i+offset)/duration, false) : \
+			f = p->flg_portamento ? get_portamento_freq(p->pcm_data->freq, p->pNext->pcm_data->freq, (double)(*i+offset)/duration, ctx->flg_smooth) : \
 			    p->pcm_data->freq;
 			for (j = 0, value = 0; j < n; j++) {
 				value += har[j].amplitude * p->pcm_data->wave_func(M_PI*2 * har[j].freq_times * f * t) *
-					exp((-1-har[j].decay_speed) * t);
+					exp(-har[j].decay_speed * t);
 			}
 
 			// 应用 ADSR 包络
-			value *= adsr_get_envelope(&p->adsr, *i+offset, duration);
+			if (!ctx->flg_no_fade)
+				value *= adsr_get_envelope(&p->adsr, *i+offset, duration);
 
 			// 可选：连音音量渐变（fade in/out）
 			if (p->flg_be_legato && pl && pl->pcm_data) {      // 被连音音符，起始渐入
@@ -273,16 +268,13 @@ size_t music_ctx_gen_pcm(MusicCtx_t *ctx)
 	return i;
 }
 
-void music_ctx_pcm_to_i16(MusicCtx_t *ctx, double scale)
+void music_ctx_pcm_to_i16(MusicCtx_t *ctx)
 {
 	if (!ctx || !ctx->pcmf16_buffer || !ctx->buffer) return;
-	if (scale <= 0) scale = 3;
 	memset(ctx->pcmf16_buffer, 0, sizeof(*ctx->pcmf16_buffer)*ctx->buffer_len*2);
 	for (size_t i = 0; i < ctx->buffer_len * 2; i++) {
 		/* 归一化裁切处理 */
-		if (ctx->buffer[i]) ctx->pcmf16_buffer[i] = tanh(ctx->buffer[i]/scale)*INT16_MAX;
-		// else ctx->pcmf16_buffer[i] = 0;
-		// printf("%ld,%d\n", i, ctx->pcmf16_buffer[i]*INT16_MAX);
+		if (ctx->buffer[i]) ctx->pcmf16_buffer[i] = tanh(ctx->buffer[i]*ctx->amplitude)*INT16_MAX;
 	}
 	return;
 }

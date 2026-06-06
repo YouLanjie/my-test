@@ -7,7 +7,6 @@
 
 #pragma once
 
-#include <stddef.h>
 #ifndef _CORE_H
 #define _CORE_H
 
@@ -18,6 +17,7 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <math.h>
 
 // #define ENABLE_REVERPHASE
@@ -147,6 +147,7 @@ typedef struct Note {
 #define HARMONICS_LIST   \
 	HARMONIC(piano1) \
 	HARMONIC(piano2) \
+	HARMONIC(piano3) \
 	HARMONIC(none)   \
 	HARMONIC(h3)     \
 	HARMONIC(h4)     \
@@ -169,21 +170,12 @@ double wave_noise(double t);
 void print_note(Note_t *p);
 void check_notes(Note_t *p, bool print);
 void note_free(Note_t *p);
-Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitude);
+Note_t *note_parser(int (*stream)(void*), void *stream_ctx);
 
 // 声音生成处理
-void note_gen_wave(NoteData_t *p);
+void note_gen_wave(NoteData_t *p, bool no_har);
 double adsr_get_envelope(ADSR_t *adsr,int current, int total);
 double get_portamento_freq(double start, double end, double x, bool smooth);
-
-// 旋律整体处理、轨道处理
-struct Melody_opts_t {
-	bool no_fade;
-	bool smooth;
-	bool no_har;
-	bool print_formated_note;
-	bool print_debug_info;
-};
 
 typedef struct Music_t {
 	Note_t *notes;      /* 音符列指针头 */
@@ -192,6 +184,11 @@ typedef struct Music_t {
 	Note_t *tracks[INT8_MAX];  /* 各轨道指针 */
 	size_t buffer_len;
 	double *buffer;
+	double amplitude;
+
+	bool flg_no_fade;
+	bool flg_smooth;
+	bool flg_no_har;
 
 	int16_t *pcmf16_buffer;
 	void   (*pcm_handle)(int16_t*,int);
@@ -200,6 +197,6 @@ void music_ctx_free(MusicCtx_t *ctx);
 MusicCtx_t *music_ctx_create(size_t bufflen);
 bool music_ctx_tracks_reset(MusicCtx_t *ctx);
 size_t music_ctx_gen_pcm(MusicCtx_t *ctx);
-void music_ctx_pcm_to_i16(MusicCtx_t *ctx, double scale);
+void music_ctx_pcm_to_i16(MusicCtx_t *ctx);
 
 #endif //CORE_H

@@ -83,8 +83,9 @@ void notedata_set(NoteData_t *p, char *key, char *value)
 		else if (strcmp(value, "sawtooth") == 0) p->wave_func = wave_sawtooth;
 		else if (strcmp(value, "noise") == 0) p->wave_func = wave_noise;
 	} else if (strcmp(key, "har") == 0) {
-		if (strcmp(value, "piano") == 0) p->har_func = har_set_piano1;
-		if (strcmp(value, "piano2") == 0) p->har_func = har_set_piano2;
+#define HARMONIC(x) if (strcmp(value, #x) == 0) p->har_func = har_set_##x; else
+		HARMONICS_LIST LOG("无效的泛音名称: '%s'", value);
+#undef HARMONIC
 	} else if (strcmp(key, "flo") == 0) {
 		if (strcmp(value, "drum")) p->flo_freq_func = flo_inverse_liner;
 	} else if (strcmp(key, "beates") == 0) {
@@ -174,7 +175,15 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 	} else if (strcmp(key, "inst") == 0) {    /* 整体设置 */
 		if (strcmp(value, "piano") == 0) {
 			data->wave_func = sin;
+			data->har_func = har_set_piano1;
+			if (note->biquad) *note->biquad = (Biquad_t){};
+		} else if (strcmp(value, "piano2") == 0) {
+			data->wave_func = sin;
 			data->har_func = har_set_piano2;
+			if (note->biquad) *note->biquad = (Biquad_t){};
+		} else if (strcmp(value, "piano3") == 0) {
+			data->wave_func = sin;
+			data->har_func = har_set_piano3;
 			if (note->biquad) *note->biquad = (Biquad_t){};
 		} else if (strcmp(value, "drum") == 0) {
 			data->wave_func = sin;
@@ -231,7 +240,10 @@ bool note_get_nd(Note_t *pH, Note_t *p, NoteData_t *cur_notedata, NoteData_t *nd
 	if (!pH || !p || !cur_notedata || !ndh) return false;
 	/* 音符共享机制 */
 	p->pcm_data = notedata_search(pH->pcm_data, cur_notedata);
-	if (p->pcm_data) return true;
+	if (p->pcm_data) {
+		p->pcm_data->ref_count++;
+		return true;
+	}
 	/* 设置pcm_data */
 	p->pcm_data = malloc(sizeof(*p->pcm_data));
 	if (!p->pcm_data) {
@@ -246,7 +258,7 @@ bool note_get_nd(Note_t *pH, Note_t *p, NoteData_t *cur_notedata, NoteData_t *nd
 }
 
 /* 解读字符串形式的音符并产生解析好的音符串struct */
-Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitude)
+Note_t *note_parser(int (*stream)(void*), void *stream_ctx)
 {
 	static const double note_freq[256] = { 0,
 		['c'] = 130.8, ['d'] = 146.8, ['e'] = 164.8, ['f'] = 174.6,
@@ -268,7 +280,7 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitud
 		.type = 4,
 		.speed = 120,
 		.wave_func = sin,
-		.har_func = har_set_piano2,
+		.har_func = har_set_piano1,
 		.flo_freq_func = NULL,
 		.freq = 0,
 		.pNext = NULL,
@@ -283,12 +295,12 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitud
 		.flg_left = true,
 		.flg_right = true,
 		.adsr = (ADSR_t){
-			.attack  = 0.005,
+			.attack  = 0.01,
 			.decay   = 0.3,
 			.sustain = 0.7,
 			.release = 0.2
 		},
-		.amplitude = base_amplitude,
+		.amplitude = 0.2,
 	};
 	Note_t *pH = NULL, *p = NULL;
 	while (note.ch != EOF) {

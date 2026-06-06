@@ -8,9 +8,6 @@
 
 #include "../core.h"
 #include <math.h>
-/* #ifndef DISABLE_OMP
-#include <omp.h>
-#endif */
 
 uint32_t SAMPLE_RATE = 44100;
 
@@ -174,14 +171,14 @@ void notedata_setlen(NoteData_t *p)
  * x: 时间 (秒)
  * f: 基频频率 (Hz)
  */
-void note_gen_wave(NoteData_t *p)
+void note_gen_wave(NoteData_t *p, bool no_har)
 {
 	if (!p || p->freq < 0 || p->pwav || !p->wave_func) return;
 	// 各乐器前n次谐波幅度（包含基频）
 	const Harmonics_t *har;
 	size_t n = 0;
 	if (p->har_func) n = p->har_func(&har);
-	if (n == 0) {
+	if (n == 0 || no_har) {
 		n = 1;
 		har = (Harmonics_t[]){{1, 1, 0}};
 	}
@@ -192,22 +189,14 @@ void note_gen_wave(NoteData_t *p)
 
 	double f = 0, sec = 0;
 	size_t i = 0, j = 0;
-// #ifndef DISABLE_OMP
-// /* 需编译和链接时使用 -fopenmp 编译参数 */
-// #pragma omp parallel for
-// #endif
 	for (; i < p->sample_num; i++) {    /* 生成每个采样点声波的相位 */
 		sec = (double)i/SAMPLE_RATE;
 		f = p->freq;
 		if (p->flo_freq_func) f *= p->flo_freq_func(sec);
-// #ifndef DISABLE_OMP
-// /* 需使用 -fopenmp 编译参数 */
-// #pragma omp simd reduction(+:buffer[i])
-// #endif
 		for (j = 0; j < n; j++) {
 			buffer[i] +=
 				har[j].amplitude * p->wave_func(M_PI*2 * har[j].freq_times * f * sec) *
-				exp((-1-har[j].decay_speed) * sec);
+				exp(-har[j].decay_speed * sec);
 		}
 	}
 	p->pwav = buffer;
