@@ -8,6 +8,7 @@
 
 #include "../core.h"
 #include <math.h>
+#include <stdint.h>
 #ifndef DISABLE_OMP
 #include <omp.h>
 #endif
@@ -124,6 +125,7 @@ void biquad_set(Biquad_t *bq, char *key, char *value)
  * x：相位 */
 double biquad_apply(Biquad_t *f, double x)
 {
+	if (!f) return x;
 	double y = f->b0*x + f->b1*f->x1 + f->b2*f->x2 \
 		   - f->a1*f->y1 - f->a2*f->y2;
 	// 更新延迟单元
@@ -158,6 +160,15 @@ double get_portamento_freq(double start, double end, double x, bool smooth)
 #define note_sample_len_get(p) \
 	(SAMPLE_RATE*((double)p->notes/p->type)*((double)60/p->speed))
 
+void notedata_setlen(NoteData_t *p)
+{
+	if (!p) return;
+	while (p) {
+		p->sample_num = note_sample_len_get(p);
+		p = p->pNext;
+	}
+}
+
 /* 
  * 生成固定声波并填充到给定的 NoteData_t
  * 数学模型: f(x) = A*sin(ω*x)
@@ -187,7 +198,7 @@ void note_gen_wave(NoteData_t *p)
 // #pragma omp parallel for
 // #endif
 	for (; i < p->sample_num; i++) {    /* 生成每个采样点声波的相位 */
-		sec = (double)i/p->sample_num;
+		sec = (double)i/SAMPLE_RATE;
 		f = p->portamento_from>0 ? get_portamento_freq(p->portamento_from, p->freq, sec, false) : p->freq;
 		if (p->flo_freq_func) f *= p->flo_freq_func(sec);
 // #ifndef DISABLE_OMP
@@ -196,7 +207,7 @@ void note_gen_wave(NoteData_t *p)
 // #endif
 		for (j = 0; j < n; j++) {
 			buffer[i] +=
-				har[j].amplitude * p->wave_func(M_2_PI * har[j].freq_times * f * sec) *
+				har[j].amplitude * p->wave_func(M_PI*2 * har[j].freq_times * f * sec) *
 				exp((-1-har[j].decay_speed) * sec);
 		}
 	}

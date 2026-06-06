@@ -78,13 +78,13 @@ void notedata_set(NoteData_t *p, char *key, char *value)
 	if (strcmp(key, "speed") == 0) {
 		p->speed = f  > 0 ? f : 120;
 	} else if (strcmp(key, "wave_func") == 0) {
-		if (strcmp(value, "sin")) p->wave_func = sin;
-		else if (strcmp(value, "triangle")) p->wave_func = wave_triangle;
-		else if (strcmp(value, "sawtooth")) p->wave_func = wave_sawtooth;
-		else if (strcmp(value, "noise")) p->wave_func = wave_noise;
+		if (strcmp(value, "sin") == 0) p->wave_func = sin;
+		else if (strcmp(value, "triangle") == 0) p->wave_func = wave_triangle;
+		else if (strcmp(value, "sawtooth") == 0) p->wave_func = wave_sawtooth;
+		else if (strcmp(value, "noise") == 0) p->wave_func = wave_noise;
 	} else if (strcmp(key, "har") == 0) {
-		if (strcmp(value, "piano")) p->har_func = har_set_piano1;
-		if (strcmp(value, "piano2")) p->har_func = har_set_piano2;
+		if (strcmp(value, "piano") == 0) p->har_func = har_set_piano1;
+		if (strcmp(value, "piano2") == 0) p->har_func = har_set_piano2;
 	} else if (strcmp(key, "flo") == 0) {
 		if (strcmp(value, "drum")) p->flo_freq_func = flo_inverse_liner;
 	} else if (strcmp(key, "beates") == 0) {
@@ -104,6 +104,7 @@ bool notedata_cmp(NoteData_t *n1, NoteData_t *n2)
 	if (n1->har_func != n2->har_func) return false;
 	if (n1->wave_func != n2->wave_func) return false;
 	if (n1->flo_freq_func != n2->flo_freq_func) return false;
+	if (n1->portamento_from != n2->portamento_from) return false;
 	if (n1->freq != n2->freq) return false;
 	if (n1->type != n2->type) return false;
 	if (n1->speed != n2->speed) return false;
@@ -170,7 +171,7 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 		}
 		biquad_set(note->biquad, subkey, value);
 	} else if (strcmp(key, "note") == 0) {    /* NoteData_t辖区 */
-		notedata_set(data, key, value);
+		notedata_set(data, subkey, value);
 	} else if (strcmp(key, "inst") == 0) {    /* 整体设置 */
 		if (strcmp(value, "piano") == 0) {
 			data->wave_func = sin;
@@ -226,6 +227,25 @@ void note_free(Note_t *p)
 	return;
 }
 
+bool note_get_nd(Note_t *pH, Note_t *p, NoteData_t *cur_notedata, NoteData_t *ndh)
+{
+	if (!pH || !p || !cur_notedata || !ndh) return false;
+	/* 音符共享机制 */
+	p->pcm_data = notedata_search(pH->pcm_data, cur_notedata);
+	if (p->pcm_data) return true;
+	/* 设置pcm_data */
+	p->pcm_data = malloc(sizeof(*p->pcm_data));
+	if (!p->pcm_data) {
+		return false;
+	}
+	*p->pcm_data = *cur_notedata;
+	p->pcm_data->pNext = NULL;
+
+	if (ndh->pNext) ndh->pNext->pNext = p->pcm_data;
+	ndh->pNext = p->pcm_data;
+	return true;
+}
+
 /* 解读字符串形式的音符并产生解析好的音符串struct */
 Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitude)
 {
@@ -253,19 +273,20 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitud
 		.flo_freq_func = NULL,
 		.freq = 0,
 		.pNext = NULL,
-	};
+		.portamento_from = -1,
+	}, cur_notedata = notedata;
 	/* 顺便存储指针位置等 */
 	Note_t note = {
 		.line = 1,
-		.ind = 1,
+		.ind = 0,
 		.ch = 0,
 		.pcm_data = NULL,
-		.pNext = NULL,    /* 特别地，存储上一个音符地址(pLast) */
+		.pNext = NULL,
 		.flg_left = true,
 		.flg_right = true,
 		.adsr = (ADSR_t){
-			.attack  = 0.01,
-			.decay   = 0.1,
+			.attack  = 0.005,
+			.decay   = 0.3,
 			.sustain = 0.7,
 			.release = 0.2
 		},
@@ -274,7 +295,13 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitud
 	Note_t *pH = NULL, *p = NULL;
 	while (note.ch != EOF) {
 		note.ch = stream(stream_ctx);
-		if (note.ch==EOF) break;
+		if (note.ch==EOF) {
+			if (p && !note_get_nd(pH, p, &cur_notedata, &notedata)) {
+				note_free(pH);
+				return NULL;
+			}
+			break;
+		}
 		if (note.ch=='\n') {
 			note.ind = 0;
 			note.line++;
@@ -286,35 +313,39 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitud
 			continue;
 		}
 
-		if (note_freq[note.ch]) {    /* 创建新节点 */
+		if (note_freq[note.ch]) {    /* 新的音符 */
 			notedata.freq = note_freq[note.ch];
-			if (p && p->pcm_data->portamento_from > 0 && p->pcm_data->freq <= 0) {
+			if (p && cur_notedata.portamento_from > 0 && cur_notedata.freq <= 0) {
 				/* 处理滑音 */
-				p->pcm_data->freq = notedata.freq;
+				cur_notedata.freq = notedata.freq;
 				continue;
 			}
-			note.pNext = p;
-			p = malloc(sizeof(Note_t));
-			if (!p) {
+
+			/* 旧节点pcm_data分配 */
+			if (p && !note_get_nd(pH, p, &cur_notedata, &notedata)) {
 				note_free(pH);
 				return NULL;
 			}
-			*p = note;
-			if (!pH) pH = p;
-			p->pcm_data = notedata_search(pH->pcm_data, &notedata);
-			if (note.pNext) {    /* 这里的pNext作pLast之义 */
-				note.pNext->pNext = p;
-				if (note.pNext->flg_legato) p->flg_be_legato = true;
-				if (fade) p->amplitude = note.pNext->amplitude*(1.0+fade);
-			}
-			if (p->pcm_data) continue;
-			/* 设置pcm_data */
-			p->pcm_data = malloc(sizeof(*p->pcm_data));
-			if (!p->pcm_data) {
+
+			/* 创建新节点 */
+			note.pNext = malloc(sizeof(Note_t));
+			if (!note.pNext) {
 				note_free(pH);
 				return NULL;
 			}
-			memcpy(p->pcm_data, &notedata, sizeof(notedata));
+			*note.pNext = note;
+			if (!pH) pH = note.pNext;
+			note.pNext->pcm_data = NULL;
+			note.pNext->pNext = NULL;
+			cur_notedata = notedata;
+
+			/* 连接上下节点并交换 */
+			if (p) {
+				p->pNext = note.pNext;
+				if (p->flg_legato) note.pNext->flg_be_legato = true;
+				if (fade) note.pNext->amplitude = p->amplitude*(1.0+fade);
+			}
+			p = note.pNext;
 			continue;
 		} else if (note.ch == ':') {
 			setting_mode = 1;
@@ -322,17 +353,17 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitud
 		} else if (!p) continue;
 
 		switch (note.ch) {
-		case '/': p->pcm_data->type *= 2; break;
-		case '*': p->pcm_data->type /= 2; break;
-		case '.': p->pcm_data->type /= (3.0/2.0); break;
+		case '/': cur_notedata.type *= 2; break;
+		case '*': cur_notedata.type /= 2; break;
+		case '.': cur_notedata.type /= (3.0/2.0); break;
 		case '~': p->flg_legato = !p->flg_legato; break;
-		case 's': p->pcm_data->portamento_from=p->pcm_data->freq, p->pcm_data->freq=0; break;
+		case 's': cur_notedata.portamento_from=cur_notedata.freq, cur_notedata.freq=0; break;
 		case '+': p->amplitude += p->amplitude + 0.1 <= 1 ? 0.1 : 0; break;
 		case '-': p->amplitude -= p->amplitude - 0.1 >= 0 ? 0.1 : 0; break;
-		case 'l': p->pcm_data->freq/=change_freq; break;    /* 跨半音 */
-		case 'u': p->pcm_data->freq*=change_freq; break;
-		case 'L': p->pcm_data->freq/=2; break;              /* 跨八度 */
-		case 'U': p->pcm_data->freq*=2; break;
+		case 'l': cur_notedata.freq/=change_freq; break;    /* 跨半音 */
+		case 'u': cur_notedata.freq*=change_freq; break;
+		case 'L': cur_notedata.freq/=2; break;              /* 跨八度 */
+		case 'U': cur_notedata.freq*=2; break;
 		case '[': p->flg_left = !p->flg_left; break;
 		case ']': p->flg_right = !p->flg_left; break;
 		case '<': fade += 0.005; break;
@@ -341,5 +372,6 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx, double base_amplitud
 		case ':': setting_mode = 1; break;
 		}
 	}
+	if (pH) notedata_setlen(pH->pcm_data);
 	return pH;
 }

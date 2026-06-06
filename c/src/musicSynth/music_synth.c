@@ -7,6 +7,7 @@
 
 #include "core.h"
 #include <errno.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -135,14 +136,6 @@ const char *NOTELIST[] = {
  * 1 2 3 4 5 6 7
  * */
 
-FILE *wav_file = NULL;
-
-/* PCM数据处理 */
-void pcm_handle(int16_t* pcm_data, int size)
-{
-	if (wav_file) fwrite(pcm_data, sizeof(int16_t)*2, size, wav_file);
-}
-
 int streamer_file(void *p)
 {
 	if (!p) return EOF;
@@ -210,39 +203,54 @@ int main(int argc, char *argv[])
 			break;
 		}
 	}
-	Note_t *notes;
+
+	MusicCtx_t *ctx = music_ctx_create(1024*50);
 	if (*input) {
 		FILE *fp = fopen(input, "r");
 		if (!fp) return 1;
-		notes = note_parser(streamer_file, fp, amplitude);
+		ctx->notes = note_parser(streamer_file, fp, amplitude);
 		fclose(fp);
 	} else if (id >= 0) {
 		const char *p = NOTELIST[id];
-		notes = note_parser(streamer_str, &p, amplitude);
+		ctx->notes = note_parser(streamer_str, &p, amplitude);
 	}
-	else notes = note_parser(streamer_file, stdin, amplitude);
+	else ctx->notes = note_parser(streamer_file, stdin, amplitude);
+
+	/* do {
+		Note_t *p = ctx->notes;
+		while (p) {
+			print_note(p);
+			p = p->pNext;
+		}
+	} while(0); */
 
 	WavHeader_t header = create_wav_header(0);
-	if (filename[0]) {
-		wav_file = fopen(filename, "wb");
-		if (!wav_file) {
-			fprintf(stderr, "[ERROR] 打开文件 '%s' 时遇到问题: %s\n", filename, strerror(errno));
-			return 1;
-		}
-		printf("[INFO] 结果输出到 '%s'\n", filename);
-		fwrite(&header, sizeof(header), 1, wav_file);
+	FILE *wav_file = NULL;
+	if (filename[0]) wav_file = fopen(filename, "wb");
+	if (!wav_file) {
+		fprintf(stderr, "[ERROR] 打开文件 '%s' 时遇到问题: %s\n", filename, strerror(errno));
+		music_ctx_free(ctx);
+		return 1;
 	}
-	size_t size = melody_0(notes, wav_file ? pcm_handle : NULL, args);
-	if (wav_file) {
-		fseek(wav_file, 0L, SEEK_SET);
-		header = create_wav_header(size);
-		fwrite(&header, sizeof(header), 1, wav_file);
-		fclose(wav_file);
-		printf("[INFO] 曲谱总时长: %lf秒\n", (double)size/SAMPLE_RATE);
+	printf("[INFO] 结果输出到 '%s'\n", filename);
+	fwrite(&header, sizeof(header), 1, wav_file);
+
+	size_t total_size = 0, size = 0;
+	while ((size = music_ctx_gen_pcm(ctx))) {
+		music_ctx_pcm_to_i16(ctx, 3);
+		fwrite(ctx->pcmf16_buffer, sizeof(int16_t)*2, size, wav_file);
+		total_size += size;
+		fprintf(stderr, "TS: %.2lfs, CS: %lu, pos: %.2lfs \r",
+			(double)total_size/SAMPLE_RATE, size,
+			(double)ctx->position/SAMPLE_RATE);
 	}
-	free_notes(notes);
-	/* 新抽象层：
-	 * 乐谱解析 -> 音符序列 -> 合成引擎 -> 输出后端
-	 * */
+	fprintf(stderr, "\n");
+
+	fseek(wav_file, 0L, SEEK_SET);
+	header = create_wav_header(total_size);
+	fwrite(&header, sizeof(header), 1, wav_file);
+	fclose(wav_file);
+	printf("[INFO] 曲谱总时长: %lf秒\n", (double)total_size/SAMPLE_RATE);
+	music_ctx_free(ctx);
 	return 0;
 }

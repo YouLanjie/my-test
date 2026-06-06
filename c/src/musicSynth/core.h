@@ -41,6 +41,8 @@ typedef struct {
 	char data[4];		// "data"
 	uint32_t data_size;	// 音频数据大小
 } WavHeader_t;
+// wav文件头生成
+WavHeader_t create_wav_header(uint32_t duration);
 
 
 /*
@@ -108,19 +110,20 @@ typedef struct NoteData {
 
 	struct NoteData *pNext;
 } NoteData_t;
+void notedata_setlen(NoteData_t *p);
 
 /* 存储乐谱数据 */
 typedef struct Note {
-	double      amplitude;
-	NoteData_t *pcm_data;
-	Biquad_t   *biquad;
-	ADSR_t      adsr;
+	double      amplitude;    /* 响度修正 */
+	NoteData_t *pcm_data;     /* 基声波数据引用 */
+	Biquad_t   *biquad;       /* 滤波器 */
+	ADSR_t      adsr;         /* ADSR包络 */
 
-	uint8_t track;
-	bool flg_left;
-	bool flg_right;
-	bool flg_legato;        /* 连音 */
-	bool flg_be_legato;     /* 被连音 */
+	uint8_t track;       /* 声轨 */
+	bool flg_left;       /* 左声道 */
+	bool flg_right;      /* 右声道 */
+	bool flg_legato;     /* 连音 */
+	bool flg_be_legato;  /* 被连音 */
 
 	int ch;
 	int ind;
@@ -182,17 +185,18 @@ struct Melody_opts_t {
 typedef struct Music_t {
 	Note_t *notes;      /* 音符列指针头 */
 	size_t position;    /* 位置（采样点精度）(能指示的最大时间超过10万年所以无所畏惧) */
-	size_t track_position;  /* 轨道分支位置 */
-	size_t main_offset;     /* 主位置音符内向后偏移到position */
-	Note_t *tracks[INT8_MAX];
+	size_t track_position;  /* 轨道分支位置|音符起始位置 */
+	Note_t *tracks[INT8_MAX];  /* 各轨道指针 */
 	size_t buffer_len;
 	double *buffer;
 
 	int16_t *pcmf16_buffer;
 	void   (*pcm_handle)(int16_t*,int);
 } MusicCtx_t;
-
-// wav文件头生成
-WavHeader_t create_wav_header(uint32_t duration);
+void music_ctx_free(MusicCtx_t *ctx);
+MusicCtx_t *music_ctx_create(size_t bufflen);
+bool music_ctx_tracks_reset(MusicCtx_t *ctx);
+size_t music_ctx_gen_pcm(MusicCtx_t *ctx);
+void music_ctx_pcm_to_i16(MusicCtx_t *ctx, double scale);
 
 #endif //CORE_H
