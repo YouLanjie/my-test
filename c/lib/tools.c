@@ -215,3 +215,47 @@ extern char *_fread(FILE *fp)
 	return str;
 }
 
+#ifdef __linux__
+struct timespec timespec_add(struct timespec t, struct timespec t2)
+{
+	t.tv_nsec += t2.tv_nsec;
+	if (t.tv_nsec >= 1e9) {
+		t.tv_sec++;
+		t.tv_nsec -= 1e9;
+	} else if (t.tv_nsec < 0) {
+		t.tv_sec--;
+		t.tv_nsec += 1e9;
+	}
+	t.tv_sec += t2.tv_sec;
+	return t;
+}
+
+struct timespec timespec_from_sec(double t)
+{
+	return (struct timespec){(int)t, (t-(int)t)*1e9};
+}
+
+/* 由于日益严重的延迟因而使用特定的时钟避免usleep的额外等待
+ * 返回本次需要等待的时间 
+ * */
+double sleep_fixed_step(double sec)
+{
+	static double wait_time = 0;
+	static struct timespec t = {0}, t2 = {0};
+	if (t.tv_sec == 0 && t.tv_nsec == 0) clock_gettime(CLOCK_MONOTONIC, &t);
+
+	t = timespec_add(t, timespec_from_sec(sec));
+
+	clock_gettime(CLOCK_MONOTONIC, &t2);
+	t2 = timespec_add(t, (struct timespec){-t2.tv_sec, -t2.tv_nsec});
+	wait_time = t2.tv_sec + t2.tv_nsec/1e9;
+	if (wait_time < 0) {
+		clock_gettime(CLOCK_MONOTONIC, &t);
+		return wait_time;    /* 跳帧 */
+	}
+
+	clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &t, NULL);
+	return wait_time;
+}
+#endif
+

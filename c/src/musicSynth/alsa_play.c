@@ -10,6 +10,7 @@
 
 
 #include "core.h"
+#include "../../include/tools.h"
 #include <alsa/asoundlib.h>
 
 #define FLG_PLAY (1 << 0)
@@ -140,13 +141,13 @@ int main(int argc, char *argv[])
 	char input[PATH_MAX] = "",
 	     wavfile[PATH_MAX] = "";
 	bool flg_print_formated_note = false;
-	MusicCtx_t *ctx = music_ctx_create(1024*50);  /*SAMPLE_RATE*/
+	MusicCtx_t *ctx = music_ctx_create(SAMPLE_RATE/20);
 	if (!ctx) {
 		LOG("乐曲上下文ctx创建失败");
 		return 1;
 	}
 
-	while ((ch = getopt(argc, argv, "hi:f:nmHPA:")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "hi:I:f:nmHPA:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -167,6 +168,7 @@ int main(int argc, char *argv[])
 			ctx->amplitude = strtof(optarg, NULL);
 			if (ctx->amplitude > 100 || ctx->amplitude < 0) ctx->amplitude = 1.0;
 			break;
+		case 'I':
 		case 'i': strlcpy(input, optarg, sizeof(input)); break;
 		case 'f': strlcpy(wavfile, optarg, sizeof(input)); break;
 		case 'n': ctx->flg_no_fade = true; break;
@@ -187,42 +189,70 @@ int main(int argc, char *argv[])
 	ctx->notes = note_parser(streamer_file, fp);
 	fclose(fp);
 
-	do {
-		size_t count1 = 0, count2 = 0, count3 = 0;
-		Note_t *p = ctx->notes;
-		if (!p) break;
-		while (p) {
-			count1++;
-			if (p->track == 0 && p->pcm_data) count3 += p->pcm_data->sample_num;
-			p = p->pNext;
-		}
-		if (!ctx->notes) break;
-		NoteData_t *nd = ctx->notes->pcm_data;
-		while (nd) {
-			count2++;
-			nd = nd->pNext;
-		}
-		printf("[INFO] 全谱共计%lu个音符，不同的音符有%lu个\n", count1, count2);
-		printf("[INFO] 音符复用率大约为%.2lf%%\n", (1-(double)count2/count1)*100);
-		printf("[INFO] 曲谱预计时长为%.2lfs\n", (double)count3/SAMPLE_RATE);
-		check_notes(ctx->notes, flg_print_formated_note);
-	} while(0);
+	check_notes(ctx->notes, flg_print_formated_note);
+	size_t total_size = music_ctx_stat(ctx);
 
 	snd_pcm_t *pcm = init();
 	if (! pcm) {
 		music_ctx_free(ctx);
 		return 1;
 	}
-	size_t total_size = 0, size = 0;
-	while ((size = music_ctx_gen_pcm(ctx))) {
+	snd_pcm_sframes_t delay = 0;
+	size_t size = 0;
+	int c = 0, pause = false;
+	do {
+		c = kbhitGetchar();
+		if (c == 'Q' || c == 'q') break;
+		if (c == 0x1b && (c = kbhitGetchar()) == '[' && (c = kbhitGetchar()) >= 0 && c < 124) {
+			c = (char[124]){ ['A']='k', ['B']='j', ['C']='l', ['D']='h'}[c];
+		}
+		if (c == ' ') {
+			snd_pcm_pause(pcm, pause?0:1);
+			pause ^= 1;
+		} else if (c == 'j' || c == 'l' || c == 'k' || c == 'h' || c == '0') {
+			snd_pcm_drop(pcm);
+			snd_pcm_prepare(pcm);
+			if (c == 'l' && ctx->position + SAMPLE_RATE*5 < total_size)
+				ctx->position += SAMPLE_RATE*5;
+			else if (c == 'j' &&  ctx->position + SAMPLE_RATE*20 < total_size)
+				ctx->position += SAMPLE_RATE*20;
+			else if (c == 'h' && ctx->position >= SAMPLE_RATE*5)
+				ctx->position -= SAMPLE_RATE*5;
+			else if (c == 'k' && ctx->position >= SAMPLE_RATE*20)
+				ctx->position -= SAMPLE_RATE*20;
+			else if (c == '0') ctx->position = 0;
+			music_ctx_tracks_reset(ctx);
+		} else if (c == '='){ ctx->amplitude += 0.005;
+		} else if (c == '-'){ if (ctx->amplitude-0.005 >= 0) ctx->amplitude -= 0.005;
+		} else if (c == '+'){ ctx->amplitude += 0.1;
+		} else if (c == '_'){ if (ctx->amplitude-0.1 >= 0) ctx->amplitude -= 0.1;
+		} else if (c == 'i'){
+			printf("\n[INFO] 音量系数: %.1lf%%\n", ctx->amplitude*100);
+		}
+
+		if (pause) {
+			usleep(1e6/20);
+			continue;
+		}
+		if (delay > 5.*ctx->buffer_len)
+			usleep(1e6*ctx->buffer_len/SAMPLE_RATE);
+
+		size = music_ctx_gen_pcm(ctx);
+		if (!size) break;
 		music_ctx_pcm_to_i16(ctx);
 		play_wav(pcm, ctx->pcmf16_buffer, size);
-		total_size += size;
-		fprintf(stderr, "TS: %.2lfs, CS: %lu, pos: %.2lfs \r",
-			(double)total_size/SAMPLE_RATE, size,
-			(double)ctx->position/SAMPLE_RATE);
-	}
-	fprintf(stderr, "\n[Quit]");
+		/* fprintf(stderr, "TS: %.2lfs, CS: %lu, pos: %.2lfs \r",
+			(double)sum_size/SAMPLE_RATE, size,
+			(double)ctx->position/SAMPLE_RATE); */
+		snd_pcm_delay(pcm, &delay);
+		fprintf(stderr, "\r[%-40.*s] %4.1lf%% (%.1fs/%.1fs) \r",
+			(int)(40*ctx->position/total_size),
+			"##################################################",
+			(double)ctx->position/total_size*100.,
+			(double)ctx->position/SAMPLE_RATE,
+			(double)total_size/SAMPLE_RATE);
+	} while (size);
+	fprintf(stderr, "\n[Quit]\n");
 	music_ctx_free(ctx);
 	// 等待播放完成并关闭设备
 	snd_pcm_drain(pcm);

@@ -60,5 +60,12 @@ extern char *_fread(FILE *fp);
 /* 在指定范围内打印 */
 extern int print_in_box(char *ch, int x_start, int y_start, int width, int heigh, int hide, int focus, char *color_code, int flag_hl);
 
+#ifdef __linux__
+/* timespec操作，高精度单步sleep */
+struct timespec timespec_add(struct timespec t, struct timespec t2);
+struct timespec timespec_from_sec(double t);
+double sleep_fixed_step(double sec);
+#endif
+
 #endif
 

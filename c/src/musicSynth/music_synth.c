@@ -230,30 +230,10 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	size_t sample_num = 0;
-	do {
-		size_t count1 = 0, count2 = 0, count3 = 0;
-		Note_t *p = ctx->notes;
-		if (!p) break;
-		while (p) {
-			count1++;
-			if (p->track == 0 && p->pcm_data) count3 += p->pcm_data->sample_num;
-			p = p->pNext;
-		}
-		if (!ctx->notes) break;
-		NoteData_t *nd = ctx->notes->pcm_data;
-		while (nd) {
-			count2++;
-			nd = nd->pNext;
-		}
-		sample_num = count3;
-		check_notes(ctx->notes, flg_print_formated_note);
-		printf("[INFO] 全谱共计%lu个音符，不同的音符有%lu个\n", count1, count2);
-		printf("[INFO] 音符复用率大约为%.2lf%%\n", (1-(double)count2/count1)*100);
-		printf("[INFO] 曲谱预计时长为%.2lfs\n", (double)count3/SAMPLE_RATE);
-	} while(0);
+	check_notes(ctx->notes, flg_print_formated_note);
+	size_t total_size = music_ctx_stat(ctx);
 
-	WavHeader_t header = create_wav_header(0);
+	WavHeader_t header = create_wav_header(total_size);
 	FILE *wav_file = NULL;
 	if (filename[0]) wav_file = fopen(filename, "wb");
 	if (!wav_file) {
@@ -266,31 +246,36 @@ int main(int argc, char *argv[])
 	fwrite(&header, sizeof(header), 1, wav_file);
 
 	clock_t start = clock(), now;
-	size_t total_size = 0, size = 0;
-	if (!sample_num) sample_num = 1;
+	size_t sum_size = 0, size = 0;
+	if (!total_size) total_size = 1;
 	while ((size = music_ctx_gen_pcm(ctx))) {
 		music_ctx_pcm_to_i16(ctx);
 		fwrite(ctx->pcmf16_buffer, sizeof(int16_t)*2, size, wav_file);
-		total_size += size;
+		sum_size += size;
 		/* fprintf(stderr, "TS: %.2lfs, CS: %lu, pos: %.2lfs \r",
-		       (double)total_size/SAMPLE_RATE, size,
+		       (double)sum_size/SAMPLE_RATE, size,
 		       (double)ctx->position/SAMPLE_RATE); */
+		if (!sum_size) continue;
 		now = clock();
-		fprintf(stderr, "%4.1lf%% [%-40.*s] (%.1fs/%.1fs) ETA %.1lfs \r",
-			(double)total_size/sample_num*100.,
-			(int)(40*total_size/sample_num),
+		fprintf(stderr, "[%-35.*s] %4.1lf%% (%.1fs/%.1fs) real %.0lfs ETA %.1lfs \r",
+			(int)(35*sum_size/total_size),
 			"########################################",
+			(double)sum_size/total_size*100.,
+			(double)sum_size/SAMPLE_RATE,
 			(double)total_size/SAMPLE_RATE,
-			(double)sample_num/SAMPLE_RATE,
-			(double)(sample_num-total_size)/total_size*(now-start)/CLOCKS_PER_SEC);
+			(double)(now-start)/CLOCKS_PER_SEC,
+			(double)(now-start)/CLOCKS_PER_SEC*(total_size-sum_size)/sum_size);
 	}
 	fprintf(stderr, "\n");
 
-	fseek(wav_file, 0L, SEEK_SET);
-	header = create_wav_header(total_size);
-	fwrite(&header, sizeof(header), 1, wav_file);
+	if (sum_size != total_size) {
+		printf("[INFO] 更新wav文件时长\n");
+		fseek(wav_file, 0L, SEEK_SET);
+		header = create_wav_header(sum_size);
+		fwrite(&header, sizeof(header), 1, wav_file);
+	}
 	fclose(wav_file);
-	printf("[INFO] 曲谱总时长: %lf秒\n", (double)total_size/SAMPLE_RATE);
+	printf("[INFO] 曲谱总时长: %lf秒\n", (double)sum_size/SAMPLE_RATE);
 	music_ctx_free(ctx);
 	return 0;
 }

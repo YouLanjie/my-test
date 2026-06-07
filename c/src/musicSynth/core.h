@@ -198,5 +198,6 @@ MusicCtx_t *music_ctx_create(size_t bufflen);
 bool music_ctx_tracks_reset(MusicCtx_t *ctx);
 size_t music_ctx_gen_pcm(MusicCtx_t *ctx);
 void music_ctx_pcm_to_i16(MusicCtx_t *ctx);
+size_t music_ctx_stat(MusicCtx_t *ctx);
 
 #endif //CORE_H

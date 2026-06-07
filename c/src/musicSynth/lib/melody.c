@@ -42,6 +42,31 @@ MusicCtx_t *music_ctx_create(size_t bufflen)
 	return p;
 }
 
+/* 打印曲谱状态，返回预计长度 */
+size_t music_ctx_stat(MusicCtx_t *ctx)
+{
+	if (!ctx) return 0;
+	size_t total_len = 0;
+	size_t count1 = 0, count2 = 0, count3 = 0;
+	Note_t *p = ctx->notes;
+	if (!p) return 0;
+	while (p) {
+		count1++;
+		if (p->track == 0 && p->pcm_data) count3 += p->pcm_data->sample_num;
+		p = p->pNext;
+	}
+	NoteData_t *nd = ctx->notes->pcm_data;
+	while (nd) {
+		count2++;
+		nd = nd->pNext;
+	}
+	total_len = count3;
+	printf("[INFO] 全谱共计%lu个音符，不同的音符有%lu个\n", count1, count2);
+	printf("[INFO] 音符复用率大约为%.2lf%%\n", (1-(double)count2/count1)*100);
+	printf("[INFO] 曲谱预计时长为%.2lfs\n", (double)count3/SAMPLE_RATE);
+	return total_len;
+}
+
 /* 更新ctx轨道指针(重新遍历链表) */
 bool music_ctx_tracks_reset(MusicCtx_t *ctx)
 {
@@ -63,9 +88,10 @@ bool music_ctx_tracks_reset(MusicCtx_t *ctx)
 			ctx->track_position = position;
 			track = 0;
 		} else if (p->track != track) {    /* 其余轨道切换(包括切入) */
-			ctx->tracks[p->track] = p;
+			if (p->track >= 0 || p->track < ARRAY_LEN(track_sizes))
+				ctx->tracks[p->track] = p;
 			track = p->track;
-		} else    /* 累加轨道长度 */
+		} else if (p->track >= 0 || p->track < ARRAY_LEN(track_sizes))   /* 累加轨道长度 */
 			track_sizes[p->track] += p->pcm_data->sample_num;
 
 		if (p->track == 0) position += p->pcm_data->sample_num;
@@ -81,8 +107,10 @@ bool music_ctx_tracks_reset(MusicCtx_t *ctx)
 		p = p->pNext;
 	}
 	if (!p) return false;
-	ctx->tracks[0] = p;
-	ctx->track_position = position;
+	if (!ctx->tracks[0]) {
+		ctx->tracks[0] = p;
+		ctx->track_position = position;
+	}
 	return true;
 }
 

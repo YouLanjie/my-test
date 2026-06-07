@@ -10,48 +10,6 @@
 #define MAX_FRAME 100000
 uint8_t FPS = 40;
 
-static inline struct timespec timespec_add(struct timespec t, struct timespec t2)
-{
-	t.tv_nsec += t2.tv_nsec;
-	if (t.tv_nsec >= 1e9) {
-		t.tv_sec++;
-		t.tv_nsec -= 1e9;
-	} else if (t.tv_nsec < 0) {
-		t.tv_sec--;
-		t.tv_nsec += 1e9;
-	}
-	t.tv_sec += t2.tv_sec;
-	return t;
-}
-
-static inline struct timespec timespec_from_sec(double t)
-{
-	return (struct timespec){(int)t, (t-(int)t)*1e9};
-}
-
-/* 由于日益严重的延迟因而使用特定的时钟避免usleep的额外等待
- * 返回本次需要等待的时间 
- * */
-double my_sleep()
-{
-	static double wait_time = 0;
-	static struct timespec t = {0}, t2 = {0};
-	if (t.tv_sec == 0 && t.tv_nsec == 0) clock_gettime(CLOCK_MONOTONIC, &t);
-
-	t = timespec_add(t, timespec_from_sec(1./FPS));
-
-	clock_gettime(CLOCK_MONOTONIC, &t2);
-	t2 = timespec_add(t, (struct timespec){-t2.tv_sec, -t2.tv_nsec});
-	wait_time = t2.tv_sec + t2.tv_nsec/1e9;
-	if (wait_time < 0) {
-		clock_gettime(CLOCK_MONOTONIC, &t);
-		return wait_time;    /* 跳帧 */
-	}
-
-	clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &t, NULL);
-	return wait_time;
-}
-
 static bool setup(RenderBackend_t **bk, Camera_t *ca, uint8_t num)
 {
 	if (!bk) return false;
@@ -289,7 +247,7 @@ int main(int argc, char *argv[])
 		printf("=> Ca P/V xyz: (%.2f,%.2f,%.2f) (%.2f,%.2f,%.2f) \n",
 		       data.camera->position.x, data.camera->position.y, data.camera->position.z,
 		       data.cav.x, data.cav.y, data.cav.z);
-		busy = (busy + (1-(my_sleep())/(1./FPS)) * 100)/2;
+		busy = (busy + (1-(sleep_fixed_step(1./FPS))/(1./FPS)) * 100)/2;
 	}
 	obj_free(line);
 	obj_free(block);

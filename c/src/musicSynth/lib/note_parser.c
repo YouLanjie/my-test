@@ -7,6 +7,7 @@
 
 #include "../core.h"
 
+/* 打印音符 */
 void print_note(Note_t *note)
 {
 	if (!note) return;
@@ -21,6 +22,7 @@ void print_note(Note_t *note)
 		note->line, note->ind, note->ch);
 }
 
+/* 自动遍历整个链表检查合拍情况 */
 void check_notes(Note_t *note, bool print)
 {
 	if (!note) return;
@@ -71,29 +73,73 @@ void check_notes(Note_t *note, bool print)
 }
 #undef p
 
+#define str_switch2(str, possible, ...) \
+	str_switch((const char*[]){__VA_ARGS__}, \
+		   sizeof((const char*[]){__VA_ARGS__})/sizeof(char*),\
+		   str, possible)
+static int str_switch(const char *strlist[], int listlen, const char *str, int *possible)
+{
+	if (!strlist || !str || listlen <= 0) return -1;
+	int i = 0, j = 0, max_similar = 0, msid = 0;
+	bool print = (*possible == -1);
+	for (; i < listlen && strlist[i]; i++) {
+		for (j = 0; strlist[i][j] == str[j]; j++) {
+			if (str[j]) continue;
+			j = -1;
+			break;
+		}
+		if (j < 0) return i;
+		if (j > max_similar) {
+			max_similar = j;
+			msid = i;
+		}
+	}
+
+	if (max_similar > 0) {
+		if (possible) *possible = msid;
+		if (print && *possible >= 0 && *possible < listlen)
+			printf("[WARN] '%s'未匹配，是否想找'%s'?\n", str, strlist[msid]);
+		return -2;
+	}
+
+	if (!print) return -1;
+	printf("[WARN] '%s'未匹配,合法值有:\n", str);
+	for (i = 0; i < listlen && strlist[i]; i++) {
+		printf("  - %d: %s\n", i, strlist[i]);
+	}
+	return -1;
+
+}
+
 void notedata_set(NoteData_t *p, char *key, char *value)
 {
 	if (!p || !value || !key || !*key) return;
+	int possible = -1;
 	double f = atof(value);
-	if (strcmp(key, "speed") == 0) {
-		p->speed = f  > 0 ? f : 120;
-	} else if (strcmp(key, "wave_func") == 0) {
-		if (strcmp(value, "sin") == 0) p->wave_func = sin;
-		else if (strcmp(value, "triangle") == 0) p->wave_func = wave_triangle;
-		else if (strcmp(value, "sawtooth") == 0) p->wave_func = wave_sawtooth;
-		else if (strcmp(value, "noise") == 0) p->wave_func = wave_noise;
-	} else if (strcmp(key, "har") == 0) {
+
+	switch (str_switch2(key, &possible,
+		"speed", "wave_func", "har", "flo",
+		"beates", "notes", "type",)) {
+	case 0: p->speed = f  > 0 ? f : 120; break;
+	case 4: p->beates = f > 0 ? f : 4; break;
+	case 5: p->notes = f > 0 ? f : 4; break;
+	case 6: p->type = f > 0 ? f : 4; break;
+	case 3: if (strcmp(value, "drum")) p->flo_freq_func = flo_inverse_liner; break;
+	case 1:
+		possible = -1;
+		switch (str_switch2(value, &possible,
+			"sin", "triangle", "sawtooth", "noise")) {
+		case 0: p->wave_func = sin; break;
+		case 1: p->wave_func = wave_triangle; break;
+		case 2: p->wave_func = wave_sawtooth; break;
+		case 3: p->wave_func = wave_noise;  break;
+		}
+		break;
+	case 2:
 #define HARMONIC(x) if (strcmp(value, #x) == 0) p->har_func = har_set_##x; else
 		HARMONICS_LIST LOG("无效的泛音名称: '%s'", value);
 #undef HARMONIC
-	} else if (strcmp(key, "flo") == 0) {
-		if (strcmp(value, "drum")) p->flo_freq_func = flo_inverse_liner;
-	} else if (strcmp(key, "beates") == 0) {
-		p->beates = f > 0 ? f : 4;
-	} else if (strcmp(key, "notes") == 0 || strcmp(key, "base_on") == 0) {
-		p->notes = f > 0 ? f : 4;
-	} else if (strcmp(key, "type") == 0 || strcmp(key, "default_type") == 0) {
-		p->type = f > 0 ? f : 4;
+		break;
 	}
 	return;
 }
@@ -139,7 +185,10 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 		return 1;
 	}
 	if (*ind > MAX_LEN_KEY+MAX_LEN_VALUE-1) {
-		goto EXIT_KVPROCESS_AND_CLEANUP;
+		*ind = 0;
+		memset(key, 0, MAX_LEN_KEY);
+		memset(value, 0, MAX_LEN_VALUE);
+		return 1;
 	}
 	if (c != ';') {
 		if (*ind >= MAX_LEN_KEY+MAX_LEN_VALUE-1) {
@@ -157,39 +206,47 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 		*subkey = 0;
 		subkey++;
 	}
-	if (key[0] == 0 || value[0] == 0) goto EXIT_KVPROCESS_AND_CLEANUP;
 
-	if (strcmp(key, "track") == 0) {
-		note->track = atoi(value);
-	} else if (strcmp(key, "amp") == 0) {
+	int possible = -1;
+	switch (str_switch2(key, &possible,
+		"track", "amp", "bq", "note", "inst")) {
+	case 0: note->track = atoi(value); break;
+	case 3: notedata_set(data, subkey, value);break;
+	case 1:
 		note->amplitude = atof(value);
 		if(note->amplitude<0||note->amplitude>=0.8) note->amplitude=0.2;
-	} else if (strcmp(key, "bq") == 0) {
+		break;
+	case 2:
 		if (!note->biquad || (note->pNext && note->pNext->biquad == note->biquad)) {
 			note->biquad = malloc(sizeof(*note->biquad));
 			memset(note->biquad, 0, sizeof(*note->biquad));
 		}
 		biquad_set(note->biquad, subkey, value);
-	} else if (strcmp(key, "note") == 0) {    /* NoteData_t辖区 */
-		notedata_set(data, subkey, value);
-	} else if (strcmp(key, "inst") == 0) {    /* 整体设置 */
-		if (strcmp(value, "piano") == 0) {
+		break;
+	case 4:
+		possible = -1;
+		switch (str_switch2(value, &possible, "piano", "piano2", "piano3", "drum")) {
+		case 0:
 			data->wave_func = sin;
 			data->har_func = har_set_piano1;
 			if (note->biquad) *note->biquad = (Biquad_t){};
-		} else if (strcmp(value, "piano2") == 0) {
+			break;
+		case 1:
 			data->wave_func = sin;
 			data->har_func = har_set_piano2;
 			if (note->biquad) *note->biquad = (Biquad_t){};
-		} else if (strcmp(value, "piano3") == 0) {
+			break;
+		case 2:
 			data->wave_func = sin;
 			data->har_func = har_set_piano3;
 			if (note->biquad) *note->biquad = (Biquad_t){};
-		} else if (strcmp(value, "drum") == 0) {
+			break;
+		case 3:
 			data->wave_func = sin;
 			data->har_func = har_set_none;
 			data->flo_freq_func = flo_inverse_liner;
 			if (note->biquad) *note->biquad = (Biquad_t){};
+			break;
 		}
 		/* 未完成 
 		case INST_HIHAT:
@@ -204,8 +261,8 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 		}
 		value = tanh(value);
 		break;*/
+		break;
 	}
-EXIT_KVPROCESS_AND_CLEANUP:
 	*ind = 0;
 	memset(key, 0, MAX_LEN_KEY);
 	memset(value, 0, MAX_LEN_VALUE);
