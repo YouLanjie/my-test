@@ -157,14 +157,14 @@ int main(int argc, char *argv[])
 	int ch = 0, id = -1;
 	char filename[PATH_MAX] = "",
 	     input[PATH_MAX] = "";
-	bool flg_print_formated_note = false;
+	bool flg_print_formated_note = false, flg_no_check = false;
 	MusicCtx_t *ctx = music_ctx_create(SAMPLE_RATE);
 	if (!ctx) {
 		LOG("乐曲上下文ctx创建失败");
 		return 1;
 	}
 
-	while ((ch = getopt(argc, argv, "hi:I:o:nmHPA:")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "hi:I:o:nmHPNA:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -177,6 +177,7 @@ int main(int argc, char *argv[])
 			       "    -m        平滑滑音，滑音频率匀速增长\n"
 			       "    -H        取消泛音\n"
 			       "    -P        打印音符(格式化)\n"
+			       "    -N        不检查音符合规性\n"
 			       "    -A <NUM>  音量系数(默认1.0)\n"
 			       "    -h        显示帮助\n"
 			       "  NUM: 0: 小星星\n"
@@ -203,6 +204,7 @@ int main(int argc, char *argv[])
 		case 'm': ctx->flg_smooth = true; break;
 		case 'H': ctx->flg_no_har = true; break;
 		case 'P': flg_print_formated_note = true; break;
+		case 'N': flg_no_check = true; break;
 		// case 'x': ctx->flg_print_debug_info = true; break;
 		default:
 			break;
@@ -230,7 +232,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	check_notes(ctx->notes, flg_print_formated_note);
+	if (!flg_no_check) check_notes(ctx->notes, flg_print_formated_note);
 	size_t total_size = music_ctx_stat(ctx);
 
 	WavHeader_t header = create_wav_header(total_size);

@@ -171,6 +171,7 @@ void print_note(Note_t *p);
 void check_notes(Note_t *p, bool print);
 void note_free(Note_t *p);
 Note_t *note_parser(int (*stream)(void*), void *stream_ctx);
+Note_t *note_search_last(Note_t *pH, Note_t *obj);
 
 // 声音生成处理
 void note_gen_wave(NoteData_t *p, bool no_har);

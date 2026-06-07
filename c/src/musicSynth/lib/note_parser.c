@@ -292,7 +292,7 @@ void note_free(Note_t *p)
 	return;
 }
 
-bool note_get_nd(Note_t *pH, Note_t *p, NoteData_t *cur_notedata, NoteData_t *ndh)
+static bool note_get_nd(Note_t *pH, Note_t *p, NoteData_t *cur_notedata, NoteData_t *ndh)
 {
 	if (!pH || !p || !cur_notedata || !ndh) return false;
 	/* 音符共享机制 */
@@ -312,6 +312,17 @@ bool note_get_nd(Note_t *pH, Note_t *p, NoteData_t *cur_notedata, NoteData_t *nd
 	if (ndh->pNext) ndh->pNext->pNext = p->pcm_data;
 	ndh->pNext = p->pcm_data;
 	return true;
+}
+
+/* 搜索上一个节点（在链表中） */
+Note_t *note_search_last(Note_t *pH, Note_t *obj)
+{
+	if (!pH || !obj) return NULL;
+	while (pH) {
+		if (pH->pNext == obj) break;
+		pH = pH->pNext;
+	}
+	return pH;
 }
 
 /* 解读字符串形式的音符并产生解析好的音符串struct */

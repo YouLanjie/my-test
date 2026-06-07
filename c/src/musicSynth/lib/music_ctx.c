@@ -143,6 +143,7 @@ static bool music_ctx_group_synth(MusicCtx_t *ctx, Note_t *p, Note_t *pl, size_t
 {
 	if (!ctx || !p || !p->pcm_data || !i) return false;
 	if (*i >= ctx->buffer_len) return false;
+	if (!pl) pl = note_search_last(ctx->notes, p);
 	if (pl && pl->pcm_data && p == pl->pNext &&
 	    ((p->flg_be_portam && pl->flg_portamento) || 
 	     (p->flg_be_legato && pl->flg_legato))) {
