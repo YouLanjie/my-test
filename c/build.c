@@ -52,7 +52,7 @@ typedef struct {
 CLIBS_t CLIBS[] = {
 	LIB("ctools", LIB_DIR"tools.c", LIB_DIR"print_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c"),
 	LIB("cmenu", LIB_DIR"menu.c"),
-	LIB("cmusicsynth", MUSDIR"core.c", MUSDIR"wave_func.c", MUSDIR"note_parser.c", MUSDIR"melody.c"),
+	LIB("cmusicsynth", MUSDIR"core.c", MUSDIR"wave_func.c", MUSDIR"note_parser.c", MUSDIR"music_ctx.c"),
 	LIB("render3d", R3DDIR"camera.c", R3DDIR"object.c", R3DDIR"vec.c", R3DDIR"draw_ascii.c", R3DDIR"draw_utf8.c"),
 };
 #undef R3DDIR
