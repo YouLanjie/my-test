@@ -278,7 +278,7 @@ size_t music_ctx_gen_pcm(MusicCtx_t *ctx)
 		     offset_played+=p->pcm_data->sample_num, pl = p, p=p->pNext) {
 			if (offset_played+offset_refit > offset+i) break;    /* 避免INDEX为负 */
 			if (INDEX >= p->pcm_data->sample_num) continue;
-			if (p->biquad) biquad_compile(p->biquad);
+			// if (p->biquad) biquad_compile(p->biquad);
 			if (p->flg_legato||p->flg_be_legato||p->flg_portamento||p->flg_be_portam) {
 				if (!music_ctx_group_synth(ctx, p, pl, &i, INDEX-i)) break;
 			} else if (!music_ctx_note2buf(ctx, p, &i, INDEX-i)) break;

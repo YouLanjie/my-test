@@ -144,13 +144,14 @@ typedef struct Note {
 // #define CALL(func, ...) (LOG("call '%s' at (%p)", #func, (func)), (func)(__VA_ARGS__))
 
 
-#define HARMONICS_LIST   \
-	HARMONIC(piano1) \
-	HARMONIC(piano2) \
-	HARMONIC(piano3) \
-	HARMONIC(none)   \
-	HARMONIC(h3)     \
-	HARMONIC(h4)     \
+#define HARMONICS_LIST    \
+	HARMONIC(piano1)  \
+	HARMONIC(piano2)  \
+	HARMONIC(piano3)  \
+	HARMONIC(none)    \
+	HARMONIC(openhat) \
+	HARMONIC(h3)      \
+	HARMONIC(h4)      \
 	HARMONIC(h5)
 /* 泛音列表 */
 #define HARMONIC(x) size_t har_set_##x(const Harmonics_t ** harp);
@@ -159,6 +160,7 @@ HARMONICS_LIST
 
 // 低频信号函数集
 double flo_inverse_liner(double t);
+double flo_rand(double t);
 
 // 声波函数集
 double wave_square(double t);
@@ -172,6 +174,11 @@ void check_notes(Note_t *p, bool print);
 void note_free(Note_t *p);
 Note_t *note_parser(int (*stream)(void*), void *stream_ctx);
 Note_t *note_search_last(Note_t *pH, Note_t *obj);
+int str_switch(const char *strlist[], int listlen, const char *str, int *possible);
+#define str_switch2(str, possible, ...) \
+	str_switch((const char*[]){__VA_ARGS__}, \
+		   sizeof((const char*[]){__VA_ARGS__})/sizeof(char*),\
+		   str, possible)
 
 // 声音生成处理
 void note_gen_wave(NoteData_t *p, bool no_har);

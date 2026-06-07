@@ -214,14 +214,14 @@ int main(int argc, char *argv[])
 		} else if (c == 'j' || c == 'l' || c == 'k' || c == 'h' || c == '0') {
 			snd_pcm_drop(pcm);
 			snd_pcm_prepare(pcm);
-			if (c == 'l' && ctx->position + SAMPLE_RATE*5 < total_size)
-				ctx->position += SAMPLE_RATE*5;
-			else if (c == 'j' &&  ctx->position + SAMPLE_RATE*20 < total_size)
-				ctx->position += SAMPLE_RATE*20;
-			else if (c == 'h' && ctx->position >= SAMPLE_RATE*5)
-				ctx->position -= SAMPLE_RATE*5;
-			else if (c == 'k' && ctx->position >= SAMPLE_RATE*20)
-				ctx->position -= SAMPLE_RATE*20;
+			if (c == 'l' && ctx->position + SAMPLE_RATE < total_size)
+				ctx->position += SAMPLE_RATE;
+			else if (c == 'j' &&  ctx->position + SAMPLE_RATE*10 < total_size)
+				ctx->position += SAMPLE_RATE*10;
+			else if (c == 'h' && ctx->position >= SAMPLE_RATE)
+				ctx->position -= SAMPLE_RATE;
+			else if (c == 'k' && ctx->position >= SAMPLE_RATE*10)
+				ctx->position -= SAMPLE_RATE*10;
 			else if (c == '0') {
 				ctx->position = 0;
 			}

@@ -61,6 +61,8 @@ const static Harmonics_t har_arr_piano1[] = {
 	{15, 0.004, 17},
 }, har_arr_none[] = {
 	{1,  1.00, 0},
+}, har_arr_openhat[] = {
+	{1,  1.00, 10},
 }, har_arr_h3[] = {
 	{1, 1.000, 0}, {2, 0.100, 0}, {3, 0.800, 0}, {4, 0.100, 0}, {5, 0.600, 0}, {6, 0.100, 0}, {7, 0.400, 0}, {8, 0.100, 0},
 	{9, 0.200, 0}, {10, 0.050, 0}, {11, 0.100, 0}, {12, 0.020, 0}, {13, 0.050, 0}, {14, 0.010, 0}, {15, 0.020, 0}
@@ -74,9 +76,16 @@ const static Harmonics_t har_arr_piano1[] = {
 HARMONICS_LIST
 #undef HARMONIC
 
+/* 供鼓使用（频率递减） */
 double flo_inverse_liner(double t)
 {
 	return 1 / (10*t + 1);
+}
+
+double flo_rand(double t)
+{
+	(void)t;
+	return (double)(rand() % UINT16_MAX - INT16_MAX)/INT16_MAX;
 }
 
 /**

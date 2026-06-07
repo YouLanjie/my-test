@@ -7,7 +7,6 @@
  */
 
 #include "../core.h"
-#include <math.h>
 
 uint32_t SAMPLE_RATE = 44100;
 
@@ -33,6 +32,42 @@ WavHeader_t create_wav_header(uint32_t duration)
 	/*printf("DATA_SIZE:%d\nFILE_SIZE:%d\nDELTER:%d\n",*/
 	 /*data_size,header->file_size,header->file_size-data_size);*/
 	return header;
+}
+
+/* 返回索引，-1表未匹配,-2表有类似匹配,
+ * 传入的*possible若为-1则默认自动打印提示信息 */
+int str_switch(const char *strlist[], int listlen, const char *str, int *possible)
+{
+	if (!strlist || !str || listlen <= 0) return -1;
+	int i = 0, j = 0, max_similar = 0, msid = 0;
+	bool print = (*possible == -1);
+	for (; i < listlen && strlist[i]; i++) {
+		for (j = 0; strlist[i][j] == str[j]; j++) {
+			if (str[j]) continue;
+			j = -1;
+			break;
+		}
+		if (j < 0) return i;
+		if (j > max_similar) {
+			max_similar = j;
+			msid = i;
+		}
+	}
+
+	if (max_similar > 0) {
+		if (possible) *possible = msid;
+		if (print && *possible >= 0 && *possible < listlen)
+			printf("[WARN] '%s'未匹配，是否想找'%s'?\n", str, strlist[msid]);
+		return -2;
+	}
+
+	if (!print) return -1;
+	printf("[WARN] '%s'未匹配,合法值有:\n", str);
+	for (i = 0; i < listlen && strlist[i]; i++) {
+		printf("  - %d: %s\n", i, strlist[i]);
+	}
+	return -1;
+
 }
 
 /* 创建并初始化双二阶滤波器
@@ -96,23 +131,27 @@ void biquad_compile(Biquad_t *p)
 void biquad_set(Biquad_t *bq, char *key, char *value)
 {
 	if (!bq || !value) return;
+	int possible = -1;
 	if (!key || !*key) {
-		if (strcmp(value, "low-pass") == 0) bq->bq_type = BQ_LP;
-		else if (strcmp(value, "high-pass") == 0) bq->bq_type = BQ_HP;
-		else if (strcmp(value, "band-pass") == 0) bq->bq_type = BQ_BP;
-		else {
+		switch (str_switch2(value, &possible,
+			"low-pass", "high-pass", "band-pass")) {
+		case 0: bq->bq_type = BQ_LP; break;
+		case 1: bq->bq_type = BQ_HP; break;
+		case 2: bq->bq_type = BQ_BP; break;
+		default:
 			bq->bq_type = BQ_NOSET;
-			LOG("不可用的滤波器：%s", value);
+			printf("[WARN] 不可用的滤波器设置\n");
+			break;
 		}
 		return;
 	}
 	if (bq->bq_type == BQ_NOSET) return;
 
-	if (strcmp(key, "freq") == 0) {
-		bq->fc = atof(value);
-	} else if (strcmp(key, "bw") == 0) {
-		bq->bw = atof(value);
-	} else return;
+	double v = atof(value);
+	switch (str_switch2(key, &possible, "freq", "bw")) {
+	case 0: bq->fc = v; break;
+	case 1: bq->bw = v; break;
+	}
 	biquad_compile(bq);
 	return;
 }
@@ -121,7 +160,7 @@ void biquad_set(Biquad_t *bq, char *key, char *value)
  * x：相位 */
 double biquad_apply(Biquad_t *f, double x)
 {
-	if (!f) return x;
+	if (!f || f->bq_type == BQ_NOSET) return x;
 	double y = f->b0*x + f->b1*f->x1 + f->b2*f->x2 \
 		   - f->a1*f->y1 - f->a2*f->y2;
 	// 更新延迟单元

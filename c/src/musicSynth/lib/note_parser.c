@@ -73,44 +73,6 @@ void check_notes(Note_t *note, bool print)
 }
 #undef p
 
-#define str_switch2(str, possible, ...) \
-	str_switch((const char*[]){__VA_ARGS__}, \
-		   sizeof((const char*[]){__VA_ARGS__})/sizeof(char*),\
-		   str, possible)
-static int str_switch(const char *strlist[], int listlen, const char *str, int *possible)
-{
-	if (!strlist || !str || listlen <= 0) return -1;
-	int i = 0, j = 0, max_similar = 0, msid = 0;
-	bool print = (*possible == -1);
-	for (; i < listlen && strlist[i]; i++) {
-		for (j = 0; strlist[i][j] == str[j]; j++) {
-			if (str[j]) continue;
-			j = -1;
-			break;
-		}
-		if (j < 0) return i;
-		if (j > max_similar) {
-			max_similar = j;
-			msid = i;
-		}
-	}
-
-	if (max_similar > 0) {
-		if (possible) *possible = msid;
-		if (print && *possible >= 0 && *possible < listlen)
-			printf("[WARN] '%s'未匹配，是否想找'%s'?\n", str, strlist[msid]);
-		return -2;
-	}
-
-	if (!print) return -1;
-	printf("[WARN] '%s'未匹配,合法值有:\n", str);
-	for (i = 0; i < listlen && strlist[i]; i++) {
-		printf("  - %d: %s\n", i, strlist[i]);
-	}
-	return -1;
-
-}
-
 void notedata_set(NoteData_t *p, char *key, char *value)
 {
 	if (!p || !value || !key || !*key) return;
@@ -128,11 +90,12 @@ void notedata_set(NoteData_t *p, char *key, char *value)
 	case 1:
 		possible = -1;
 		switch (str_switch2(value, &possible,
-			"sin", "triangle", "sawtooth", "noise")) {
+			"sin", "square", "triangle", "sawtooth", "noise")) {
 		case 0: p->wave_func = sin; break;
-		case 1: p->wave_func = wave_triangle; break;
-		case 2: p->wave_func = wave_sawtooth; break;
-		case 3: p->wave_func = wave_noise;  break;
+		case 1: p->wave_func = wave_square; break;
+		case 2: p->wave_func = wave_triangle; break;
+		case 3: p->wave_func = wave_sawtooth; break;
+		case 4: p->wave_func = wave_noise;  break;
 		}
 		break;
 	case 2:
@@ -225,10 +188,17 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 		break;
 	case 4:
 		possible = -1;
-		switch (str_switch2(value, &possible, "piano", "piano2", "piano3", "drum")) {
+		switch (str_switch2(value, &possible,
+			"piano", "piano2", "piano3", "drum", "hi-hat")) {
 		case 0:
 			data->wave_func = sin;
 			data->har_func = har_set_piano1;
+			note->adsr = (ADSR_t){
+				.attack  = 0.01,
+				.decay   = 0.3,
+				.sustain = 0.7,
+				.release = 0.2
+			};
 			if (note->biquad) *note->biquad = (Biquad_t){};
 			break;
 		case 1:
@@ -247,20 +217,17 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 			data->flo_freq_func = flo_inverse_liner;
 			if (note->biquad) *note->biquad = (Biquad_t){};
 			break;
+		case 4:
+			data->wave_func = wave_noise;
+			data->har_func = har_set_openhat;
+			note->adsr = (ADSR_t){
+				.attack  = 0.001,
+				.decay   = 1.0,
+				.sustain = 1.0,
+				.release = 0.0
+			};
+			break;
 		}
-		/* 未完成 
-		case INST_HIHAT:
-		wave_func = WF_SQUARE;
-		if (harmonics == HAR_NOSET) harmonics = HAR_NONE;
-		if (!p->bq) p->bq = BQ_HP;
-		double (*func)(double) = wave_funcs[wave_func];
-		double f2 = f;
-		for (int i = 1; i < 8; ++i) {
-			value += har_amps[HAR_PIANO][i] * func(2 * M_PI * f2 * x);
-			f2 += rand() % 50;
-		}
-		value = tanh(value);
-		break;*/
 		break;
 	}
 	*ind = 0;
@@ -359,7 +326,7 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx)
 		.ind = 0,
 		.ch = 0,
 		.pcm_data = NULL,
-		.pNext = NULL,
+		.pNext = NULL,    /* 平时存储上一个节点的地址(biquad_set用) */
 		.flg_left = true,
 		.flg_right = true,
 		.adsr = (ADSR_t){
@@ -418,7 +385,10 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx)
 				if (p->flg_portamento) note.pNext->flg_be_portam = true;
 				if (fade) note.pNext->amplitude = p->amplitude*(1.0+fade);
 			}
+			note.pNext->pNext = p;
 			p = note.pNext;
+			note.pNext = note.pNext->pNext;
+			p->pNext = NULL;
 			continue;
 		} else if (note.ch == ':') {
 			setting_mode = 1;
