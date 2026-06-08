@@ -87,7 +87,17 @@ void notedata_set(NoteData_t *p, char *key, char *value)
 	case 5: p->notes = f > 0 ? f : 4; break;
 	case 6: p->type = f > 0 ? f : 4; break;
 	case 3: if (strcmp(value, "drum")) p->flo_freq_func = flo_inverse_liner; break;
-	case 1:
+	case 2: {
+#define HARMONIC(x) har_set_##x,
+		size_t (*har_funcs[])(const Harmonics_t **) = {HARMONICS_LIST};
+#undef HARMONIC
+		possible = -1;
+#define HARMONIC(x) #x,
+		int ind = str_switch2(value, &possible, HARMONICS_LIST);
+#undef HARMONIC
+		if (ind >= 0 && ind < (int)ARRAY_LEN(har_funcs)) p->har_func = har_funcs[ind];
+		break;
+	} case 1:
 		possible = -1;
 		switch (str_switch2(value, &possible,
 			"sin", "square", "triangle", "sawtooth", "noise")) {
@@ -97,11 +107,6 @@ void notedata_set(NoteData_t *p, char *key, char *value)
 		case 3: p->wave_func = wave_sawtooth; break;
 		case 4: p->wave_func = wave_noise;  break;
 		}
-		break;
-	case 2:
-#define HARMONIC(x) if (strcmp(value, #x) == 0) p->har_func = har_set_##x; else
-		HARMONICS_LIST LOG("无效的泛音名称: '%s'", value);
-#undef HARMONIC
 		break;
 	}
 	return;

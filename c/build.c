@@ -60,10 +60,11 @@ CLIBS_t CLIBS[] = {
 #undef LIB
 
 #define FLG(f, l, ...) (CFLAGS_t){.filename=SOURCE_DIR f, .libs=l, __VA_ARGS__}
-#define MUS(f, l, ...) FLG("musicSynth/" f, l" m cmusicsynth", .flg_comp="-fopenmp", .flg_link="-fopenmp", __VA_ARGS__)
+#define MUS(f, l, ...) FLG("musicSynth/" f, l" m cmusicsynth", __VA_ARGS__)
 CFLAGS_t CFILEFLAGS[] = {
 	MUS("lib/core.c",          "m\0",),
 	MUS("alsa_play.c",         "asound",),
+	MUS("sdl2_play.c",         "SDL2",),
 	MUS("music_synth.c",       ,),
 
 	FLG("render3d/render3d.c", "m render3d"),

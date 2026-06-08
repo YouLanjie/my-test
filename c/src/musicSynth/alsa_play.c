@@ -170,8 +170,8 @@ int main(int argc, char *argv[])
 			if (ctx->amplitude > 100 || ctx->amplitude < 0) ctx->amplitude = 1.0;
 			break;
 		case 'I':
-		case 'i': strlcpy(input, optarg, sizeof(input)); break;
-		case 'f': strlcpy(wavfile, optarg, sizeof(input)); break;
+		case 'i': strncpy(input, optarg, sizeof(input)); break;
+		case 'f': strncpy(wavfile, optarg, sizeof(input)); break;
 		case 'n': ctx->flg_no_fade = true; break;
 		case 'm': ctx->flg_smooth = true; break;
 		case 'H': ctx->flg_no_har = true; break;
@@ -212,24 +212,24 @@ int main(int argc, char *argv[])
 			snd_pcm_pause(pcm, pause?0:1);
 			pause ^= 1;
 		} else if (c == 'j' || c == 'l' || c == 'k' || c == 'h' || c == '0') {
-			snd_pcm_drop(pcm);
-			snd_pcm_prepare(pcm);
-			if (c == 'l' && ctx->position + SAMPLE_RATE < total_size)
-				ctx->position += SAMPLE_RATE;
-			else if (c == 'j' &&  ctx->position + SAMPLE_RATE*10 < total_size)
-				ctx->position += SAMPLE_RATE*10;
-			else if (c == 'h' && ctx->position >= SAMPLE_RATE)
-				ctx->position -= SAMPLE_RATE;
-			else if (c == 'k' && ctx->position >= SAMPLE_RATE*10)
-				ctx->position -= SAMPLE_RATE*10;
-			else if (c == '0') {
-				ctx->position = 0;
+			size_t newpos = ctx->position;
+			size_t step = (c == 'j' || c == 'k') ? SAMPLE_RATE*10 : SAMPLE_RATE;
+			int8_t direction = (c == 'h' || c == 'k') ? -1 : 1;
+			if (direction > 0 ? newpos+step <= total_size : newpos >= step+0)
+				newpos += step*direction;
+			if (c == '0') newpos = 0;
+			if (newpos != ctx->position) {
+				snd_pcm_drop(pcm);
+				snd_pcm_prepare(pcm);
+				ctx->position = newpos;
+				music_ctx_tracks_reset(ctx);
 			}
-			music_ctx_tracks_reset(ctx);
 		} else if (c == '='){ ctx->amplitude += 0.005;
 		} else if (c == '-'){ if (ctx->amplitude-0.005 >= 0) ctx->amplitude -= 0.005;
 		} else if (c == '+'){ ctx->amplitude += 0.1;
 		} else if (c == '_'){ if (ctx->amplitude-0.1 >= 0) ctx->amplitude -= 0.1;
+		} else if (c == '\\') {
+			ctx->amplitude = 1;
 		} else if (c == 'i'){
 			printf("\n[INFO] 音量系数: %.1lf%%\n", ctx->amplitude*100);
 		}
