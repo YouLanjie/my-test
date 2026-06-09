@@ -557,10 +557,10 @@ def build_tex(config, outputf:Path, tex):
         minutes = int((seconds % 3600) // 60)
         secs = int(seconds % 60)
         return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-    def run_xelatex(total_time=0.0, total_page=0.0):
+    def run_xelatex(total_page=0.0):
         pat_pages = re.compile(r"^\[(\d+)\]|^Output written on .* \((\d+) pages?\)")
         cmd = ["xelatex", outputf]
-        t1 = time.time()
+        t1 = time.monotonic()
         t2 = t1
         now_page = 0
         log = deque(maxlen=20)
@@ -578,9 +578,9 @@ def build_tex(config, outputf:Path, tex):
             i = p.stdout.readline()[:-1]
             log.append(i)
             if ret := pat_pages.match(i):
-                t2 = time.time()
+                t2 = time.monotonic()
                 now_page = int(ret.group(1) or ret.group(2))
-                hint = f" ({(now_page)/total_page*100:.1f}%) 剩余{int(total_time+10-t2+t1)}秒  " \
+                hint = f" ({(now_page)/total_page*100:.1f}%) 剩余{int((total_page/now_page-1)*(t2-t1))}秒  " \
                         if total_page else ""
                 print(f"[{seconds_to_hms(t2-t1)}] 进度:第{now_page}页{hint}", end="\r")
             sys.stdout.flush()
@@ -591,14 +591,14 @@ def build_tex(config, outputf:Path, tex):
             pytools.print_err("[WARN] 遇到错误，最后20行输出：")
             pytools.print_err("\n".join(log))
             raise subprocess.CalledProcessError(p.returncode, cmd)
-        return t2-t1, now_page
+        return now_page
 
     print(f"[INFO] 自动构建'{outputf}'")
     try:
-        total_time, total_page = 0, 0
+        total_page = 0
         logfile = outputf.parent/(outputf.stem+".log")
         if config.cfg["setting"]["mktoc"]:
-            total_time,total_page = run_xelatex()
+            total_page = run_xelatex()
             if logfile.is_file():
                 s = logfile.read_text()
                 if sys.stderr and sys.stderr.isatty():
@@ -608,7 +608,7 @@ def build_tex(config, outputf:Path, tex):
                     print("\033[0m", end="", file=sys.stderr)
                     sys.stderr.flush()
             print("[INFO] 执行第二遍编译")
-        run_xelatex(total_time, total_page)
+        run_xelatex(total_page)
         if logfile.is_file():
             s = logfile.read_text()
             analyse_texlog(s, tex)
