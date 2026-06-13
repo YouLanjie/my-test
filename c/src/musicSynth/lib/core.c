@@ -200,7 +200,7 @@ void notedata_setlen(NoteData_t *p)
 	if (!p) return;
 	while (p) {
 		p->sample_num = note_sample_len_get(p);
-		p = p->pNext;
+		p = p->next;
 	}
 }
 

@@ -53,12 +53,12 @@ size_t music_ctx_stat(MusicCtx_t *ctx)
 	while (p) {
 		count1++;
 		if (p->track == 0 && p->pcm_data) count3 += p->pcm_data->sample_num;
-		p = p->pNext;
+		p = p->next;
 	}
 	NoteData_t *nd = ctx->notes->pcm_data;
 	while (nd) {
 		count2++;
-		nd = nd->pNext;
+		nd = nd->next;
 	}
 	total_len = count3;
 	printf("[INFO] 全谱共计%lu个音符，不同的音符有%lu个\n", count1, count2);
@@ -104,7 +104,7 @@ bool music_ctx_tracks_reset(MusicCtx_t *ctx)
 			max_len = 0;
 			memset(ctx->tracks, 0, sizeof(ctx->tracks));
 		}
-		p = p->pNext;
+		p = p->next;
 	}
 	if (!p) return false;
 	if (!ctx->tracks[0]) {
@@ -114,23 +114,25 @@ bool music_ctx_tracks_reset(MusicCtx_t *ctx)
 	return true;
 }
 
-/* 将单个Note_t的数据转入buffer */
-static bool music_ctx_note2buf(MusicCtx_t *ctx, Note_t *p, size_t *i, size_t offset)
+/* 将单个Note_t的数据转入buffer
+ * i: ctx->buffer的索引位置
+ * idx_from: 当前读取音符缓存数据(pcm_data->pwav)的索引 */
+static bool music_ctx_note2buf(MusicCtx_t *ctx, Note_t *p, size_t *i, size_t idx_from)
 {
 	if (!ctx || !p || !i) return false;
 	if (*i >= ctx->buffer_len) return false;
 	// if (*i+offset >= p->pcm_data->sample_num) return 0;
 
 	double value = 0;
-	for (; *i < ctx->buffer_len && *i+offset < p->pcm_data->sample_num; (*i)++) {
+	for (; *i < ctx->buffer_len && idx_from < p->pcm_data->sample_num; (*i)++, idx_from++) {
 		if (!p->pcm_data->pwav) note_gen_wave(p->pcm_data, ctx->flg_no_har);
 		if (!p->pcm_data->pwav) {
-			*i += p->pcm_data->sample_num - (*i+offset);
+			*i += p->pcm_data->sample_num - idx_from;
 			if (*i > ctx->buffer_len) *i = ctx->buffer_len;
 			return true;
 		}
-		value = p->pcm_data->pwav[*i+offset];
-		if (!ctx->flg_no_fade) value *= adsr_get_envelope(&p->adsr, *i+offset, p->pcm_data->sample_num);
+		value = p->pcm_data->pwav[idx_from];
+		if (!ctx->flg_no_fade) value *= adsr_get_envelope(&p->adsr, idx_from, p->pcm_data->sample_num);
 		if (p->biquad) value = biquad_apply(p->biquad, value);
 		value *= p->amplitude;
 		if (p->flg_left)  ctx->buffer[*i*2]   += value;
@@ -139,42 +141,74 @@ static bool music_ctx_note2buf(MusicCtx_t *ctx, Note_t *p, size_t *i, size_t off
 	return true;
 }
 
-static bool music_ctx_group_synth(MusicCtx_t *ctx, Note_t *p, Note_t *pl, size_t *i, size_t offset)
+static bool music_ctx_group_synth(MusicCtx_t *ctx, Note_t *p, size_t *i, size_t idx_from)
 {
 	if (!ctx || !p || !p->pcm_data || !i) return false;
 	if (*i >= ctx->buffer_len) return false;
-	if (!pl) pl = note_search_last(ctx->notes, p);
-	if (pl && pl->pcm_data && p == pl->pNext &&
-	    ((p->flg_be_portam && pl->flg_portamento) || 
-	     (p->flg_be_legato && pl->flg_legato))) {
-		p = pl;
-		offset+=p->pcm_data->sample_num;
-	}
-	if (!p->flg_portamento && !p->flg_legato && !p->flg_be_legato) return false;
-	if ((p->flg_portamento||p->flg_legato)&&(!p->pNext||!p->pNext->pcm_data)) return false;
+	if (!p->flg_portamento && !p->flg_be_portam && !p->flg_legato && !p->flg_be_legato) return false;
+	if ((p->flg_portamento||p->flg_legato)&&(!p->next||!p->next->pcm_data)) return false;
+	if ((p->flg_be_portam||p->flg_be_legato)&&(!p->prev||!p->prev->pcm_data)) return false;
 
-	const Harmonics_t *har;
-	size_t n = 0, j = 0;
-	if (p->pcm_data->har_func) n = p->pcm_data->har_func(&har);
-	if (n == 0 || ctx->flg_no_har) {
-		n = 1;
-		har = (Harmonics_t[]){{1, 1, 0}};
+	/* 统计片段总时长 */
+	size_t offset_portam = (p->flg_be_portam && p->prev && p->prev->pcm_data) ? p->prev->pcm_data->sample_num : 0,
+	       total_portam_len = p->pcm_data->sample_num + \
+				  ((p->flg_portamento && p->next && p->next->pcm_data) ? p->next->pcm_data->sample_num : offset_portam),
+	       offset_played = 0,
+	       total_legato_len = 0;
+	for (Note_t *note = p; note && note->pcm_data; note = note->next) {
+		if (note->track != p->track) break;
+		if (!(note->flg_be_portam || note->flg_portamento || note->flg_be_legato || note->flg_legato)) break;
+		if (note != p && note->flg_legato && !note->flg_be_legato) break;
+		total_legato_len += note->pcm_data->sample_num;
+	}
+	for (Note_t *note = p->prev; (p->flg_be_legato||p->flg_be_portam) && note && note->pcm_data; note = note->prev) {
+		if (note->track != p->track) break;
+		if (!(note->flg_be_portam || note->flg_portamento || note->flg_be_legato || note->flg_legato)) break;
+		total_legato_len += note->pcm_data->sample_num;
+		offset_played += note->pcm_data->sample_num;
+		if (note->flg_legato && !note->flg_be_legato) break;
 	}
 
-	size_t duration = (p->flg_portamento||p->flg_legato) ? \
-			  p->pcm_data->sample_num+p->pNext->pcm_data->sample_num:\
-			  p->pcm_data->sample_num,
-	       i0 = *i;
 	double value = 0;
-	double t = 0,
-	       f = 0;
+	double t = 0, f = 0;
+	size_t idx = 0, main_idx = 0;
+	Note_t *current_note = p;
 
-	while (p && p->pcm_data && *i+offset < duration) {
-		for (; *i < ctx->buffer_len; (*i)++) {
-			if (*i+offset >= duration) break;
+	enum MODE_t {MODE_PREV, MODE_NOW, MODE_NEXT, MODE_END};
+	for (enum MODE_t mode = MODE_PREV; mode < MODE_END; mode++) {
+		if (mode == MODE_PREV) {
+			// 排除被滑音、非被连音
+			if (!p->flg_be_legato||p->flg_be_portam||!p->prev||p->prev->track!=p->track) continue;
+			// 切到上一节点
+			p = p->prev;
+		}
+		if (!p || !p->pcm_data) break;
+		if (p->track != current_note->track) break;
+		if (!(p->flg_be_portam || p->flg_portamento || p->flg_be_legato || p->flg_legato)) break;
+		if (mode == MODE_NEXT && p->flg_legato && !p->flg_be_legato) break;
 
-			t = (double)(*i+offset) / SAMPLE_RATE;    // 当前时间（秒）
-			f = p->flg_portamento ? get_portamento_freq(p->pcm_data->freq, p->pNext->pcm_data->freq, (double)(*i+offset)/duration, ctx->flg_smooth) : \
+		if ((p->flg_portamento||p->flg_legato)&&(!p->next||!p->next->pcm_data)) break;
+		if ((p->flg_be_portam||p->flg_be_legato)&&(!p->prev||!p->prev->pcm_data)) break;
+
+		// 配置泛音列
+		const Harmonics_t *har = NULL;
+		size_t n = 0, j = 0, origin_idx_from = idx_from;
+		if (p->pcm_data->har_func) n = p->pcm_data->har_func(&har);
+		if (n == 0 || ctx->flg_no_har || !har) {
+			n = 1;
+			har = (Harmonics_t[]){{1, 1, 0}};
+		}
+
+		idx = *i;
+		// if (mode == MODE_PREV) idx += p->pcm_data->sample_num*2/3;
+
+		double f1 = p->flg_portamento ? p->pcm_data->freq       : (p->flg_be_portam ? p->prev->pcm_data->freq : 0),
+		       f2 = p->flg_portamento ? p->next->pcm_data->freq : (p->flg_be_portam ? p->pcm_data->freq       : 0);
+		for (; idx < ctx->buffer_len && idx_from < current_note->pcm_data->sample_num; idx++, idx_from++) {
+			if (!p || !p->pcm_data) break;  // 奇怪的边界检查要求
+			t = (double)(idx_from+offset_played) / SAMPLE_RATE;    // 当前时间（秒）
+			f = p->flg_portamento||p->flg_be_portam ? \
+			    get_portamento_freq(f1, f2, (double)(idx_from+offset_portam)/total_portam_len, ctx->flg_smooth) : \
 			    p->pcm_data->freq;
 			for (j = 0, value = 0; j < n; j++) {
 				value += har[j].amplitude * p->pcm_data->wave_func(M_PI*2 * har[j].freq_times * f * t) *
@@ -183,13 +217,14 @@ static bool music_ctx_group_synth(MusicCtx_t *ctx, Note_t *p, Note_t *pl, size_t
 
 			// 应用 ADSR 包络
 			if (!ctx->flg_no_fade)
-				value *= adsr_get_envelope(&p->adsr, *i+offset, duration);
+				value *= adsr_get_envelope(&p->adsr, idx_from+offset_played, total_legato_len);
 
 			// 可选：连音音量渐变（fade in/out）
-			if (p->flg_be_legato && pl && pl->pcm_data) {      // 被连音音符，起始渐入
-				value *= sigmoid((int32_t)(*i+offset-pl->pcm_data->sample_num) / (SAMPLE_RATE / 100.0));
-			} if (p->flg_legato) {         // 连音音符，尾部渐出
-				value *= sigmoid((int32_t)(p->pcm_data->sample_num - (*i+offset)) / (SAMPLE_RATE / 100.0));
+			if (p->flg_be_legato && p->prev && p->prev->pcm_data && mode != MODE_PREV) {      // 被连音音符，起始渐入
+				value *= sigmoid((int32_t)(mode == MODE_NOW ? idx_from: idx_from - p->prev->pcm_data->sample_num) / (SAMPLE_RATE / 100.0));
+			}
+			if (p->flg_legato && p && p->pcm_data && mode != MODE_NEXT) {         // 连音音符，尾部渐出
+				value *= sigmoid((int32_t)(mode == MODE_NOW ? p->pcm_data->sample_num - idx_from: -idx_from) / (SAMPLE_RATE / 100.0));
 			}
 
 			// 应用滤波器
@@ -199,14 +234,16 @@ static bool music_ctx_group_synth(MusicCtx_t *ctx, Note_t *p, Note_t *pl, size_t
 			value *= p->amplitude;
 
 			// 累加到输出缓冲区（立体声）
-			if (p->flg_left)  ctx->buffer[(*i) * 2]     += value;
-			if (p->flg_right) ctx->buffer[(*i) * 2 + 1] += value;
+			if (p->flg_left)  ctx->buffer[(idx) * 2]     += value;
+			if (p->flg_right) ctx->buffer[(idx) * 2 + 1] += value;
 		}
-		if (!(p->flg_legato && p->pNext && p->pNext->flg_be_legato)) break;
-		pl = p;
-		p = p->pNext;
-		*i = i0;
+		if (mode == MODE_NOW) main_idx = idx;
+
+		idx_from = origin_idx_from;
+		p = p->next;
+		if (p && p->flg_be_portam) p = p->next;
 	}
+	*i = main_idx;
 	return true;
 }
 
@@ -218,7 +255,7 @@ static bool music_ctx_group_synth(MusicCtx_t *ctx, Note_t *p, Note_t *pl, size_t
 // o1: offset_played || sum(len)
 //
 //       | <--------(p1-p0+i)---------> |
-//       | <------o1------> | <--ind--> |
+//       | <------o1------> | <--idx--> |
 // TRACK /------/---+-------/-----------+---/------/------/------/
 //       p0        p1 <--------i------> |
 // BUFF             /-------------------+-----------------/
@@ -233,7 +270,7 @@ static bool music_ctx_group_synth(MusicCtx_t *ctx, Note_t *p, Note_t *pl, size_t
 // o3: offset_refit = p3 - p1
 //
 //                   | <--------(p3-p2+i)----------> |
-//                   | <---o3---> | <-o2-> | <-ind-> |
+//                   | <---o3---> | <-o2-> | <-idx-> |
 // TRACK 1                        /--------/---------+--/---------------/
 // TRACK 0 /---/-----+------------/--------------/---+-----------/------/
 //         p0       p1 <----------+---i------------> |
@@ -246,7 +283,7 @@ static bool music_ctx_group_synth(MusicCtx_t *ctx, Note_t *p, Note_t *pl, size_t
 // o4: (neo) offset_played || sum(len)
 //
 //              | <-----------------(p3-p2+i)--------------------> |
-//              | <-------------o4------------------> | <---ind--> |
+//              | <-------------o4------------------> | <---idx--> |
 // TRACK 1      /--------/---------+--/---------------/------------+----/
 // TRACK 0 /----/--------------/---+-----------/------/------------+---/
 //             p2                 p3 <--------------i------------> |
@@ -254,7 +291,12 @@ static bool music_ctx_group_synth(MusicCtx_t *ctx, Note_t *p, Note_t *pl, size_t
 //
 //
 // 总结：
-// ind + offset_played + offset_refit == position - track_position + i
+// idx + offset_played + offset_refit == position - track_position + i
+// i:             已生成的 PCM 样本总数（同时也是循环过程中累计的进度偏移，单位：样本帧）
+// offset:        当前轨道起始到处理位置的绝对样本偏移： offset = ctx->position - ctx->track_position
+// offset_played: 当前轨道上，已遍历过的 Note 节点累计样本数（每处理一个 Note，累加其 pcm_data->sample_num）
+// offset_refit:  重拟合位移：当多轨对齐时，因 ctx->position 和 ctx->track_position 被重置而产生的修正值。用于保证 INDEX 计算正确。
+
 
 /* 合并PCM数据 */
 size_t music_ctx_gen_pcm(MusicCtx_t *ctx)
@@ -263,7 +305,7 @@ size_t music_ctx_gen_pcm(MusicCtx_t *ctx)
 	if (!ctx->tracks[0])    /* 刷新查找当前位置 */
 		if (!music_ctx_tracks_reset(ctx)) return 0;
 	memset(ctx->buffer, 0, sizeof(*ctx->buffer)*ctx->buffer_len*2);
-	Note_t *p = NULL, *pl = NULL;
+	Note_t *p = NULL;
 	size_t i = 0,
 	       offset = 0,    /* 相对位移简写 */
 	       offset_played = 0,    /* ctx->track_position到当前节点的位移 */
@@ -275,15 +317,14 @@ size_t music_ctx_gen_pcm(MusicCtx_t *ctx)
 		offset = ctx->position - ctx->track_position;
 		offset_played = 0;
 		for (i = offset_refit; p && p->track == track && p->pcm_data;
-		     offset_played+=p->pcm_data->sample_num, pl = p, p=p->pNext) {
+		     offset_played+=p->pcm_data->sample_num, p=p->next) {
 			if (offset_played+offset_refit > offset+i) break;    /* 避免INDEX为负 */
 			if (INDEX >= p->pcm_data->sample_num) continue;
 			// if (p->biquad) biquad_compile(p->biquad);
 			if (p->flg_legato||p->flg_be_legato||p->flg_portamento||p->flg_be_portam) {
-				if (!music_ctx_group_synth(ctx, p, pl, &i, INDEX-i)) break;
-			} else if (!music_ctx_note2buf(ctx, p, &i, INDEX-i)) break;
+				if (!music_ctx_group_synth(ctx, p, &i, INDEX)) break;
+			} else if (!music_ctx_note2buf(ctx, p, &i, INDEX)) break;
 		}
-		// if (i > len) i = len;
 		if (!p) continue;
 		if (i < ctx->buffer_len && track == 0 && p->track != 0) {    /* 单轨结束，开始多音轨部分 */
 			offset_refit += i;

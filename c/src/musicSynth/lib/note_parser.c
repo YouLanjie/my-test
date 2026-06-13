@@ -32,7 +32,7 @@ void check_notes(Note_t *note, bool print)
 	double counter = 0;
 	int track = 0;
 #define p (note->pcm_data)
-	for (; note && p ; note = note->pNext) {
+	for (; note && p ; note = note->next) {
 		if (track!=note->track) {
 			track = note->track;
 			if (print)
@@ -131,7 +131,7 @@ NoteData_t *notedata_search(NoteData_t *pHead, NoteData_t *obj)
 {
 	if (!obj) return NULL;
 	NoteData_t *p = pHead;
-	while (p && notedata_cmp(p, obj) == false) p = p->pNext;
+	while (p && notedata_cmp(p, obj) == false) p = p->next;
 	return p;
 }
 
@@ -185,7 +185,7 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 		if(note->amplitude<0||note->amplitude>=0.8) note->amplitude=0.2;
 		break;
 	case 2:
-		if (!note->biquad || (note->pNext && note->pNext->biquad == note->biquad)) {
+		if (!note->biquad || (note->prev && note->prev->biquad == note->biquad)) {
 			note->biquad = malloc(sizeof(*note->biquad));
 			memset(note->biquad, 0, sizeof(*note->biquad));
 		}
@@ -248,17 +248,18 @@ void note_free(Note_t *p)
 	Note_t *lp;
 	while (p) {
 		lp=p;
-		p=p->pNext;
-		lp->pNext = NULL;
+		p=p->next;
+		lp->prev = NULL;
+		lp->next = NULL;
 		lp->pcm_data = NULL;
 		free(lp);
 	}
 	while (dp) {
 		ldp=dp;
-		dp=dp->pNext;
+		dp=dp->next;
 		if (ldp->pwav) free(ldp->pwav);
 		ldp->pwav = NULL;
-		ldp->pNext = NULL;
+		ldp->next = NULL;
 		free(ldp);
 	}
 	return;
@@ -279,22 +280,11 @@ static bool note_get_nd(Note_t *pH, Note_t *p, NoteData_t *cur_notedata, NoteDat
 		return false;
 	}
 	*p->pcm_data = *cur_notedata;
-	p->pcm_data->pNext = NULL;
+	p->pcm_data->next = NULL;
 
-	if (ndh->pNext) ndh->pNext->pNext = p->pcm_data;
-	ndh->pNext = p->pcm_data;
+	if (ndh->next) ndh->next->next = p->pcm_data;
+	ndh->next = p->pcm_data;
 	return true;
-}
-
-/* 搜索上一个节点（在链表中） */
-Note_t *note_search_last(Note_t *pH, Note_t *obj)
-{
-	if (!pH || !obj) return NULL;
-	while (pH) {
-		if (pH->pNext == obj) break;
-		pH = pH->pNext;
-	}
-	return pH;
 }
 
 /* 解读字符串形式的音符并产生解析好的音符串struct */
@@ -323,7 +313,7 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx)
 		.har_func = har_set_piano1,
 		.flo_freq_func = NULL,
 		.freq = 0,
-		.pNext = NULL,
+		.next = NULL,
 	}, cur_notedata = notedata;
 	/* 顺便存储指针位置等 */
 	Note_t note = {
@@ -331,7 +321,8 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx)
 		.ind = 0,
 		.ch = 0,
 		.pcm_data = NULL,
-		.pNext = NULL,    /* 平时存储上一个节点的地址(biquad_set用) */
+		.prev = NULL,
+		.next = NULL,
 		.flg_left = true,
 		.flg_right = true,
 		.adsr = (ADSR_t){
@@ -372,28 +363,27 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx)
 			}
 
 			/* 创建新节点 */
-			note.pNext = malloc(sizeof(Note_t));
-			if (!note.pNext) {
+			note.next = malloc(sizeof(Note_t));
+			if (!note.next) {
 				note_free(pH);
 				return NULL;
 			}
-			*note.pNext = note;
-			if (!pH) pH = note.pNext;
-			note.pNext->pcm_data = NULL;
-			note.pNext->pNext = NULL;
+			*note.next = note;
+			if (!pH) pH = note.next;
+			note.next->pcm_data = NULL;
+			note.next->prev = p;
+			note.next->next = NULL;
 			cur_notedata = notedata;
 
 			/* 连接上下节点并交换 */
 			if (p) {
-				p->pNext = note.pNext;
-				if (p->flg_legato) note.pNext->flg_be_legato = true;
-				if (p->flg_portamento) note.pNext->flg_be_portam = true;
-				if (fade) note.pNext->amplitude = p->amplitude*(1.0+fade);
+				p->next = note.next;
+				if (p->flg_legato) note.next->flg_be_legato = true;
+				if (p->flg_portamento) note.next->flg_be_portam = true;
+				if (fade) note.next->amplitude = p->amplitude*(1.0+fade);
 			}
-			note.pNext->pNext = p;
-			p = note.pNext;
-			note.pNext = note.pNext->pNext;
-			p->pNext = NULL;
+			p = note.next;
+			note.next = NULL;
 			continue;
 		} else if (note.ch == ':') {
 			setting_mode = 1;

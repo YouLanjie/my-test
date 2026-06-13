@@ -107,7 +107,7 @@ typedef struct NoteData {
 	uint8_t  notes;		/* 以notes分音符为一拍 */
 	uint8_t  beates;	/* 每小节beates拍 */
 
-	struct NoteData *pNext;
+	struct NoteData *next;
 } NoteData_t;
 void notedata_setlen(NoteData_t *p);
 
@@ -130,7 +130,8 @@ typedef struct Note {
 	int ind;
 	int line;
 
-	struct Note *pNext;
+	struct Note *prev;
+	struct Note *next;
 } Note_t;
 
 #define sigmoid(x) (1 - 1/(1+exp(x)))

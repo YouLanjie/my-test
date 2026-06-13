@@ -8,8 +8,6 @@
 #include "core.h"
 #include <errno.h>
 #include <stddef.h>
-#include <stdio.h>
-#include <string.h>
 #include <time.h>
 
 const char *NOTELIST[] = {
@@ -267,7 +265,7 @@ int main(int argc, char *argv[])
 		       (double)ctx->position/SAMPLE_RATE); */
 		if (!sum_size) continue;
 		now = clock();
-		fprintf(stderr, "[%-35.*s] %4.1lf%% (%.1fs/%.1fs) real %.0lfs ETA %.1lfs \r",
+		fprintf(stderr, "[%-35.*s] %4.1lf%% (%.1fs/%.1fs) took %.0lfs ETA %.1lfs \r",
 			(int)(35*sum_size/total_size),
 			"########################################",
 			(double)sum_size/total_size*100.,
