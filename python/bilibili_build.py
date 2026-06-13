@@ -71,7 +71,7 @@ class Video():
         self.maintitle = str(data.get("title"))
         self.owner_id = str(data.get("owner_id"))
         self.owner = data.get("owner_name")
-        if not self.owner is None:
+        if self.owner:
             userlist[self.owner_id] = self.owner
         self.danmaku = str(file.parent/"danmaku.xml")
         self.size = data.get("total_bytes")
@@ -160,8 +160,7 @@ class VideosList:
             self._load_from_app(inputd)
         # 同步缺失的用户名
         for _,v in self.videos.items():
-            if not v.owner is None or \
-                    v.owner_id not in self.userlist:
+            if v.owner_id not in self.userlist or (v.owner and v.owner != "None"):
                 continue
             v.owner = self.userlist[v.owner_id]
         self.refresh_list()
@@ -179,14 +178,13 @@ class VideosList:
         print(f"共找到 {len(input_f)} 个文件")
         for i in input_f:
             v = Video(i, self.userlist)
+            # 默认换新而不是守旧了。。。
+            self.videos[v.tag] = v
             if len(self.content) > 0 and len(self.content[-1]) > 0 and \
                     self.content[-1][0].dir_parent == v.dir_parent:
                 self.content[-1].append(v)
             else:
                 self.content.append([v])
-            if v.tag in self.videos:
-                continue
-            self.videos[v.tag] = v
     def _load_from_json(self, db:Path):
         if not db.is_file():
             return
@@ -201,6 +199,8 @@ class VideosList:
             if v.tag in self.videos:
                 continue
             self.videos[tag] = v
+            if v.owner_id not in self.userlist and v.owner:
+                self.userlist[v.owner_id] = v.owner
     def dump_to_json(self) -> str:
         """导出为json字符串"""
         videos = {k:vars(v) for k,v in self.videos.items()}
