@@ -45,6 +45,20 @@ typedef struct {
 WavHeader_t create_wav_header(uint32_t duration);
 
 
+// 解析器上下文定义
+struct StringCtx_t {
+	int ch;
+	int line;
+	int col;
+	const char *desc;
+};
+int str_switch(const char *strlist[], int listlen, const char *str, int *possible, struct StringCtx_t *ctx);
+#define str_switch2(str, possible, desc, ...) \
+	str_switch((const char*[]){__VA_ARGS__}, \
+		   sizeof((const char*[]){__VA_ARGS__})/sizeof(char*),\
+		   str, possible, desc)
+
+
 /*
  * 技巧（From ioccc 2024/straadt）
  * · 底鼓来自正弦波，提高音调以产生通鼓。
@@ -67,7 +81,7 @@ typedef struct {
 	enum BiquadType bq_type;
 } Biquad_t;
 // 滤波器函数
-void biquad_set(Biquad_t *bq, char *key, char *value);
+void biquad_set(Biquad_t *bq, char *key, char *value, struct StringCtx_t ctx);
 void biquad_compile(Biquad_t *p);
 double biquad_apply(Biquad_t *f, double x);
 
@@ -175,11 +189,6 @@ void check_notes(Note_t *p, bool print);
 void note_free(Note_t *p);
 Note_t *note_parser(int (*stream)(void*), void *stream_ctx);
 Note_t *note_search_last(Note_t *pH, Note_t *obj);
-int str_switch(const char *strlist[], int listlen, const char *str, int *possible);
-#define str_switch2(str, possible, ...) \
-	str_switch((const char*[]){__VA_ARGS__}, \
-		   sizeof((const char*[]){__VA_ARGS__})/sizeof(char*),\
-		   str, possible)
 
 // 声音生成处理
 void note_gen_wave(NoteData_t *p, bool no_har);

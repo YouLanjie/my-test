@@ -36,7 +36,7 @@ WavHeader_t create_wav_header(uint32_t duration)
 
 /* 返回索引，-1表未匹配,-2表有类似匹配,
  * 传入的*possible若为-1则默认自动打印提示信息 */
-int str_switch(const char *strlist[], int listlen, const char *str, int *possible)
+int str_switch(const char *strlist[], int listlen, const char *str, int *possible, struct StringCtx_t *ctx)
 {
 	if (!strlist || !str || listlen <= 0) return -1;
 	int i = 0, j = 0, max_similar = 0, msid = 0;
@@ -56,13 +56,21 @@ int str_switch(const char *strlist[], int listlen, const char *str, int *possibl
 
 	if (max_similar > 0) {
 		if (possible) *possible = msid;
-		if (print && *possible >= 0 && *possible < listlen)
-			printf("[WARN] '%s'未匹配，是否想找'%s'?\n", str, strlist[msid]);
+		if (print && *possible >= 0 && *possible < listlen) {
+			if (ctx) printf("[WARN] (%d:%d:'%c') %s没有匹配到'%s'，是否想找'%s'?\n",
+					ctx->line, ctx->col, ctx->ch,
+					ctx->desc?ctx->desc:"", str, strlist[msid]);
+			else printf("[WARN] 没有匹配到'%s'，是否想找'%s'?\n",
+				    str, strlist[msid]);
+		}
 		return -2;
 	}
 
 	if (!print) return -1;
-	printf("[WARN] '%s'未匹配,合法值有:\n", str);
+	if (ctx) printf("[WARN] (%d:%d:'%c') %s没有'%s',合法值有:\n",
+			ctx->line, ctx->col, ctx->ch,
+			ctx&&ctx->desc?ctx->desc:"", str);
+	else printf("[WARN] '%s'未匹配,合法值有:\n", str);
 	for (i = 0; i < listlen && strlist[i]; i++) {
 		printf("  - %d: %s\n", i, strlist[i]);
 	}
@@ -128,12 +136,13 @@ void biquad_compile(Biquad_t *p)
 	};
 }
 
-void biquad_set(Biquad_t *bq, char *key, char *value)
+void biquad_set(Biquad_t *bq, char *key, char *value, struct StringCtx_t ctx)
 {
 	if (!bq || !value) return;
 	int possible = -1;
+	ctx.desc = "BIQUAD.TYPE";
 	if (!key || !*key) {
-		switch (str_switch2(value, &possible,
+		switch (str_switch2(value, &possible, &ctx,
 			"low-pass", "high-pass", "band-pass")) {
 		case 0: bq->bq_type = BQ_LP; break;
 		case 1: bq->bq_type = BQ_HP; break;
@@ -148,7 +157,8 @@ void biquad_set(Biquad_t *bq, char *key, char *value)
 	if (bq->bq_type == BQ_NOSET) return;
 
 	double v = atof(value);
-	switch (str_switch2(key, &possible, "freq", "bw")) {
+	ctx.desc = "BIQUAD.SUBKEY";
+	switch (str_switch2(key, &possible, &ctx, "freq", "bw")) {
 	case 0: bq->fc = v; break;
 	case 1: bq->bw = v; break;
 	}

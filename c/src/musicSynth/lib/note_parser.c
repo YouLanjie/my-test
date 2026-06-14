@@ -73,13 +73,14 @@ void check_notes(Note_t *note, bool print)
 }
 #undef p
 
-void notedata_set(NoteData_t *p, char *key, char *value)
+static void notedata_set(NoteData_t *p, char *key, char *value, struct StringCtx_t ctx)
 {
 	if (!p || !value || !key || !*key) return;
 	int possible = -1;
 	double f = atof(value);
 
-	switch (str_switch2(key, &possible,
+	ctx.desc="NOTE.SUBKEY";
+	switch (str_switch2(key, &possible, &ctx,
 		"speed", "wave_func", "har", "flo",
 		"beates", "notes", "type",)) {
 	case 0: p->speed = f  > 0 ? f : 120; break;
@@ -92,14 +93,16 @@ void notedata_set(NoteData_t *p, char *key, char *value)
 		size_t (*har_funcs[])(const Harmonics_t **) = {HARMONICS_LIST};
 #undef HARMONIC
 		possible = -1;
+		ctx.desc = "HARMONIC";
 #define HARMONIC(x) #x,
-		int ind = str_switch2(value, &possible, HARMONICS_LIST);
+		int ind = str_switch2(value, &possible, &ctx, HARMONICS_LIST);
 #undef HARMONIC
 		if (ind >= 0 && ind < (int)ARRAY_LEN(har_funcs)) p->har_func = har_funcs[ind];
 		break;
 	} case 1:
+		ctx.desc = "WAVE_FUNC";
 		possible = -1;
-		switch (str_switch2(value, &possible,
+		switch (str_switch2(value, &possible, &ctx,
 			"sin", "square", "triangle", "sawtooth", "noise")) {
 		case 0: p->wave_func = sin; break;
 		case 1: p->wave_func = wave_square; break;
@@ -146,24 +149,20 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 	if (*ind <= MAX_LEN_KEY) {
 		if (c == '=') *ind = MAX_LEN_KEY;
 		else if (*ind==MAX_LEN_KEY-1)
-			*ind = MAX_LEN_KEY+MAX_LEN_VALUE-1;    /* 直接挑到value放弃状态 */
-		else if (c == ';') *ind=MAX_LEN_KEY+MAX_LEN_VALUE;
+			*ind = MAX_LEN_KEY+MAX_LEN_VALUE-2;    /* 直接挑到value放弃状态 */
+		else if (c == ';') goto EXIT_AND_CLEAN_UP_KEYVALUE_STATUE;
 		else key[*ind-1] = c;
 		(*ind)++;
 		return 1;
 	}
-	if (*ind > MAX_LEN_KEY+MAX_LEN_VALUE-1) {
-		*ind = 0;
-		memset(key, 0, MAX_LEN_KEY);
-		memset(value, 0, MAX_LEN_VALUE);
+	if (*ind == MAX_LEN_KEY+MAX_LEN_VALUE-1) {
+		if (c == ';') goto EXIT_AND_CLEAN_UP_KEYVALUE_STATUE;
+		// 超出范围放弃读取但保持读值状态不变
 		return 1;
 	}
+	if (*ind > MAX_LEN_KEY+MAX_LEN_VALUE-1)
+		goto EXIT_AND_CLEAN_UP_KEYVALUE_STATUE;
 	if (c != ';') {
-		if (*ind >= MAX_LEN_KEY+MAX_LEN_VALUE-1) {
-			// 超出范围放弃读取但保持读值状态不变
-			value[0] = 0;
-			return 1;
-		}
 		value[*ind-MAX_LEN_KEY-1] = c;
 		(*ind)++;
 		return 1;
@@ -175,11 +174,12 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 		subkey++;
 	}
 
+	struct StringCtx_t ctx = {.ch=note->ch, .line=note->line, .col=note->ind, .desc="MAINKEY"};
 	int possible = -1;
-	switch (str_switch2(key, &possible,
+	switch (str_switch2(key, &possible, &ctx,
 		"track", "amp", "bq", "note", "inst")) {
 	case 0: note->track = atoi(value); break;
-	case 3: notedata_set(data, subkey, value);break;
+	case 3: notedata_set(data, subkey, value, ctx);break;
 	case 1:
 		note->amplitude = atof(value);
 		if(note->amplitude<0||note->amplitude>=0.8) note->amplitude=0.2;
@@ -189,11 +189,12 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 			note->biquad = malloc(sizeof(*note->biquad));
 			memset(note->biquad, 0, sizeof(*note->biquad));
 		}
-		biquad_set(note->biquad, subkey, value);
+		biquad_set(note->biquad, subkey, value, ctx);
 		break;
 	case 4:
 		possible = -1;
-		switch (str_switch2(value, &possible,
+		ctx.desc = "INSTRUMENT";
+		switch (str_switch2(value, &possible, &ctx,
 			"piano", "piano2", "piano3", "drum", "hi-hat")) {
 		case 0:
 			data->wave_func = sin;
@@ -241,6 +242,7 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 		}
 		break;
 	}
+EXIT_AND_CLEAN_UP_KEYVALUE_STATUE:
 	*ind = 0;
 	memset(key, 0, MAX_LEN_KEY);
 	memset(value, 0, MAX_LEN_VALUE);

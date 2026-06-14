@@ -1,7 +1,7 @@
 # 简介
 这是我的一个测试文件仓库，装的多是测试文件，偶尔会有些有用的东西
 - 目录解释
-  - `./src_c` 存放c语言测试文件(多数仅限linux使用)
+  - `./c` 存放c语言测试文件(多数仅限linux使用)
   - `./shell` 存放自制shell(zsh)脚本，偏实用向，目前在努力改用python实现一些功能
   - `./python` 存放自制python程序，有部分是shell程序更高效率兼跨平台的移植
   - `./manim` 存放写的一些垃圾manim动画
@@ -18,8 +18,42 @@
   将多级词典依照给出的连接符合并为单一同级词典（依旧用于加载配置）、读取文件后依照内置编码列表解码。
 - `bilibili_build.py` 自制b站缓存查找、读取程序，可生成shell脚本或使用ncurses交互式地选择导出为mp3（自动添加metadata）
 - `orgreader2.py` 自制org文件解析、导出器（支持生成html和tex，但主要注重于生成和Emacs结构基本相同的html页面）
+  ```bash
+  # 获取帮助信息：
+  ./python/orgreader2.py -h
+  # 示范(输出到stdout)：
+  ./python/orgreader2.py -i PATH_TO_ORG_FILE.org
+  # 示范(生成latex内容并输出到stdout)：
+  ./python/orgreader2.py -i PATH_TO_ORG_FILE.org -m latex
+  # 示范(输出到PATH_TO_ORG_FILE.html)：
+  ./python/orgreader2.py -Oi PATH_TO_ORG_FILE.org
+  ```
 - `merge2tex.py` 基于orgreader2.py，根据json配置文件将指定目录和文件合并为一个tex缩印文件（因为参数比较高压缩率比较大，
   大概30多书的文字量才能印满一本书，即大概3~4M每个.tex文件，原生org导出tex太慢还要另外手动合并或者写include，觉得麻烦而作此程序）
+  ```bash
+  # 温馨提示：可以使用以下命令获取命令行参数帮助
+  ./python/merge2tex.py -h
+
+  # 使用流程：
+  # 1. 生成模板config.json(或者其他名字)
+  ./python/merge2tex.py -C >config.json
+  # 2. 编辑config.json(未设置项将使用默认值),
+  # 在"filelist"里使用词典键指定扫描目录(自动找出org文件)
+  # 词典内使用"ignore"添加黑名单,使用"add"添加额外文件，支持`filepath::start-end`指定始末行
+  vim config.json
+
+  # 3. 指定对应配置文件生成tex文件并编译(默认寻找`./config.json`)
+  #  a. 或者同时由程序本身调用xelatex编译tex文件
+  # 能自动生成填充目录文件并运行两次编译（计算位置生成正确的toc文件、生成有正确目录pdf文件）、
+  # 显示简单进度、自动分析日志的Overflow和缺失字体问题
+  ./python/merge2tex.py -ri config.json
+  #  b. 生成tex文件后手动编译(编译三次(除非没有目录):生成toc,修正有了toc的位移,生成正确pdf)
+  # 手动调用辅助功能的方法请使用--help查看帮助
+  ./python/merge2tex.py -i config.json
+  xelatex output_XXXXX.tex
+  xelatex output_XXXXX.tex
+  xelatex output_XXXXX.tex
+  ```
 - `org2blogs.py` 根据json配置将.org原地转为html文件并生成首页等以构建静态博客
 - `split_novel.py` 根据json配置文件将一个类轻小说文库（暂未知道对应的规范名称）的合集小说（单一txt文件）分卷分割为不同的.org文件并
   生成目录(Headline)
@@ -61,7 +95,7 @@
 ## c语言程序
 ### 编译命令
 
-在 `./c/` 目录运行以下命令编译所有程序：
+在 `./c/` 目录运行以下命令编译所有程序(单元编译失败会显示但是会被忽略)：
 ```shell
 gcc build.c -o build && ./build
 ```
@@ -89,21 +123,26 @@ gcc build.c -o build && ./build
 ```shell
 msgfmt Lang/en_US/socket.po -o Lang/en_US/LC_MESSAGES/socket.mo
 ```
+
 ### musicSynth/music\_synth.c ALSA.c
+
 使用以下命令进行食用
 ```bash
 cd c/src/musicSynth
-# 编译好程序，该文件不依赖libtools.a (submodule)
-gcc -o music_synth lib/*.c music_synth.c -lm -fopenmp -O2
-# 可选（使用ALSA播放）的程序
-# gcc -o alsa_play lib/*.c alsa_play.c -lm -lasound -fopenmp -O2
+# 单文件编译程序，该文件不依赖libtools.a (submodule)
+gcc -o music_synth music_synth.c -lm -O2 -DSINGLE_FILE
+#  可选（使用ALSA播放）的程序(依赖alsa)
+#    gcc -o alsa_play lib/*.c alsa_play.c -lm -lasound -O2
+#  可选（使用sdl2播放）的程序(依赖sdl2)
+#    gcc -o alsa_play lib/*.c alsa_play.c -lm -lasound -O2
 # 查看帮助
 ./music_synth -h
 # 将《小星星》保存到指定文件(自己用文件管理器或者播放器打开)
 ./music_synth -o "小星星.wav" -i 0
 ```
-在c/src/musicSynth/res/中存有《One Last Kiss》的简谱（自定义格式），（[[https://www.bilibili.com/read/cv26055182][来源在这]]），如果要
-食用请执行以下命令
+
+在c/src/musicSynth/res/中存有《One Last Kiss》的简谱（自定义格式），（[来源在这](https://www.bilibili.com/read/cv26055182)），如果要
+食用请执行以下命令(`-I`指定输入文件或者从stdin读入)
 ```bash
 cd c/src/musicSynth
 ./music_synth -o "OneLastKiss.wav" -I ./res/ALSA_OneLastKiss.txt
@@ -111,4 +150,72 @@ cd c/src/musicSynth
 cat ./res/ALSA_OneLastKiss.txt|./music_synth -o "OneLastKiss.wav"
 # 抑或是
 ./music_synth -o "OneLastKiss.wav" < ./res/ALSA_OneLastKiss.txt
+```
+
+可用示范列表：
+- [TryEverything.txt](./c/src/musicSynth/res/ALSA_TryEverything.txt)
+- [OneLastKiss.txt](./c/src/musicSynth/res/ALSA_OneLastKiss.txt)
+- [OverworldDay.txt](./c/src/musicSynth/res/ALSA_OverworldDay.txt)
+- [BeautifulWorld.txt](./c/src/musicSynth/res/ALSA_BeautifulWorld.txt)
+- [misc.txt](./c/src/musicSynth/res/ALSA_misc.txt)
+- [NeverGonnaGiveYouUp.txt](./c/src/musicSynth/res/ALSA_NeverGonnaGiveYouUp.txt)
+- [SuperMario.txt](./c/src/musicSynth/res/ALSA_SuperMario.txt)
+
+语法([建议搭配这个vim配置文件食用](./c/src/musicSynth/res/ALSA_style.vim))：
+```txt
+:---关于元数据---;
+:这种是注释（内部不含等于号，以冒号开头，分号结尾）;
+:若注释内含等于号会被解析为元数据设定，例如像下面这样;
+:track=1;  :设置轨道为1;
+:track=0;  :最后一定要设置轨道为0完成并轨;
+
+:举例，下面的音符会同时播放(时间线与刚切回0轨道的时间对其);
+:track=1; C
+:track=2; D
+:track=3; E
+:track=0; F
+
+0*.
+
+:实际上track这种key还可以使用`.`区分出subkey(目前仅支持二级);
+:若完全匹配不到合法的key则会自动打印所有可用key，例如;
+:=;
+:要获得结果需要自己另存为跑一下这个说明,命令：`music_synth -I path_to_file.txt`;
+:若有匹配到相同开头的key则会进行猜测推荐，例如;
+:n=;
+:若有子命令的在`.`后留随意非法值获得提示，例如;
+:note. =;
+:没有子命令的不会有提示，例如;
+:track. =;
+:可用值为字符串的可以让值留空以获得提示，例如;
+:inst=;
+:inst=pian;
+
+:---关于音符---;
+:0 是休止符;
+:cdefgab 是低音部;
+:CDEFGAB 是中音部;
+:1234567 是高音部,例如;
+c d e f g a b 0 C D E F G A B 0 1 2 3 4 5 6 7
+:使用`/`和`*`调节时值,默认为4分音符，使用以下命令设定;
+:note.notes=4;
+:`/`使n分音符的n翻倍（时值减半），`*`使n分音符的n减半（时值翻倍）,如;
+C/D//D// :左边为前八后十六音符;
+0*       :左边为二分休止符;
+:`.`为附点符号，时值变为1.5倍，应当放在`/`或者`*`后;
+
+:---关于升降调---;
+c    :表示低音;
+cL   :表示重低音(降低了一个八度);
+cLL  :表示超重低音(降低了两个八度);
+7    :表示高音;
+7U   :表示超高音(升高了一个八度);
+7UU  :表示超超高音(升高了两个八度);
+
+Cl   :表示中央C降低了一个半音;
+Cu   :表示中央C升高了一个半音;
+
+:---关于演奏---;
+C~D  :表示连音（共用ADSR控制,中间有微小过度，基本没有ATTACK声）;
+CsD  :表示滑音（频率由前者滑动到后者，不建议和连音一起用，支持不好）;
 ```

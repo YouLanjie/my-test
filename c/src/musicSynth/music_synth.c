@@ -173,15 +173,14 @@ int main(int argc, char *argv[])
 	char filename[PATH_MAX] = "",
 	     input[PATH_MAX] = "";
 	bool flg_print_formated_note = false,
-	     flg_no_check = false,
-	     flg_check_only = false;
+	     flg_no_check = false;
 	MusicCtx_t *ctx = music_ctx_create(SAMPLE_RATE);
 	if (!ctx) {
 		LOG("乐曲上下文ctx创建失败");
 		return 1;
 	}
 
-	while ((ch = getopt(argc, argv, "hi:I:o:nmHPpNA:")) != -1) {	/* 获取参数 */
+	while ((ch = getopt(argc, argv, "hi:I:o:nmHPNA:")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -189,12 +188,11 @@ int main(int argc, char *argv[])
 			       "Option:\n"
 			       "    -i <NUM>  选择曲子\n"
 			       "    -I <FILE> 输入文件(曲谱)\n"
-			       "    -o <FILE> 输出文件(为空时使用output.wav)\n"
+			       "    -o <FILE> 输出文件(不指定不输出文件)\n"
 			       "    -n        取消音符淡入淡出,可能产生杂音\n"
 			       "    -m        平滑滑音，滑音频率匀速增长\n"
 			       "    -H        取消泛音\n"
 			       "    -P        打印音符(格式化)\n"
-			       "    -p        仅打印格式化后的音符\n"
 			       "    -N        不检查音符合规性\n"
 			       "    -A <NUM>  音量系数(默认1.0)\n"
 			       "    -h        显示帮助\n"
@@ -221,7 +219,6 @@ int main(int argc, char *argv[])
 		case 'n': ctx->flg_no_fade = true; break;
 		case 'm': ctx->flg_smooth = true; break;
 		case 'H': ctx->flg_no_har = true; break;
-		case 'p': flg_check_only = true;
 		case 'P': flg_print_formated_note = true; break;
 		case 'N': flg_no_check = true; break;
 		// case 'x': ctx->flg_print_debug_info = true; break;
@@ -252,7 +249,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (!flg_no_check) check_notes(ctx->notes, flg_print_formated_note);
-	if (flg_check_only) {
+	if (!filename[0]) {
 		music_ctx_free(ctx);
 		return 0;
 	}
@@ -260,7 +257,7 @@ int main(int argc, char *argv[])
 
 	WavHeader_t header = create_wav_header(total_size);
 	FILE *wav_file = NULL;
-	if (filename[0]) wav_file = fopen(filename, "wb");
+	wav_file = fopen(filename, "wb");
 	if (!wav_file) {
 		if (filename[0]) fprintf(stderr, "[ERROR] 打开文件 '%s' 时遇到问题: %s\n", filename, strerror(errno));
 		else LOG("未设置输出文件名");
