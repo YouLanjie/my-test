@@ -9,6 +9,18 @@
 #include <errno.h>
 #include <stddef.h>
 #include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+// 快速编译使用
+// #define SINGLE_FILE
+#ifdef SINGLE_FILE
+#include "./lib/core.c"
+#include "./lib/music_ctx.c"
+#include "./lib/wave_func.c"
+#include "./lib/note_parser.c"
+#endif
 
 const char *NOTELIST[] = {
 	"C C G G A A G*  F F E E D D C*\n"   /* 一闪一闪亮晶晶 */ /* 满天都是小星星 */
@@ -152,6 +164,11 @@ int streamer_str(void *vp)
 
 int main(int argc, char *argv[])
 {
+#ifdef _WIN32
+	// 尝试解决终端输出乱码问题
+	SetConsoleOutputCP(CP_UTF8);
+	SetConsoleCP(CP_UTF8);
+#endif
 	int ch = 0, id = -1;
 	char filename[PATH_MAX] = "",
 	     input[PATH_MAX] = "";

@@ -61,7 +61,7 @@ size_t music_ctx_stat(MusicCtx_t *ctx)
 		nd = nd->next;
 	}
 	total_len = count3;
-	printf("[INFO] 全谱共计%lu个音符，不同的音符有%lu个\n", count1, count2);
+	printf("[INFO] 全谱共计%zu个音符，不同的音符有%zu个\n", count1, count2);
 	printf("[INFO] 音符复用率大约为%.2lf%%\n", (1-(double)count2/count1)*100);
 	printf("[INFO] 曲谱预计时长为%.2lfs\n", (double)count3/SAMPLE_RATE);
 	return total_len;
