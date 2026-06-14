@@ -1,0 +1,326 @@
+:- 歌曲： 宇多田光 - Beautiful World -;
+:- 来源： b站;
+:note.speed=115;
+
+:track=1; C** C*a* C**
+:track=2; a** g*g* a**
+:track=0; e** e*d* e**
+
+:track=1; C* a*             C C C/.C//~ C/C/
+:track=2; g* g*             a a a/.a//~ a/a/
+:track=3; e* d*             e e e/.e//~ e/e/
+:track=0; 0 B/1/ 5 B/.1//~  1**
+
+:track=1; C C b/.b//~ b/b/  C C C/.C//~ C/C/
+:track=2; g g g/.g//~ g/g/  a a a/.a//~ a/a/
+:track=3; e e d/.d//~ d/d/  e e e/.e//~ e/e/
+:track=0; 0 B/1/ 5 B/.1//~  1**
+
+:track=1; C C b/.b//~ b/b/
+:track=2; g g g/.g//~ g/g/
+:track=0; e e d/.d//~ d/d/
+
+:---(09)---;
+:track=1; e/C/ E/C/ f/.f//~ f/f/
+:track=2; a/0/ 0    a/.a//~ a/a/
+:track=3; 0    0    C/.C//~ C/C/
+:track=0; A. A/ A/1/ 2/1/
+
+:track=1; c/g/ C/g/ d    b/g/
+:track=2; 0    0    g
+:track=2; 0    0    b
+:track=0; 3/4/ 2    2/3/ 1/B/
+
+:track=1; e/C/ E/C/ f/.f//~ f/f/
+:track=2; a/0/ 0    a/.a//~ a/a/
+:track=3; 0    0    C/.C//~ C/C/
+:track=0; A*. 0/A/
+
+:track=1; c/g/ C/g/  d    b/g/
+:track=2; 0    0     g
+:track=2; 0    0     b
+:track=0; 5    3/5/~ 5/3/ 2
+
+:---(13)---;
+:与(9)有点重复;
+:track=1; e/C/ E/C/ f/.f//~ f/f/
+:track=2; a/0/ 0    a/.a//~ a/a/
+:track=3; 0    0    C/.C//~ C/C/
+:track=0; A. A/ A/1/ 2/1/
+
+:track=1; c/g/ C/g/ d    b/g/
+:track=2; 0    0    g
+:track=2; 0    0    b
+:track=0; 3/4/ 2    2/3/ 1/B/
+
+:track=1; e/C/ E/C/ f/.f//~ f/f/   c/g/ C/g/  d    b/g/
+:track=2; a/0/ 0    a/.a//~ a/a/   0    0     g
+:track=3; 0    0    C/.C//~ C/C/   0    0     b
+:track=0; A.A/      5/5/    3/5/~  5    3/5/~ 5/3/ 2
+
+:---(17)---;
+:track=1; a    0    f       0        0    0    g/.
+:track=2; e/C/ E/C/ c/a/    C/a/     c/g/ C/g/ d/.b//~ b/g/
+:track=3; E
+:track=0; 1    B    E/.E//~ E/G/~    G/D/ E    C//D/E//~ E//F//E/
+
+:track=1; a    0    f       0        0    0    g/.
+:track=2; e/C/ E/C/ c/a/    C/a/     c/g/ C/g/ d/.b//~ b/g/
+:track=0; 1    B    E/.E//~ E/G/     0/E/ E/E/ A/.E//~ E/E/
+
+:---(21)---;
+:track=1; a    0    f       0        0         0    g/.
+:track=2; e/C/ E/C/ c/a/    C/a/     c/g/      C/g/ d/.b//~ b/g/
+:track=3; E
+:track=0; 1    B    E/.E//~ E/G/~    G/D//E//~ E    C//D/E//~ E//F//E/
+
+:track=1; a    0    f       0      | 0    0    g/.0//  0       | a    0       f     0
+:track=2; e/C/ E/C/ c/a/    C/a/   | c/g/ C/g/ d/.b//~ b/g/    | e/C/ E/C/    c/a/  C/a/
+:track=0; 1    B    E/.E//~ E/G/~  | G    3/4/ 5       5/.5//~ | 5    3/.2//~ 2/1/~ 1
+
+:---(26)---;
+:track=1; 0    0    g/.0//  0       | a    0    f    0    | 0    0    g/.
+:track=2; c/g/ C/g/ d/.b//~ b/g/    | e/C/ E/C/ c/a/ C/a/ | c/g/ C/g/ d/.b//~ b/g/
+:track=0; 0    B/1/ 5       B/.1//~ | 1**                 | 0**
+
+:---(29)---;
+:track=1; f/c/ a/E/~ E/C/ a/f/  e/g/ b/D/~ D/b/ g/e/
+:track=0; G/A/~ A/G/ A G/A/     A    E/G/~ G/G/ A
+
+:track=1; a/e/  C/E/~ E/C/  a/e/  d/a/ D/G/~ G/D/  a/d/
+:track=0; A/A/~ A/3/~ 3/A/~ A/G/  A/A/ A/3/~ 3/A/~ A
+
+:---(33)---;
+:track=1; f/c/ a/E/~ E/C/ a/f/  e/g/ b/D/~ D/b/ g/e/
+:track=0; 0    A     A    B     1.   B/~   B    E
+
+:track=1; a/e/ C/E/~ E/C/ a/e/  d/a/ D/G/~ G/D/ a/d/
+:track=0; A.   A/    B/1/ A     A**
+
+:---(37)---;
+:与(29)完全一致;
+:track=1; f/c/ a/E/~ E/C/ a/f/  e/g/ b/D/~ D/b/ g/e/
+:track=0; G/A/~ A/G/ A G/A/     A    E/G/~ G/G/ A
+
+:track=1; a/e/  C/E/~ E/C/  a/e/  d/a/ D/G/~ G/D/  a/d/
+:track=0; A/A/~ A/3/~ 3/A/~ A/G/  A/A/ A/3/~ 3/A/~ A
+
+:---(41)---;
+:与(33)基本一致;
+:track=1; f/c/ a/E/~ E/C/ a/f/  e/g/ b/D/~ D/b/ g/e/
+:track=0; 0    A     A    B     1    B/B/~ B    E
+
+:track=1; a/e/ C/E/~ E/C/ a/e/  d/a/ D/G/~ G/D/ a/d/
+:track=2; 0    0     0    0     5*         6*
+:track=0; A.   B/~   B    1     B*         1*
+
+:---(45)---;
+:track=1; a/e/ C/E/~     E/E/      C/a/  e/g/ b/E/~     E/D/      b/e/
+:track=0; A/A/ A/G//A//~ A//G//A/~ A     A/A/ A/G//A//~ A//G//A/~ A/3/
+
+:track=1; f/c/ a/b/  C/b/ C/b/  f/c/ a/b/  C/b/ C/b/
+:track=0; 2    1/A/~ A*         0**
+
+:---(49)---;
+:track=1; a/e/ C/E/~     E/E/      C/a/  e/g/ b/E/~     E/D/      b/e/
+:track=0; A/A/ A/G//A//~ A//G//A/~ A     A/G/ A/A//A//~ A//G//A/~ A/3/
+
+:track=1; g/d/ b/D/~ D/D/ b/g/  d/a/ D/G/~ G/D/ a/d/
+:track=0; 2    1/A/~ A*         0/G/ A/B/  1/B/ A/G/
+
+:---(53)---;
+:track=1; a/C/  E/C/ f/a/ C/a/   c/C/ E/C/ g/b/ D/b/
+:track=0; A.    A/   A/1/ 2/1/   3/4/ 2    2/3/ 1/B/
+
+:track=1; a/C/ E/C/ f/a/ C/a/   c/C/ E/C/  g/b/ D/b/
+:track=0; A*.            0/A/   5/   3/5/~ 5/3/ 2
+
+:---(57)---;
+:基本参照(53);
+:track=1; a/C/  E/C/ f/a/ C/a/   c/C/ E/C/ g/b/ D/b/
+:track=0; A.    A/   A/1/ 2/1/   3/4/ 2    2/3/ 1/B/
+
+:track=1; a/C/  E/C/ f/a/ C/a/   c/C/ E/C/  g/b/ D/b/
+:track=0; A.    A/   5/5/ 3/5/~  5/5/ 3/5/~ 5/3/ 2
+
+:---(61)---;
+:大雷同区域开始;
+:与(17)雷同;
+:track=1; a    0    f       0        0    0    g/.
+:track=2; e/C/ E/C/ c/a/    C/a/     c/g/ C/g/ d/.b//~ b/g/
+:track=3; E
+:track=0; 1    B    E/.E//~ E/G/~    G/D/ E    C//D/E//~ E//F//E/
+
+:track=1; a    0    f       0        0    0    g/.
+:track=2; e/C/ E/C/ c/a/    C/a/     c/g/ C/g/ d/.b//~ b/g/
+:track=0; 1    B    E/.E//~ E/G/     0/E/ E/E/ A/.E//~ E/E/
+
+:---(65)---;
+:与(21)雷同;
+:track=1; a    0    f       0        0         0    g/.
+:track=2; e/C/ E/C/ c/a/    C/a/     c/g/      C/g/ d/.b//~ b/g/
+:track=3; E
+:track=0; 1    B    E/.E//~ E/G/~    G/D//E//~ E    C//D/E//~ E//F//E/
+
+:track=1; a    0    f       0        0    0    g/.0//  0         a    0       f     0
+:track=2; e/C/ E/C/ c/a/    C/a/     c/g/ C/g/ d/.b//~ b/g/      e/C/ E/C/    c/a/  C/a/
+:track=0; 1    B    E/.E//~ E/G/~    G    3/4/ 5       5/.5//~   5    3/.2//~ 2/1/~ 1
+
+:---(70)---;
+:与(26)雷同;
+:track=1; 0    0    g/.0//  0        a    0    f    0
+:track=2; c/g/ C/g/ d/.b//~ b/g/     e/C/ E/C/ c/a/ C/a/
+:track=0; 0    B/1/ 5       B/.1//~  1**
+
+:track=1; 0    0    b/.
+:track=2; 0    0    g/.
+:track=3; c/g/ C/g/ d b/g/
+:track=0; 0**
+
+:---(73)---;
+:与(29)雷同;
+:track=1; f/c/ a/E/~ E/C/ a/f/  e/g/ b/D/~ D/b/ g/e/
+:track=0; G/A/~ A/G/ A G/A/     A    E/G/~ G/G/ A
+
+:track=1; a/e/  C/E/~ E/C/  a/e/  d/a/ D/G/~ G/D/  a/d/
+:track=0; A/A/~ A/3/~ 3/A/~ A/G/  A/A/ A/3/~ 3/A/~ A
+
+:---(77)---;
+:部分与(33)雷同;
+:track=1; f/c/ a/E/~ E/C/ a/f/  e/g/ b/D/~ D/b/ g/e/
+:track=0; 0    A     A    B     1    B/B/~ B    E
+
+:track=1; a/e/ C/E/~ E/C/ a/e/  f/c/ a/C/ E/C/ a/f/
+:track=0; A.   B/~   B    1     0**
+
+:---(81)---;
+:部分与(45)雷同;
+:track=1; a/e/ C/E/~     E/E/      C/a/  e/g/ b/E/~     E/D/      b/e/
+:track=0; A/A/ A/G//A//~ A//G//A/~ A     A/A/ A/G//A//~ A//G//A/~ A/3/
+
+:track=1; f/c/ a/b/  C/b/ C/b/  f/c/ a/b/  C/b/ C/b/
+:track=0; 2    1/A/~ A*         0**
+
+:---(85)---;
+:部分与(49)雷同;
+:track=1; a/e/ C/E/~     E/E/      C/a/  e/g/ b/E/~     E/D/      b/e/
+:track=0; A/A/ A/G//A//~ A//G//A/~ A     A/G/ A/A//A//~ A//G//A/~ A/3/
+
+:track=1; g/d/ b/D/~ D/D/ b/g/  d/a/ D/G/~ G/D/ a/d/
+:track=0; 2    1/A/~ A*         0/G/ A/B/  1/B/ A/G/
+
+:---(89)---;
+:部分与(53)雷同;
+:track=1; a/C/  E/C/ f/a/ C/a/   c/C/ E/C/ g/b/ D/b/
+:track=0; A.    A/   A/1/ 2/1/   3/4/ 2    2/3/ 1/B/
+
+:track=1; a/C/ E/C/ f/a/ C/a/   c/C/ E/C/  g/b/ D/b/
+:track=0; A*.            0/A/   5/   3/5/~ 5/3/ 2
+
+:---(93)---;
+:部分与(57)雷同;
+:track=1; a/C/  E/C/ f/a/ C/a/   c/C/ E/C/ g/b/ D/b/
+:track=0; A.    A/   A/1/ 2/1/   3/4/ 2    2/3/ 1/B/
+
+:track=1; a/C/  E/C/ f/a/ C/a/   c/C/ E/C/  g/b/ D/b/
+:track=0; A.    A/   5/5/ 3/5/~  5/5/ 3/5/~ 5/3/ 2
+
+:---(97)---;
+:部分与(61)雷同;
+:track=1; a    0    f       0        0    0    g/.
+:track=2; e/C/ E/C/ c/a/    C/a/     c/g/ C/g/ d/.b//~ b/g/
+:track=3; E
+:track=0; 1    B    E/.E//~ E/G/~    G/D/ E    C//D/E//~ E//F//E/
+
+:track=1; a    0    f       0        0    0    g/.
+:track=2; e/C/ E/C/ c/a/    C/a/     c/g/ C/g/ d/.b//~ b/g/
+:track=0; 1    B    E/.E//~ E/G/     0/E/ E/E/ A/.E//~ E/E/
+
+:---(101)---;
+:部分与(65)雷同;
+:track=1; a    0    f       0        0         0    g/.
+:track=2; e/C/ E/C/ c/a/    C/a/     c/g/      C/g/ d/.b//~ b/g/
+:track=3; E
+:track=0; 1    B    E/.E//~ E/G/~    G/D//E//~ E    C//D/E//~ E//F//E/
+
+:track=1; a    0    f       0        0    0       g/.
+:track=2; e/C/ E/C/ c/a/    C/a/     c/g/ C/g/    d/.b//~ b/g/
+:track=0; 1    B    G       E/G/~    G    3/.2//~ 2/1/ 1
+
+:---(105)---;
+:大雷同部分结束;
+:track=1; E*    C*         | G*     D*
+:track=2; a*    f*         | C*     g*
+:track=0; A. A/ A/1/ 2/1/  | 3/4/ 2 2/3/ 1/B/
+
+:track=1; E*  C/.C//~ C/C/ | G* D/.D//~ D/D/
+:track=2; a*  f/.f//~ f/f/ | C* g/.g//~ g/g/
+:track=0; A*.         0/A/ | 5 3/5/~ 5/3/ 2
+
+:---(109)---;
+:track=1; E  E  C/.C//~ C/C/
+:track=2; C  C  A/.A//~ A/A/ | G G D/.D//~ D/D/
+:track=3; a  a  f/.f//~ f/f/ | C C g/.g//~ g/g/
+:track=0; A. A/ A/1/    2/1/ | 3/4/ 2 2/3/ 1/B/
+
+:track=1; E  E  C/.C//~ C/C/
+:track=2; C  C  A/.A//~ A/A/
+:track=3; a  a  f/.f//~ f/f/
+:track=0; A**
+
+:---(112)---;
+:track=1; G G
+:track=2; D D d/.d//~ d/d/  | a    0    f    0     | g    0    g    0     | a     0    f
+:track=3; C C g/.g//~ g/g/  | e/C/ E/C/ c/a/ C/c/  | c/C/ E/C/ d/b/ D/b/  | e/C/  E/C/ c/a/ C/c/
+:track=0; 0 0 0       1/5/~ | 5/5/ 4/3/ 4/3/ 1/5/~ | 5/5/ 4/3/ 4/3/ 1/5/~ | 5/5/~ 5    0/4/ 3
+
+:---(116)---;
+:track=1; G    0    G    0     | a    0    f    0     | g    0    g    0     | a     0    f
+:track=2; c/C/ E/C/ d/b/ D/b/  | e/C/ E/C/ c/a/ C/c/  | c/C/ E/C/ d/b/ D/b/  | e/C/  E/C/ c/a/ C/c/
+:track=0; 0    0    0    1/5/~ | 5/5/ 4/3/ 4/3/ 1/5/~ | 5/5/ 4/3/ 4/3/ 1/5/~ | 5/5/~ 5    0/4/ 3
+
+:track=1; g    0    g    0
+:track=2; c/C/ E/C/ d/b/ D/b/
+:track=0; 3*.            1/5/
+
+:---(121)---;
+:track=1; C 0 C/.
+:track=2; a/0/ 0 a/.0//  0        | 0    0    g/0/      0         | a/0/ 0    f/0/ 0
+:track=3; e/C/ E/C/ f/.C//~ C/f/  | c/g/ C/g/ d/b/      D/b/      | e/e/ a/e/ c/a/ C/a/
+:track=0; E    B    E/.E//~ E/G/~ | G/D/ E    C//D/E//~ E//F//D/~ | D/E/ C*.
+
+:track=1; g/0/ 0    g/
+:track=0; c/C/ D/c/ d/b/ D/b/
+
+:---(125)---;
+:类似(17);
+:track=1; a    0    f       0     | 0         0    g/        0     | a/0/ 0    f/0/ 0/    | g/0/ 0    g/
+:track=2; e/C/ E/C/ c/a/    C/a/  | c/g/      C/g/ d/b/      D/b/  | e/C/ E/C/ c/a/ C/a/  | c/C/ E/C/ d/b/ D/b/
+:track=3; E
+:track=0; 1    B    E/.E//~ E/G/~ | G/D//E//~ E    C//D/E//~ E/E/~ | E*        0/1/ G/1/~ | 1. 2/ 2/.3//~ 3//5//3/
+
+:---(129)---;
+:track=1; a    0    f       0     | 0    0     g/        0    | a/0/ 0    f/0/ 0/   | g/0/ 0    g/
+:track=2; e/C/ E/C/ c/a/    C/a/  | c/g/ C/g/  d/b/      D/b/ | e/C/ E/C/ c/a/ C/a/ | c/C/ E/C/ d/b/ D/b/
+:track=3; E
+:track=0; 1    B    E/.E//~ E/G/~ | G/D/ E/5/~ 5//3//2/~ 2    | 0    0    1/2/ 2/3/ | 3/4/~ 4/4/ 5*
+
+:---(133)---;
+:track=1; a    0    f       0     | 0         0    g/    0     | a/0/  0    f/0/ 0/   | g/0/ 0    g/
+:track=2; e/C/ E/C/ c/a/    C/a/  | c/g/      C/g/ d/b/  D/b/  | e/C/  E/C/ c/a/ C/a/ | c/C/ E/C/ d/b/ D/b/
+:track=3; E
+:track=0; 1    B    E/.E//~ E/G/~ | G/D//E//~ E*         1/5/~ | 5/5/~ 5    0/4/ 3/4/ | 3*.            1/5/
+
+:---(137)---;
+:完全重复(133);
+:track=1; a    0    f       0     | 0         0    g/    0     | a/0/  0    f/0/ 0/   | g/0/ 0    g/
+:track=2; e/C/ E/C/ c/a/    C/a/  | c/g/      C/g/ d/b/  D/b/  | e/C/  E/C/ c/a/ C/a/ | c/C/ E/C/ d/b/ D/b/
+:track=3; E
+:track=0; 1    B    E/.E//~ E/G/~ | G/D//E//~ E*         1/5/~ | 5/5/~ 5    0/4/ 3/4/ | 3*.            1/5/
+
+:---(137)---;
+:大致重复(133);
+:track=1; a    0    f       0     | 0         0    g/    0     | a/0/  0    f/0/ 0/   | g/0/ 0    g/
+:track=2; e/C/ E/C/ c/a/    C/a/  | c/g/      C/g/ d/b/  D/b/  | e/C/  E/C/ c/a/ C/a/ | c/C/ E/C/ d/b/ D/b/
+:track=3; E
+:track=0; 1    B    E/.E//~ E/G/~ | G/D//E//~ E*         1/5/~ | 5/5/~ 5    0/4/ 3/4/ | 3**

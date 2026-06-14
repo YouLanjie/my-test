@@ -9,6 +9,39 @@ import math
 import re
 import sys
 
+def reverse_process(content: list[str]):
+    ret : list[str] = []
+    hint_up = ""
+    hint_down = ""
+    is_inconfig = False
+    ktable = {k:(int(typ), ch) for k,typ,ch in zip("cdefgabCDEFGAB1234567", "000000011111112222222", "123456712345671234567")}
+    for line in content:
+        nl = []
+        for ind,c in enumerate(line):
+            nl.append(c)
+            if not is_inconfig and c == ':':
+                is_inconfig = True
+            elif is_inconfig and c == ';':
+                is_inconfig = False
+            if is_inconfig:
+                continue
+            if c in ktable:
+                if ktable[c][0] == 0:
+                    hint_down += " "*(ind-len(hint_down))
+                    hint_down += "`"
+                elif ktable[c][0] == 2:
+                    hint_up += " "*(ind-len(hint_up))
+                    hint_up += "."
+                nl[ind] = ktable[c][1]
+        if hint_up:
+            ret.append(hint_up)
+            hint_up = ""
+        ret.append("".join(nl))
+        if hint_down:
+            ret.append(hint_down)
+            hint_down = ""
+    print("\n".join(ret))
+
 def print_template(typ="high"):
     note_char = ["cdefgab", "CDEFGAB", "1234567"]
     note_table = [i+"LL" for i in note_char[0]]
@@ -76,6 +109,7 @@ def main():
     parser = argparse.ArgumentParser(description="用来打谱（特别是五线谱）的辅助脚本")
     parser.add_argument("--print-template", "-p", nargs="?", default="", const="high",
                         choices=("low", "high"), help="打印模板")
+    parser.add_argument("--reverse", "-r", action="store_true", help="将曲谱反转成简谱")
     parser.add_argument("file", nargs="?", help="输入文件")
     args = parser.parse_args()
     if args.print_template:
@@ -97,7 +131,10 @@ def main():
     else:
         pytools.print_err("未提供任何内容来源")
         return
-    process(content)
+    if args.reverse:
+        reverse_process(content)
+    else:
+        process(content)
 
 if __name__ == "__main__":
     main()

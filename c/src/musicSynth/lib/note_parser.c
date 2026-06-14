@@ -214,6 +214,12 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 		case 2:
 			data->wave_func = sin;
 			data->har_func = har_set_piano3;
+			note->adsr = (ADSR_t){
+				.attack  = 0.005,
+				.decay   = 0.3,
+				.sustain = 0.7,
+				.release = 0.2
+			};
 			if (note->biquad) *note->biquad = (Biquad_t){};
 			break;
 		case 3:

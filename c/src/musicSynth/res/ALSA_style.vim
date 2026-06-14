@@ -128,6 +128,7 @@ function! s:LoadALSACfg()
 
 	vnoremap <buffer> <leader>f :!music_synth -p<CR>
 	vnoremap <buffer> <leader>l :!gen_music_synth_str.py<CR>
+	vnoremap <buffer> <leader>r :!gen_music_synth_str.py -r<CR>
 
 	nnoremap <buffer> <leader>i :r!gen_music_synth_str.py -p<CR>
 	nnoremap <buffer> <leader>I :r!gen_music_synth_str.py -p low<CR>

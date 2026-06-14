@@ -569,7 +569,7 @@ class Meta(Root):
                 args["block"] = ["quote"]
             i+=1
             
-        s = Path(incf).read_text(encoding="utf8").splitlines()
+        s = pytools.read_text(incf).splitlines()
         if len(args[":lines"]) == 1:
             s = [s[args[":lines"][0]]]
         elif len(args[":lines"]) == 2:
@@ -602,7 +602,7 @@ class Meta(Root):
         setupfile_name = ""
         obj = self.value
         if setupfile.is_file():
-            content = setupfile.read_text(encoding="utf8")
+            content = pytools.read_text(setupfile)
             setupfile_name = str(setupfile)
             obj = str(setupfile.resolve())
         elif re.match(r"http[s]?://.+", self.value):
@@ -2305,7 +2305,7 @@ def run_main() -> Document|str|None:
     ret = None
     if args.input and Path(args.input).is_file():
         inp_fname = args.input
-        inp = Path(args.input).read_text(encoding="utf8")
+        inp = pytools.read_text(Path(args.input))
     else:
         inpf = list(Path(".").glob("**/*.org"))
         if len(inpf) == 0:
@@ -2313,7 +2313,7 @@ def run_main() -> Document|str|None:
         if not inpf[-1].is_file():
             return None
         inp_fname = str(inpf[-1])
-        inp = inpf[-1].read_text(encoding="utf8")
+        inp = pytools.read_text(inpf[-1])
 
     ret = Document(inp.splitlines(), file_name=inp_fname,
                    setting={"pygments_css":args.pygments_css,
