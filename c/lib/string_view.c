@@ -68,22 +68,23 @@ bool sv_cmp(SV_t s1, SV_t s2)
 	if (!s1.p || !s2.p) return false;
 	if (s1.len != s2.len) return false;
 	if (s1.p == s2.p) return true;
-	return strncmp(s1.p, s2.p, s1.len) == 0;
+	return memcmp(s1.p, s2.p, s1.len) == 0;
 }
 
 bool sv_begin_with(SV_t s, const char *pat)
 {
 	if (!s.p || !pat) return false;
-	if (s.len < strlen(pat)) return false;
-	return !strncmp(s.p, pat, strlen(pat));
+	const size_t pat_len = strlen(pat);
+	if (s.len < pat_len) return false;
+	return !strncmp(s.p, pat, pat_len);
 }
 
 bool sv_end_with(SV_t s, const char *pat)
 {
 	if (!s.p || !pat) return false;
-	if (s.len < strlen(pat)) return false;
-	const int size = strlen(pat);
-	return !strncmp(s.p+s.len-size, pat, size);
+	const size_t pat_len = strlen(pat);
+	if (s.len < pat_len) return false;
+	return !strncmp(s.p+s.len-pat_len, pat, pat_len);
 }
 
 

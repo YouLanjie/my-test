@@ -149,7 +149,9 @@ typedef struct Note {
 } Note_t;
 
 #define sigmoid(x) (1 - 1/(1+exp(x)))
+#ifndef ARRAY_LEN
 #define ARRAY_LEN(arr) (sizeof(arr)/sizeof(arr[0]))
+#endif
 #define CALLCLS(obj, func, ...) (obj)->func((obj) __VA_OPT__(,) __VA_ARGS__)
 
 #define LOG(fmt, ...) fprintf(stderr, "%s:%d:%s: " fmt "\n", __FILE__, __LINE__, __FUNCTION__ __VA_OPT__(,) __VA_ARGS__)
@@ -163,6 +165,7 @@ typedef struct Note {
 	HARMONIC(piano1)  \
 	HARMONIC(piano2)  \
 	HARMONIC(piano3)  \
+	HARMONIC(piano4)  \
 	HARMONIC(none)    \
 	HARMONIC(openhat) \
 	HARMONIC(h3)      \

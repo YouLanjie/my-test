@@ -207,6 +207,9 @@ int main(int argc, char *argv[]) {
 			sdl_set_volume(dev, &ctx, 1-music->amplitude);
 		} else if (c == 'i') {
 			printf("\n[INFO] 音量系数: %.1lf%%\n", music->amplitude*100);
+		} else if (c == 'I') {
+			printf("\n[INFO] 当前位置参考:\n");
+			print_note(music->tracks[0]);
 		}
 
 		// 显示进度

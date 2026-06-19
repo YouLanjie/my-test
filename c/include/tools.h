@@ -35,9 +35,15 @@
 #include <conio.h>
 #endif
 
+#ifdef _WIN32
+#define LOG(fmt, ...) fprintf(stderr, "%s:%d:%s: " fmt "\n", __FILE__, __LINE__, __FUNCTION__ ,## __VA_ARGS__)
+#else
 #define LOG(fmt, ...) fprintf(stderr, "%s:%d:%s: " fmt "\n", __FILE__, __LINE__, __FUNCTION__ __VA_OPT__(,) __VA_ARGS__)
+#endif
+
 #define LOGVAR(typ, var) LOG("var '%s' = " typ " (as %s)", #var, (var), #typ)
 #define CALL(func, ...) (LOG("call '%s' at (%p)", #func, (func)), (func)(__VA_ARGS__))
+#define ARRAY_LEN(v) (sizeof(v)/sizeof(v[0]))
 
 /*
  * kbhit getch
