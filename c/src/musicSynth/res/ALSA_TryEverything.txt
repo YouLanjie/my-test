@@ -1,3 +1,4 @@
+:note.speed=480; 0**
 :note.speed=115;
 
 :---前奏---;

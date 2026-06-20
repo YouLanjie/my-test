@@ -138,10 +138,62 @@ NoteData_t *notedata_search(NoteData_t *pHead, NoteData_t *obj)
 	return p;
 }
 
+/* 设置 1=C 那档子事 */
+static void set_note_freq_table(double note_freq[UINT8_MAX], char *pattern, struct StringCtx_t ctx)
+{
+	if (!note_freq || !pattern || !pattern[0]) return;
+	static const double freq_a4 = 440.0;
+	static const char *note_chr[] = {
+		"c d ef g a bC D EF G A B1 2 34 5 6 7",
+		"c de f ga b C DE F GA B 1 23 4 56 7 "
+	};
+	enum mode_t {MAJOR, MINOR} mode = MAJOR;
+	const int note_chr_len = strlen(note_chr[MAJOR]);
+	const int len_pattern = strlen(pattern);
+	int i = 0;      /* 内存索引 */
+	int idx = 0;    /* 音符索引(计算) */
+	char c = 0;
+
+	do {
+		// 先找出调号
+		char *p = NULL;
+		for (; i < len_pattern && (!p || *p==' '); i++) p = strchr(note_chr[MAJOR], pattern[i]);
+		if (!p) {
+			printf("[WARN] (%d:%d) '%s'值无效,调号设置错误\n", ctx.line, ctx.col, ctx.desc);
+			return;
+		}
+		c = *p;
+	}while (0);
+
+	for (; i < len_pattern; i++) {
+		switch (pattern[i]) {
+		case 'u': idx+=1;break;
+		case 'U': idx+=12;break;
+		case 'l': idx-=1;break;
+		case 'L': idx-=12;break;
+		case '^': mode=MAJOR;break;
+		case 'v': mode=MINOR;break;
+		}
+	}
+
+	const int idx_a4 = strchr(note_chr[mode], 'A') - note_chr[mode];
+	const int idx_c4 = strchr(note_chr[mode], 'C') - note_chr[mode];
+	idx += strchr(note_chr[mode], c) - note_chr[mode];
+	for (i = 0; i < note_chr_len; i++) {
+		if (note_chr[mode][i] == ' ') continue;
+		note_freq[(int)note_chr[mode][i]] = freq_a4*exp2((idx-idx_a4+(int)i-idx_c4)/12.0);
+	}
+	// 特殊音符处理
+	note_freq['{'] = 20;
+	note_freq['}'] = 20000;
+	note_freq['0'] = -1;
+	return;
+}
+
 #define MAX_LEN_KEY 80
 #define MAX_LEN_VALUE 80
 
-static int process_key_value(char c, int *ind, char *key, char *value, Note_t *note, NoteData_t *data)
+static int process_key_value(char c, int *ind, char *key, char *value, Note_t *note, NoteData_t *data, double *note_freq)
 {
 	if (!ind || !key || !value || !note || !data) return -1;
 	if (*ind == 0) return 0;
@@ -177,9 +229,10 @@ static int process_key_value(char c, int *ind, char *key, char *value, Note_t *n
 	struct StringCtx_t ctx = {.ch=note->ch, .line=note->line, .col=note->ind, .desc="MAINKEY"};
 	int possible = -1;
 	switch (str_switch2(key, &possible, &ctx,
-		"track", "amp", "bq", "note", "inst")) {
+		"track", "amp", "bq", "note", "inst", "key_name")) {
 	case 0: note->track = atoi(value); break;
 	case 3: notedata_set(data, subkey, value, ctx);break;
+	case 5: ctx.desc = "key_name",set_note_freq_table(note_freq, value, ctx); break;
 	case 1:
 		note->amplitude = atof(value);
 		if(note->amplitude<0||note->amplitude>=0.8) note->amplitude=0.2;
@@ -298,15 +351,10 @@ static bool note_get_nd(Note_t *pH, Note_t *p, NoteData_t *cur_notedata, NoteDat
 /* 解读字符串形式的音符并产生解析好的音符串struct */
 Note_t *note_parser(int (*stream)(void*), void *stream_ctx)
 {
-	static const double note_freq[256] = { 0,
-		['c'] = 130.8, ['d'] = 146.8, ['e'] = 164.8, ['f'] = 174.6,
-		['g'] = 196.0, ['a'] = 220.0, ['b'] = 246.9,
-		['C'] = 261.6, ['D'] = 293.6, ['E'] = 329.6, ['F'] = 349.2,
-		['G'] = 392.0, ['A'] = 440.0, ['B'] = 493.9,
-		['1'] = 523.2, ['2'] = 587.3, ['3'] = 659.2, ['4'] = 698.5,
-		['5'] = 784.0, ['6'] = 880.0, ['7'] = 987.8, ['0'] = -1,
-		['{'] = 20, ['}'] = 20000};
-	const double change_freq = exp2(1/12.0);    /* 跨半音用 */
+	// 大调 C #C D #D E F #F G #G A #A B
+	const double freq_half_note = exp2(1/12.0);    /* 跨半音用 */
+	double note_freq[UINT8_MAX] = {0};
+	set_note_freq_table(note_freq, "C", (struct StringCtx_t){.col=-1,.line=-1});    /* 默认使用1=C4 */
 
 	char key[MAX_LEN_KEY] = "",
 	     value[MAX_LEN_VALUE] = "";
@@ -358,7 +406,7 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx)
 		if (note.ch >= 256 || note.ch < 0) continue;
 
 		if (setting_mode != 0 &&
-		    process_key_value(note.ch, &setting_mode, key, value, &note, &notedata) > 0) {
+		    process_key_value(note.ch, &setting_mode, key, value, &note, &notedata, note_freq) > 0) {
 			continue;
 		}
 
@@ -406,8 +454,8 @@ Note_t *note_parser(int (*stream)(void*), void *stream_ctx)
 		case 's': p->flg_portamento^=1; break;
 		case '+': p->amplitude += p->amplitude + 0.1 <= 1 ? 0.1 : 0; break;
 		case '-': p->amplitude -= p->amplitude - 0.1 >= 0 ? 0.1 : 0; break;
-		case 'l': cur_notedata.freq/=change_freq; break;    /* 跨半音 */
-		case 'u': cur_notedata.freq*=change_freq; break;
+		case 'l': cur_notedata.freq/=freq_half_note; break;    /* 跨半音 */
+		case 'u': cur_notedata.freq*=freq_half_note; break;
 		case 'L': cur_notedata.freq/=2; break;              /* 跨八度 */
 		case 'U': cur_notedata.freq*=2; break;
 		case '[': p->flg_left^=1; break;

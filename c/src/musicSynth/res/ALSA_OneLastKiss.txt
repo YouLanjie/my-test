@@ -1,5 +1,5 @@
 :--- One Lsat Kiss ---;
-:note.speed=240; 0**
+:note.speed=480; 0**
 :note.speed=110;
 
 :---前奏---;

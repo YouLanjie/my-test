@@ -1,5 +1,6 @@
 :- 歌曲： 宇多田光 - Beautiful World -;
 :- 来源： b站;
+:note.speed=480; 0**
 :note.speed=115;
 
 :track=1; C** C*a* C**
@@ -309,7 +310,7 @@
 :track=1; a    0    f       0     | 0         0    g/    0     | a/0/  0    f/0/ 0/   | g/0/ 0    g/
 :track=2; e/C/ E/C/ c/a/    C/a/  | c/g/      C/g/ d/b/  D/b/  | e/C/  E/C/ c/a/ C/a/ | c/C/ E/C/ d/b/ D/b/
 :track=3; E
-:track=0; 1    B    E/.E//~ E/G/~ | G/D//E//~ E*         1/5/~ | 5/5/~ 5    0/4/ 3/4/ | 3*.            1/5/
+:track=0; 1    B    E/.E//~ E/G/~ | G/D//E//~ E*         1/5/~ | 5/5/~ 5    0/4/ 3/4/ | 3*.            1/5/ >>>>>>
 
 :---(137)---;
 :完全重复(133);
@@ -324,3 +325,5 @@
 :track=2; e/C/ E/C/ c/a/    C/a/  | c/g/      C/g/ d/b/  D/b/  | e/C/  E/C/ c/a/ C/a/ | c/C/ E/C/ d/b/ D/b/
 :track=3; E
 :track=0; 1    B    E/.E//~ E/G/~ | G/D//E//~ E*         1/5/~ | 5/5/~ 5    0/4/ 3/4/ | 3**
+
+:note.speed=480; 0**

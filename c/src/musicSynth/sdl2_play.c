@@ -183,6 +183,8 @@ int main(int argc, char *argv[]) {
 	printf("[NOTICE] 该程序播放可能存在bug,请谨慎使用\n");
 	// 控制循环（沿用原来的 kbhit + getchar 方式）
 	int c = 0;
+	int total_sec = (double)ctx.total_frames / SAMPLE_RATE;
+	int now_sec = 0;
 	do {
 		c = kbhitGetchar();
 		if (c == 'Q' || c == 'q') break;
@@ -213,12 +215,15 @@ int main(int argc, char *argv[]) {
 		}
 
 		// 显示进度
-		fprintf(stderr, "\r[%-40.*s] %4.1lf%% (%.1fs/%.1fs)\r",
+		now_sec = (double)music->position / SAMPLE_RATE;
+		fprintf(stderr, "\r[%-40.*s] %4.1lf%% (%02d:%02d/%02d:%02d)\r",
 				(int)(40 * music->position / ctx.total_frames),
 				"##################################################",
 				(double)music->position / ctx.total_frames * 100.,
-				(double)music->position / SAMPLE_RATE,
-				(double)ctx.total_frames / SAMPLE_RATE);
+				now_sec/60,
+				now_sec % 60,
+				total_sec/60,
+				total_sec % 60);
 
 		usleep(1e6*music->buffer_len/SAMPLE_RATE/20);	// 避免 CPU 空转
 	} while (music->position < ctx.total_frames);  // 或者判断回调是否已结束

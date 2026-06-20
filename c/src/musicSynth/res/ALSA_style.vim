@@ -89,6 +89,7 @@ function! s:LoadALSACfg()
 	" 语法
 	syn clear
 	syn keyword tkey note contained
+	syn keyword tkey key_name contained
 	syn keyword tkey speed contained
 	syn keyword tkey wave_func contained
 	syn keyword tkey har contained

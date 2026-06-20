@@ -338,20 +338,66 @@ static Path_t *path_hander_self(Path_t* ret)
 	return sva_from_cstr(ret, "./build");
 }
 
+int self_check(char *argv[])
+{
+	if (!argv || !*argv) return 1;
+
+	// 处理目录切换问题
+	char *path_list[] = {argv[0], "/proc/self/exe"};
+	size_t i = 0;
+	while (i < ARRAY_LEN(path_list)) {
+		if (path_list[i] && access(path_list[i], F_OK) == 0) break;
+		i++;
+	}
+	if (i >= ARRAY_LEN(path_list)) return 2;
+	SVA_t exe_path = {0};
+	if (i == ARRAY_LEN(path_list)-1) {
+		char *path = realpath(path_list[i], NULL);
+		if (!path) return 3;
+		sva_from_cstr(&exe_path, path);
+		free(path);
+		printf("[INFO] 全局模式工作\n");
+	} else sva_from_cstr(&exe_path, path_list[i]);
+	path_normalize(&exe_path);
+	if (!exe_path.p) return 4;
+	SVA_t parent = {0};
+	sva_from_sv(&parent, path_father(sv_from_sva(&exe_path)));
+	sva_free(&exe_path);
+	if (!parent.len) sva_sprintf(&parent, "./");
+	if (!parent.p) return 5;
+	if (parent.len == parent.capacity) sva_double(&parent);
+	parent.p[parent.len] = 0;
+	if (chdir(parent.p) < 0) {
+		printf("[INFO] 切换工作区失败: '%.*s'\n", (int)parent.len, parent.p);
+		sva_free(&parent);
+		return 6;
+	}
+	sva_free(&parent);
+
+	// 新建目录
+	if (access(BUILD_DIR, F_OK) != 0) mkdir(BUILD_DIR, 0755);
+	if (access(BIN_DIR, F_OK) != 0) mkdir(BIN_DIR, 0755);
+
+	// 自动重构建
+	SVA_t self = {0};
+	sva_from_cstr(&self, __FILE_NAME__);
+	const int result = build_file(&self, path_hander_obj_replace, path_hander_self, (CFLAGS_t){.flg_comp=CCOMFLAGS});
+	if (result == 0b11) {
+		execvp(argv[0], argv);
+		return 7;
+	}
+	sva_free(&self);
+	return 0;
+}
+
 #ifndef BUILD_C_AS_LIB
 int main(int argc, char *argv[])
 {
 	(void)argc;
 	printf("[INFO] 构建程序 ("__FILE__") 构建时间 "__TIMESTAMP__"\n");
-	mkdir(BUILD_DIR, 0755);
-	mkdir(BIN_DIR, 0755);
-	SVA_t self = {0};
-	sva_from_cstr(&self, __FILE_NAME__);
-	if (build_file(&self, path_hander_obj_replace, path_hander_self, (CFLAGS_t){.flg_comp=CCOMFLAGS}) == 0b11) {
-		execvp(argv[0], argv);
-		return 1;
+	for (int ret = self_check(argv); ret; ) {
+		return ret;
 	}
-	sva_free(&self);
 
 	build_libs();
 	fordir(NULL, SOURCE_DIR);

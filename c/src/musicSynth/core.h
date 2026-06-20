@@ -165,7 +165,6 @@ typedef struct Note {
 	HARMONIC(piano1)  \
 	HARMONIC(piano2)  \
 	HARMONIC(piano3)  \
-	HARMONIC(piano4)  \
 	HARMONIC(none)    \
 	HARMONIC(openhat) \
 	HARMONIC(h3)      \

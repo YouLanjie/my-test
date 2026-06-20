@@ -1,5 +1,6 @@
 :--Terraria Music--;
 :--Overworld day--;
+:note.speed=480; 0**
 
 :基本设置;
 :note.beates=4;
@@ -159,3 +160,5 @@ D 0/ E 0/ 5//~2//~B//~G//
 :track=4; 0/  d/ d g*~  g**
 :track=5; 0/  0/ 0 d*~  d**
 :track=0; 0/  0/ 0 gL*~ gL**
+
+:note.speed=480; 0**

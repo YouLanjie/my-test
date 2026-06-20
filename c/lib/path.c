@@ -41,20 +41,20 @@ static inline void _path_tails_process(Path_t *path, char c)
 		path->len--;
 		return;
 	}
-	if (sv_end_with(sv_from_sva(path), "/..")) {    /* 撤回一个目录层级 */
-		// path->p[path->len-3] = 0;    /* '/' -> '\0' */
+	while (sv_end_with(sv_from_sva(path), "/..")) {    /* 撤回一个目录层级 */
 		path->len -= 3;
 		const SV_t sv = sv_from_sva(path);
-		if (sv_cmp(sv, sv_from_cstr("..")) || sv_end_with(sv, "/..") ||
-		    sv_cmp(sv, sv_from_cstr("."))  || sv_end_with(sv, "/.")) {
-			path->len+=4;    /* 如果上一级目录也是..则取消一次撤回 */
-			path->p[path->len-1] = c;
-			path->len--;
-			return;
+		if (sv_cmp(sv, sv_from_cstr("..")) || sv_end_with(sv, "/..")) {
+			path->len+=3;    /* 如果上一级目录也是..则取消撤回并添加新字符 */
+			break;
+		} else if (sv_cmp(sv, sv_from_cstr("."))  || sv_end_with(sv, "/.")) {
+			/* 如果上一级是.则替换为.. */
+			path->p[path->len] = '.';
+			path->len+=1;
 		}
-		if (path->len) path->p[path->len] = 0;
-		for (;path->len >= 0 && path->p[path->len] != '/'; path->len--);
-		path->len++;
+		if (!path->len) path->len++;
+		for (;path->len > 0 && path->p[path->len-1] != '/'; path->len--);
+		path->p[path->len] = 0;
 		return;
 	}
 	path->p[path->len] = c;
@@ -64,7 +64,7 @@ static inline void _path_tails_process(Path_t *path, char c)
 /* 规范化path路径并保存到path */
 Path_t * path_normalize(Path_t *path)
 {
-	if (!path || !path->capacity || !path->len) return NULL;
+	if (!path || !path->capacity) return NULL;
 	const int len = path->len;
 	int i = 0;
 	path->len = 0;
@@ -82,13 +82,7 @@ Path_t * path_normalize(Path_t *path)
 	if (!path->p) return NULL;
 	path->p[path->len] = 0;
 	_path_tails_process(path, '\0');
-	if (path->len == 0) {
-		while (path->capacity < 10) sva_double(path);
-		path->p[path->len] = '.';
-		path->p[path->len+1] = '/';
-		path->p[path->len+2] = 0;
-	}
-	sva_smallest(path);
+	if (path->len == 0) sva_sprintf(path, "./");
 	return path;
 }
 

@@ -1,0 +1,266 @@
+:--- Realize ---;
+:inst=piano3;
+:key_name=F;
+:note.speed=480; 0**
+:note.speed=103;
+
+:track=1; 0/1//B//~ B//G//1//B// G//1//B//G// 1//B//G/
+:track=0; a//E/.~ E//0/. 0 0
+
+:track=1; 0/1//B//~ B//G//1//B// G//1//B//G// 1//B//G/
+:track=0; a//E/.~ E//0/. 0 0
+
+:track=1; 0/1//B//~ B//G//1//B// G//1//B//G// 1//B//G/
+:track=2; 0//0/ 3//  0* e
+:track=0; a//E/~E//~ 3* eL
+
+:音轨：1-3中高音轨，4-6,5低音轨;
+:track=1; 1/.
+:track=2; A/.
+:track=3; F/.B//~ B/G/~ G*
+:track=4; 0/  0/  0      f/~f/   f/~f/
+:track=5; 0/  f/  f/f/   c/~c/   c/~c/
+:track=6; fL/ c/  c/c/   aL/~aL/ aL/~aL/
+:track=0; fLL/aL/ aL/aL/ fL/~fL/ fL/~fL/
+
+:track=1; 1/.
+:track=2; G/.
+:track=3; D/.B//~ B/G/~ G//D/. C/b/
+:track=4; 0       0      0/g/       g/~g/
+:track=5; 0/g/    g/g/   0/d/       d/~d/
+:track=6; gL/d/   d/d/   g//0//bL/  bL/~bL/
+:track=0; gLL/bL/ bL/bL/ d//gL//gL/ gL/~gL/
+
+:track=1; 1/.
+:track=2; A/.0//  0     0 C
+:track=3; E/.0//  0     0 a
+:track=4; C/.B//~ B/G/~ G e
+:track=5; 0          0            0            a//a//a//a//
+:track=6; 0          0            a//a//a//a// e//e//e//e//
+:track=7; aL/e//e//  e//e//e//e// e//e//e//e// c//c//c//c//
+:track=0; aLL/c//c// c//c//c//c// c//c//c//c// aL//aL//aL//aL//
+
+:track=1; a//a//0//a// 0//a//0//a//
+:track=2; e//e//0//e// 0//e//0//e//
+:track=3; c//c//0//c// 0//c//0//c// 0/e/~ e
+:track=4; aL//aL//0//aL//    0//aL//0//aL//   0//c//a/
+:track=0; aLL//aLL//0//aLL// 0//aLL//0//aLL// 0//aL//e/ c//aL//eL//cL//
+
+:track=1; 0    0        0    B/
+:track=2; 0/E/ 1/1//1// c/1/ b/1//B//
+:track=3; 0*   a*
+:track=4; 0*   g*
+:track=5; aL*  e*
+:track=0; aLL* c*
+
+:track=1; a//A//A/ 0/E/ G A
+:track=2; 0         0      a
+:track=3; 0         0      f
+:track=4; 0         0      e
+:track=0; fL/.fL//~ fL/fL/ c f
+
+:---(10)---;
+:track=1; 0    0    G/
+:track=2; 0    0    F/0/      0/A/
+:track=3; G/0/ G/E/ C/A//G//~ G/C/
+:track=0; fL*       f*
+
+:track=1; B 0 1
+:track=2; B 0 E     B
+:track=3; G G D//D//D//D// D//D//D/
+:track=4; D b b//b//b//b// b//b//b/
+:track=5; 0* 0/bL
+:track=6; 0* 0/gL
+:track=0; dL* 0//gLL//dL/ bL///gL///dL///bL///gL///dL///bL///gL///
+
+:track=1; C/0/ 0 0 0//0/2//~                              | 2/
+:track=2; a/0/ 0 0 0//0/A//~                              | A/
+:track=3; e/E/ 1//1/1//~ 1/B/ B//B/F//~                   | F/1//1// 1/B//1//~ 1/0/ G/1/
+:track=4; 0**                                             | 0 0 0 0/a/
+:track=5; aL//0//a/ 0/a/ 0/a/ 0/a/                        | 0/a/ 0/a/ 0/a//0// 0/f/
+:track=0; aLL//aL//e/ aLL//aL//e/ aLL//aL//e/ aLL//aL//e/ | fL//fL//f/ fL//fL//f/ fL//fL//f//fL///aL/// f///c///aL///fL///c/
+
+:track=1; 2//
+:track=2; G//
+:track=3; E//1//2/ 2/2//1// 2/0/ 0//G//1//2//
+:track=4; c//0//e//0// 0/e//0// 0/e//0// 0/e//0//
+:track=0; cL//cL//c//eL// cL//cL//c//eL// cL//cL//c//eL// cL//cL//c//eL//
+
+:track=1; 3//0/0// 0//0/3//~ 3//0//0/
+:track=2; B//0/0// 0//0/B//~ B//0//0/
+:track=3; F//3/3//~ 3//3/F//~ F//0//3/ 2/1/
+:track=4; bL//0//d//0// 0/d//d//~ d//f//f//0// f//
+:track=0; bLL//bLL//bL//fL// bLL//bLL//bL//dL// d//d//d//fL///dL/// d//fL//bL/
+
+:track=1; 1
+:track=2; A 0        5/5//5//~ 5//5/5//
+:track=3; F 0/G//G// 3/3//3//~ 3//3/3//
+:track=4; 0 0 f//
+:track=5; 0 0 c//
+:track=6; fL/0/ aL/0/ aL//0//0/ aL/
+:track=0; fLL/fL/ fL/fL/ fL//c//fL// fL/fL/
+
+:track=1; 0 0 0 0/0//3//
+:track=2; 5/4/ 3/4//3//~ 3/2/ 1/2//1//
+:track=3; 3/2/ 1/2//1//~ 1/B/ A/B//A//
+:track=4; 0 0 d//0//0/ d//
+:track=5; 0 0 aL//0//0/ aL//
+:track=6; 0 0 fL//0//0/ fL//
+:track=0; dLL/dL/ dL/dL/ dL//aL//dL/ dL//aL//dL/
+
+:track=1; 3
+:track=2; 1 E D G
+:track=3; A C b E
+:track=4; aLL//0//0/ c//0/0// 0 c//
+:track=0; aLLL//aLL//aLL/ aL//aLL/aLL//~ aLL//aLL//aLL/ aL//aLL/.
+
+:---(19)---;
+:track=1; D. E/~ E/
+:track=2; b. C/~ C/0/ 3/1/
+:track=3; 0 c//0/0// gLL//
+:track=0; aLL//aLL//aLL/ aL//aLL/aLL// gLLL//gLL//gLL/ d//bL//gL//dL//
+
+:track=1; A 0 B/.
+:track=2; F A/1/ G/.1//~ 1/2/
+:track=3; f 0 gu
+:track=4; c 0 e
+:track=0; aL 0 bL 0
+
+:track=1; 3/.0// 0 1U/0/
+:track=2; G/.5//~ 5/6/ 4u/7/ 5/3/
+:track=3; g 0 a
+:track=4; d 0 fu
+:track=0; bL 0 c d///c///bL///aL///gL///fL///eL////dL////cL////bLL////
+
+:---(22)---;
+:track=1; 0    Au 2 3
+:track=2; 2/0/ D  F G
+:track=3; 0/f//f//    f//f//f//f// f//f//f//f// f//f//f//f//
+:track=4; aLu/d//d//  d//d//d//d// d//d//d//d// d//d//d//d//
+:track=0; aLLu/a//a// a//a//a//a// a//a//a//a// a//a//a//a//
+
+:track=1; 4
+:track=2; 2 0 4
+:track=3; Gu 0 2
+:track=4; F 0//2//2//3// F/Au/ 5/4/
+:track=5; 0/f//f//    f//f//f//f// 0//f//f//
+:track=6; gLu/d//d//  d//d//d//d// fL//d//d//d//
+:track=0; gLLu/g//g// g//g//g//g//fL//bL//bL//bL// d//fL//d//fL//
+
+:track=1; 3/.
+:track=2; 7/.7//~  7/6/~ 6//5u/. 5/6/
+:track=3; Gu/.3//~ 3/3/~ 3//3/.  3/4/
+:track=4; 3/.7//~  7/6/~ 6//5/.  G/A/
+:track=5; 0/0//e//   0/e//0//  0//e//0/  e//0//e//0//
+:track=6; eL//0/bL// 0/bL//0// 0//bL//0/ bL//0//bL//0//
+:track=0; eLL//eL//eL//gLu// eL//eL//gL//eL// eL//gL//eL//eL// gL//eL//gL//eL//
+
+:---(25)---;
+:track=1; 5u/0/ 0 0 0/.6//
+:track=2; 3/0/ 0 0 0/.4//
+:track=3; B/0/ 0 0 5/.4//
+:track=4; Gu/e//f// E///F///G//A//B// 0 G/.A//
+:track=5; 0/e/ gu//g//b//b//
+:track=6; eL/bL/ e//e//g//g//     0 0/.fLu//
+:track=0; eLL/gLu/ bL//bL//e//e// 0 eLL/.fLLu//
+
+:key_name=D;
+:track=1; 1U 7 5 3/.
+:track=2; 6 5 3 1/.
+:track=3; 3 3 1 G/.2//
+:track=4; 1 B G E/.D//
+:track=5; 0/g/ 0/g/ 0 0/g//
+:track=6; aL//0//e/ 0/e/ 0/g//0// 0/e//fL//
+:track=0; aLL//gL//c/ gL//gL//c/ gL//c//e//gL//~ gL//gL//c//fLL//
+
+:track=1; 0/3/ 0 0 0//0/5//
+:track=2; 0/1/ 0 0 0//0/3//
+:track=3; 2//3//A/ 0/1//1// 5//5//5//5// 5//5/1//
+:track=4; D//E//E/ 0/C//C// G//G//G//G// G//G/G//
+:track=5; 0/f/ 0/f/ 0 0/f//
+:track=6; fL/c/ 0/c/ 0/f//0// 0/c//c//
+:track=0; fLL//fL//aL/ fL//fL//aL/ fL//aL//c//fL//~ fL//fL//aL//cL//
+
+:---(28)---;
+:track=1; 5/3/ 0 0 0//0/6//
+:track=2; 3/1/ 0 0 0//0/2//
+:track=3; 1//3//G/ 0/1//1// 6//6/6//~ 6//6/7//
+:track=4; G//E//E/ 0/C//C// A//A/A//~ A//A/A//
+:track=5; 0/C/ 0/C/ 0 0/C//
+:track=6; c/g/ 0/g/ 0/c//0// 0/g//gL//
+:track=0; cL//c//e/ c//c//e/ c//e//g//c//~ c//c//e//gLL//
+
+:track=1; 6//0//7/~ 7//0/7//~  7/0/ 0//0/1UU//
+:track=2; 2//0//5/~ 5//0/5u//~ 5/0/ 0//0/6U//
+:track=3; B//7//2/ 2//1U/3// 3/0/ 6U//7U/3U//
+:track=4; A//B//B/ B//1/B// B/0/ 6//7/1U//
+:track=5; 0/g/ 0/g//0// 0//g//
+:track=6; gL//0//d/ 0//0//d//gL//~ gL//e//g//bL// g//0//g//aL//
+:track=0; gLL//gL//bL/ gL//gL//bL//gLL// gLL/bL//e//aL// e//gL//e//aLL//
+
+:track=1; 1UU 7UU 1UU 2UU/.0//
+:track=2; 6U 6U 6U 6U/.0//
+:track=3; 3U 3U 3U 3U/.1UU//
+:track=4; 1U 7  1U 2U/.1U//
+:track=5; 0 0 1//
+:track=6; aL//0//e//0// C//0//A//0// A//0//0/ a//0/fL//
+:track=0; aLL//aL//c//e// b//C//E//A// E//A//E//C// e//e//c//fLL//
+
+:---(31)---;
+:track=1; 0/6U/
+:track=2; 0/4U/
+:track=3; 1UU//6U//1U/ 0/1U/ 5U/3U/ 2U/1U/
+:track=4; 1U//6//6/ 0/1/ 5/3/ 2/1/
+:track=5; 0 0 A//
+:track=6; fL//0//c//0// a//0//F//0// F//0//0/ f//0//0/
+:track=0; fLL//fL//aL//c// f//a//C//F// C//F//C//a// c//c//aL//fL//
+
+:track=1; 2U/
+:track=2; 5/
+:track=3; 3/3U//3U// 0/2U/ 3U//3U//0/ 2U/3U/
+:track=4; 2/3//3//   0/2/  3//3//0/   2/3/
+:track=5; 0 0 E//
+:track=6; c//0//g//0// E//0//C//0//0/ C//
+:track=0; cL//c//e//g// C//E//g//C// g//C//g//E// g//g//e//c//
+
+:track=1; 5U/0/ 0 1UU
+:track=2; 2U/0/ 0 5Uu
+:track=3; 7/0/ 6U 3U 7U
+:track=4; 5/0/ 6 1U 7
+:track=5; 0/g/ 0/g/ 0/gu//
+:track=6; gL//0//d/ gL//0//d/ gLu//0//e//
+:track=0; gLL//gL//bL/ gLL//gL//bL/ gLL//gL//bL//gL// b///g///e///bL///gL///eL///bLL///gLL///
+
+:---(34)---;
+:track=1; 1U~ 1U/.
+:track=2; 6U~ 6U/.
+:track=3; 4U~ 4U/.0// 0//3/. 6/1U/
+:track=4; 1U~ 1U/.0// 0//E/. A/1/
+:track=5; 0/0//f//  0/a//0// 0//f//0/ a//0//f//0//
+:track=6; fL/0//c// 0/f//0// 0//c//0/ f//0//c//0//
+:track=0; fLL//fL//fL//aL// fL//fL//c//fL// fL//aL//fL//fL// c//fL//aL//fL//
+
+:track=1; 7/.
+:track=2; 5/.
+:track=3; 2/.6//~ 6/5/
+:track=4; B/.A//~ A/G/ 0/5//3// 5//6/6//
+:track=5; gL/0/ 0 0 0/b/
+:track=0; gLL/gL///bL///d///g/// d///g///b///D///G/ 0 0//d///bL///g/
+
+:track=1; A/B//A// 1//A//A//B// A//A//1//A// 6//6//5//6//
+:track=2; aL/a//0// 0/a//0// 0/a//0// 0/a//0// 0/a//0//
+:track=0; aLL/e//c// aL//c//e//c// aL//c//e//c// aL//c//e//c//
+
+:---(37)---;
+:track=1; A/B//A// 1//A//A//B// A//A//1//A// 1//2/.
+:track=2; 0/a//0// 0/a//0// 0/a//
+:track=0; aLL//c//e//c// aL//c//e//c// aL//c//e//c// aL//c//a///e///c///aL///
+
+:居然有重复的地方;
+:track=1; A/B//A// 1//A//A//B// A//A//1//A// 6//6//5//6//
+:track=2; aL/a//0// 0/a//0// 0/a//0// 0/a//0// 0/a//0//
+:track=0; aLL/e//c// aL//c//e//c// aL//c//e//c// aL//c//e//c//
+
+:track=1; A/B//A// 1//A/A//~ A//0/. 0
+:track=2; aL/0/ a//a/aL//~ aL//0/. 0
+:track=0; aLL/a////e////c///e///c////aL//// e//e/aLL//~ aLL//0/. 0
