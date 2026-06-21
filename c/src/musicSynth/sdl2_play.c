@@ -208,22 +208,21 @@ int main(int argc, char *argv[]) {
 		} else if (c == '\\') {
 			sdl_set_volume(dev, &ctx, 1-music->amplitude);
 		} else if (c == 'i') {
-			printf("\n[INFO] 音量系数: %.1lf%%\n", music->amplitude*100);
-		} else if (c == 'I') {
 			printf("\n[INFO] 当前位置参考:\n");
 			print_note(music->tracks[0]);
 		}
 
 		// 显示进度
 		now_sec = (double)music->position / SAMPLE_RATE;
-		fprintf(stderr, "\r[%-40.*s] %4.1lf%% (%02d:%02d/%02d:%02d)\r",
-				(int)(40 * music->position / ctx.total_frames),
-				"##################################################",
-				(double)music->position / ctx.total_frames * 100.,
-				now_sec/60,
-				now_sec % 60,
-				total_sec/60,
-				total_sec % 60);
+		fprintf(stderr, "\r[%-40.*s] %4.1lf%% (%02d:%02d/%02d:%02d) Vol:%.1f%% \r",
+			(int)(40 * music->position / ctx.total_frames),
+			"##################################################",
+			(double)music->position / ctx.total_frames * 100.,
+			now_sec/60,
+			now_sec % 60,
+			total_sec/60,
+			total_sec % 60,
+			music->amplitude*100);
 
 		usleep(1e6*music->buffer_len/SAMPLE_RATE/20);	// 避免 CPU 空转
 	} while (music->position < ctx.total_frames);  // 或者判断回调是否已结束

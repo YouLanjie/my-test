@@ -9,9 +9,9 @@
  */
 
 
-#include "core.h"
-#include "../../include/tools.h"
 #include <alsa/asoundlib.h>
+#include "../../include/tools.h"
+#include "core.h"
 
 #define FLG_PLAY (1 << 0)
 #define FLG_SAVE (1 << 1)
@@ -202,6 +202,8 @@ int main(int argc, char *argv[])
 	snd_pcm_sframes_t delay = 0;
 	size_t size = 0;
 	int c = 0, pause = false;
+	int total_sec = total_size / SAMPLE_RATE;
+	int now_sec = 0;
 	do {
 		c = kbhitGetchar();
 		if (c == 'Q' || c == 'q') break;
@@ -230,8 +232,9 @@ int main(int argc, char *argv[])
 		} else if (c == '_'){ if (ctx->amplitude-0.1 >= 0) ctx->amplitude -= 0.1;
 		} else if (c == '\\') {
 			ctx->amplitude = 1;
-		} else if (c == 'i'){
-			printf("\n[INFO] 音量系数: %.1lf%%\n", ctx->amplitude*100);
+		} else if (c == 'i') {
+			printf("\n[INFO] 当前位置参考:\n");
+			print_note(ctx->tracks[0]);
 		}
 
 		if (pause) {
@@ -249,12 +252,16 @@ int main(int argc, char *argv[])
 			(double)sum_size/SAMPLE_RATE, size,
 			(double)ctx->position/SAMPLE_RATE); */
 		snd_pcm_delay(pcm, &delay);
-		fprintf(stderr, "\r[%-40.*s] %4.1lf%% (%.1fs/%.1fs) \r",
+		now_sec = ctx->position / SAMPLE_RATE;
+		fprintf(stderr, "\r[%-40.*s] %4.1lf%% (%02d:%02d/%02d:%02d) Vol:%.1f%% \r",
 			(int)(40*ctx->position/total_size),
 			"##################################################",
 			(double)ctx->position/total_size*100.,
-			(double)ctx->position/SAMPLE_RATE,
-			(double)total_size/SAMPLE_RATE);
+			now_sec/60,
+			now_sec % 60,
+			total_sec/60,
+			total_sec % 60,
+			ctx->amplitude*100);
 	} while (size);
 	fprintf(stderr, "\n[Quit]\n");
 	music_ctx_free(ctx);

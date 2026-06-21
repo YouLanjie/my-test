@@ -43,7 +43,9 @@
 
 #define LOGVAR(typ, var) LOG("var '%s' = " typ " (as %s)", #var, (var), #typ)
 #define CALL(func, ...) (LOG("call '%s' at (%p)", #func, (func)), (func)(__VA_ARGS__))
+#ifndef ARRAY_LEN
 #define ARRAY_LEN(v) (sizeof(v)/sizeof(v[0]))
+#endif
 
 /*
  * kbhit getch

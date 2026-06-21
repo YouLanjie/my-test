@@ -281,7 +281,7 @@ def main():
             outf.write_text(f"""\
 #+title: {cfg['title']} {h1[0]}
 #+setupfile: {cfg['setupfile']}
-""" + s, encoding="utf8")
+\n""" + s, encoding="utf8")
 
     if args.dry_run:
         pytools.print_err("(Dry Run)")
