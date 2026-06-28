@@ -97,7 +97,7 @@ class ExportVisitor(ABC):
     def visit_document(self, node: "Document") -> str:
         return ""
 
-def _get_strings_pattern(s:str,blank_char=" )-,") -> re.Pattern:
+def _get_strings_pattern(s:str,blank_char=" )-,\"'”’") -> re.Pattern:
     return re.compile(f"{s}([^ ].*?(?<! )){s}(?=[{blank_char}]|\n|$)",
                       re.DOTALL)
 
@@ -251,7 +251,7 @@ class Strings:
             # 识别前一字符是否满足条件（前后条件还不一样）
             if current_pattern[0] not in (
                     "link", "fn", "radio_link", "radio_link_auto") and i-1 > 0 \
-                    and s[i-1] not in " (-\n":
+                    and s[i-1] not in " (-\n\"'“‘":
                 i+=1
                 continue
             if last != i and s[last:i].strip():

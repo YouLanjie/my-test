@@ -429,8 +429,8 @@ class Config:
                     file_name=str(file.resolve()),
                     setting={"verbose_msg":True})
             content += doc.accept(exportor)
-        return (f"字数：{len([i for i in content if i not in " \t\n\r\\{}[]"])/1000}k,\n"
-                f"中文字符数：{len([i for i in content if len(i.encode()) > 1])/1000}k,\n"
+        return (f"字数：{len([i for i in content if i not in " \t\n\r\\{}[]"])/10000}w,\n"
+                f"中文字符数：{len([i for i in content if len(i.encode()) > 1])/10000}w,\n"
                 f"行数：{len([i for i in content.splitlines() if i])},\n"
                 f"覆盖字符数：{len(set(content))},\n",
                 content)
