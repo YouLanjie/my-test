@@ -648,8 +648,11 @@ def cmd_genal(li, mode) -> str:
                 t+=f'echo "Now Playing:{j.title}"\n{CONFIG["player"]} {repr(str(aud))}\n'
                 continue
             elif mode == "play_mp4":
-                t+=f'echo "Now Playing:{j.title}"\n{CONFIG["player"]} {repr(str(vid))} &\n'+\
-                        f'{CONFIG["player"]} "{repr(str(aud))}"\n'
+                if CONFIG["player"] == "mpv":
+                    t+=f'echo "Now Playing:{j.title}"\n{CONFIG["player"]}'
+                    t+=f' --audio-file={repr(str(aud))} {repr(str(vid))}\n'
+                    continue
+                t += f'# Unsupport Mode for Player {CONFIG["player"]}\n'
                 continue
             else:
                 t+=f'{ffmpeg} -i {repr(str(aud))} '

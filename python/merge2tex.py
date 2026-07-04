@@ -172,7 +172,9 @@ class Config:
                     "add":[]
                     }
                 },
-            "output":"output_#${title}_#${setting.papersize}_#${setting.fontsize}pt_"\
+            "output":"output_#${title}_#${setting.papersize}_"\
+                    "#${setting.fontsize}pt_"\
+                    "#${setting.cols}cols_"\
                     "#${template.gtst}.tex",
             }
     latex_template = r"""% 生成于: #${template.generate_time}
