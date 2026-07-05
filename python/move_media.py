@@ -176,11 +176,16 @@ def process_files(result:dict[str,int]) -> None:
             backup = Path(f"{file}.bak")
             if not backup.exists():
                 if not ARGS.no_apply:
-                    shutil.move(file, backup)
-                print_verbose(3,f"# INFO 重命名: {file} -> {backup}")
+                    try:
+                        shutil.move(file, backup)
+                    except Exception as e:
+                        print_verbose(2, f"# WARN 重命名备份文件时出错: {str(e)}")
+                print_verbose(3, f"# INFO 重命名: {file} -> {backup}")
             else:
                 print_verbose(3, f"# WARN 重复文件重名: {file}")
             result["skipped"] += 1
+            # 不应当继续执行移动逻辑
+            continue
 
         # 执行文件操作
         try:
