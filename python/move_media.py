@@ -163,7 +163,11 @@ def process_files(result:dict[str,int]) -> None:
         if not target_dir.exists():
             print_verbose(3, f"# INFO 创建输出文件夹: {target_dir}")
             if not ARGS.no_apply:
-                target_dir.mkdir(parents=True)
+                try:
+                    target_dir.mkdir(parents=True)
+                except Exception as e:
+                    print_verbose(-1, f"# ERROR 处理文件失败:{file} - {str(e)}")
+                    continue
 
         # 检查目标文件是否已存在
         if target.exists():

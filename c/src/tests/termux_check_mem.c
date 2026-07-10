@@ -5,7 +5,6 @@
  * @brief       专门用于在termux下检查通报内存占用
  */
 
-#include <bits/getopt.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -19,6 +18,7 @@
 #include <ctype.h>
 #include <time.h>
 #include <sys/sysinfo.h>
+#include <signal.h>
 
 typedef struct {
 	size_t rss;    // kb
@@ -249,9 +249,9 @@ int main(int argc, char *argv[])
 		       proc_list[i].pid, proc_list[i].comm);
 	}
 	printf("SUMMARY:\n- RSS(%.1f/%.1f [%.1f%%])\n- SWAP(%.1f/%.1f [%.1f%%])\n- Total(%.1f/%.1f [%.1f%%])\n",
-	       proc_summary.rss/1024., info.totalram/1024./1024., proc_summary.rss*1024./info.totalram,
-	       proc_summary.swap/1024., info.totalswap/1024./1024., proc_summary.swap*1024./info.totalswap,
-	       proc_summary.total/1024., total_mem/1024., proc_summary.total*1024./(info.totalram+info.totalswap)
+	       proc_summary.rss/1024., info.totalram/1024./1024., proc_summary.rss*1024./info.totalram*100,
+	       proc_summary.swap/1024., info.totalswap/1024./1024., proc_summary.swap*1024./info.totalswap*100,
+	       proc_summary.total/1024., total_mem/1024., proc_summary.total*1024./(info.totalram+info.totalswap)*100
 	       );
 	return 0;
 }
