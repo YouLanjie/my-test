@@ -65,7 +65,7 @@ class Song:
         except ValueError:
             if "https://163cn.tv/" in url:
                 url = get_real_link(url)
-            match = re.match(r".*id=(\d+)", url)
+            match = re.match(r".*[?&]id=(\d+)", url)
             if not match:
                 return
             url = match.group(1)

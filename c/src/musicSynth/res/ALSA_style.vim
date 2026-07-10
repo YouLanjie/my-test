@@ -85,7 +85,7 @@ function! s:SetMode(mode)
 	endif
 endfunction
 
-function! s:LoadALSACfg()
+function! g:LoadALSACfg()
 	" 语法
 	syn clear
 	syn keyword tkey note contained
@@ -140,6 +140,6 @@ endfunction
 
 " 自动加载配置
 if <SID>IsALSAFile()
-	call s:LoadALSACfg()
+	call g:LoadALSACfg()
 endif
-au BufRead,BufNewFile *.txt if <SID>IsALSAFile() | call s:LoadALSACfg() | endif
+au BufRead,BufNewFile *.txt if <SID>IsALSAFile() | call g:LoadALSACfg() | endif
