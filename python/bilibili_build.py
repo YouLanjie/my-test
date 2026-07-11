@@ -648,11 +648,13 @@ def cmd_genal(li, mode) -> str:
                 t+=f'echo "Now Playing:{j.title}"\n{CONFIG["player"]} {repr(str(aud))}\n'
                 continue
             elif mode == "play_mp4":
-                if CONFIG["player"] == "mpv":
-                    t+=f'echo "Now Playing:{j.title}"\n{CONFIG["player"]}'
-                    t+=f' --audio-file={repr(str(aud))} {repr(str(vid))}\n'
+                if CONFIG["player"] != "mpv":
+                    t += f'# Unsupport Mode for Player {CONFIG["player"]}\n'
                     continue
-                t += f'# Unsupport Mode for Player {CONFIG["player"]}\n'
+                t+=f'echo "Now Playing:{j.title}"\n{CONFIG["player"]}'
+                if CONFIG["genass"] and has_subprocess:
+                    t +=f' --sub-file=<(biliass {repr(str(danmaku))} -s 1920x1080 -fs 45 -a 0.7)'
+                t+=f' --audio-file={repr(str(aud))} {repr(str(vid))}\n'
                 continue
             else:
                 t+=f'{ffmpeg} -i {repr(str(aud))} '

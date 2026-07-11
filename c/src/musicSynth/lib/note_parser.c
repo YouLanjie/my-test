@@ -26,9 +26,14 @@ void print_note(Note_t *note)
 void check_notes(Note_t *note, bool print)
 {
 	if (!note) return;
-	char *colors[2][2] = { {"", ""}, {"\e[31m", "\e[0m"} };
-	int istty = isatty(STDERR_FILENO);
-	int istty2 = isatty(STDOUT_FILENO);
+	const char *colors[2][2] = { {"", ""}, {"\e[31m", "\e[0m"} };
+#ifdef _WIN32
+	const int istty = 0;
+	const int istty2 = 0;
+#else
+	const int istty = isatty(STDERR_FILENO);
+	const int istty2 = isatty(STDOUT_FILENO);
+#endif
 	double counter = 0;
 	int track = 0;
 #define p (note->pcm_data)
@@ -156,7 +161,7 @@ static void set_note_freq_table(double note_freq[UINT8_MAX], char *pattern, stru
 
 	do {
 		// 先找出调号
-		char *p = NULL;
+		const char *p = NULL;
 		for (; i < len_pattern && (!p || *p==' '); i++) p = strchr(note_chr[MAJOR], pattern[i]);
 		if (!p) {
 			printf("[WARN] (%d:%d) '%s'值无效,调号设置错误\n", ctx.line, ctx.col, ctx.desc);
