@@ -239,6 +239,7 @@ Path_t *path_hander_elf(Path_t* path)
 	if (!path || !path->p) return NULL;
 	SVA_t basename = {0};
 	sva_from_sv(&basename, path_basename(sv_from_sva(path)));
+	if (basename.p == NULL) return NULL;
 	sva_sprintf(path, "%s/%.*s", BIN_DIR, (int)basename.len, basename.p);
 	sva_free(&basename);
 	path_normalize(path);

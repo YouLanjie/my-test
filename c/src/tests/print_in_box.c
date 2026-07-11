@@ -65,7 +65,7 @@ int main(int argc, char *argv[])
 	while (inp != 'q') {
 		sprintf(str[2], " X  Y WD HI FY HY C\n");
 		for (int i = 0; i < window_num; i++)
-			sprintf(str[2], "%s%2d %2d %2d %2d %2d %2d %1d\n", str[2], x[i], y[i], wd[i], hi[i], hy[i], fy[i], flag_color[i]);
+			sprintf(str[2], "%2d %2d %2d %2d %2d %2d %1d\n", x[i], y[i], wd[i], hi[i], hy[i], fy[i], flag_color[i]);
 		sprintf(str[2], "%sfocus window:%d\n", str[2], flag_window);
 		printf("\033[0;0H");
 		for (int i = 0; i < window_num - flag_info; i++)

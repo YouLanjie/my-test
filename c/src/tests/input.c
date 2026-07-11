@@ -175,7 +175,7 @@ int input_char(void)
 	return 0;
 }
 
-int main(int argc, char *argv[])
+int main()
 {
 	printf("What Type Data You Want To Input?\n"
 	       "1) Number(int)\n"

@@ -15,6 +15,7 @@
 #include <libavutil/opt.h>
 #include <libswresample/swresample.h>
 #include <math.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -123,7 +124,7 @@ int main(int argc, char *argv[])
 	}
 
 	int audio_stream_idx = -1;	// 初始化为 -1，表示未找到
-	for (int i = 0; i < fmt_ctx->nb_streams; i++) {
+	for (size_t i = 0; i < fmt_ctx->nb_streams; i++) {
 		if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
 			audio_stream_idx = i;
 			break;		// 找到第一个视频流后退出循环

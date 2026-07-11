@@ -17,6 +17,7 @@
 int LOCK = 1;
 
 void quit(int i) {
+	(void)i;
 	LOCK = 0;
 }
 

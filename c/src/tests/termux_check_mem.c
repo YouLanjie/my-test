@@ -38,7 +38,10 @@ void read_comm(const char *path, Process_t *proc)
 	fclose(fp);
 	char *p = strrchr(comm, '/');
 	if (!p || !*(p+1)) p = comm;
-	strncpy(proc->comm, p, sizeof(proc->comm));
+	if (strlen(p) < countof(proc->comm))
+		strncpy(proc->comm, p, sizeof(proc->comm)-1);
+	else
+		strncpy(proc->comm, p+(strlen(p)-sizeof(proc->comm)), sizeof(proc->comm)-1);
 	p = strrchr(proc->comm, '\n');
 	if (p) *p = '\0';
 }

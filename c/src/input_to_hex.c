@@ -9,15 +9,16 @@
  */
 
 
-#include "../include/tools.h"
+#include <stdio.h>
+#include <stddef.h>
 #include <limits.h>
 
 char *i2b(unsigned long data, int bytes, char *buf, size_t buf_size)
 {
 	if (!buf || buf_size == 0) return NULL;
-	if (bytes <= 0 || bytes > sizeof(data)) bytes = sizeof(data);
+	if (bytes <= 0 || bytes > (int)sizeof(data)) bytes = sizeof(data);
 
-	int bits = bytes * 8;
+	size_t bits = bytes * 8;
 	if (bits >= buf_size) bits = buf_size - 1;  // 留1字节给'\0'
 
 	for (int i = 0; i < bits; ++i) {

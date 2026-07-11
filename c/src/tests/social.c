@@ -155,7 +155,7 @@ int run()
 	return 0;
 }
 
-int main(int argc, char *argv[])
+int main()
 {
 	printf("Pop:%d,Cap:%d\n", Pop, Cap);
 	cap_add_worker(&capital[0]);

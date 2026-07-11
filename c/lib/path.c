@@ -89,7 +89,7 @@ Path_t * path_normalize(Path_t *path)
 Path_t *path_join(Path_t *path, SV_t child)
 {
 	if (!path || !path->capacity || !path->p) return NULL;
-	const static char sep = '/';
+	static const char sep = '/';
 	if (child.len && child.p[0] == sep) sva_sprintf(path, "%.*s", (int)child.len, child.p);
 	else sva_sprintfcat(path, "%c%.*s", sep, (int)child.len, child.p);
 	return path_normalize(path);

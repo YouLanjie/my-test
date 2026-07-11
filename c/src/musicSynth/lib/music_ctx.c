@@ -88,10 +88,10 @@ bool music_ctx_tracks_reset(MusicCtx_t *ctx)
 			ctx->track_position = position;
 			track = 0;
 		} else if (p->track != track) {    /* 其余轨道切换(包括切入) */
-			if (p->track >= 0 || p->track < ARRAY_LEN(track_sizes))
+			if (p->track < ARRAY_LEN(track_sizes))
 				ctx->tracks[p->track] = p;
 			track = p->track;
-		} else if (p->track >= 0 || p->track < ARRAY_LEN(track_sizes))   /* 累加轨道长度 */
+		} else if (p->track < ARRAY_LEN(track_sizes))   /* 累加轨道长度 */
 			track_sizes[p->track] += p->pcm_data->sample_num;
 
 		if (p->track == 0) position += p->pcm_data->sample_num;

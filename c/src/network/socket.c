@@ -102,6 +102,7 @@ struct tm *gtime()
 
 void *get_msg(void *p)
 {
+	(void)p;
 	struct winsize size;
 
 	fflush(stdout);

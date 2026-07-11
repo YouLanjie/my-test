@@ -473,8 +473,9 @@ extern void print_ui_human(int *info)
 
 static void *print_ui(void *p)
 {
+	(void)p;
 	int info = flags;
-	int last_farme = map.f;
+	int last_farme;
 	map.f = 1;
 
 	if (!(flags&FLG_MACHINE)) printf("\033[?25l");
@@ -491,7 +492,7 @@ static void *print_ui(void *p)
 			flags &= ~FLG_LOAD;
 			game_time1 -= map_info.time;
 		}
-		if (flags&FLG_LOAD && !feof(file_load)) {
+		if (flags&FLG_LOAD && file_load && !feof(file_load)) {
 			int8_t *pmap = map.map;
 			fread(&map, 1, sizeof(map), file_load);
 			map.map = pmap;

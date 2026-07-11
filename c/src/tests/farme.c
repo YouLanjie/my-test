@@ -122,6 +122,7 @@ RUN:
 
 void *input(void *p)
 {/*{{{*/
+	(void)p;
 	while (inp != 'q' && exit_flag) {
 		inp = _getch();
 	}
@@ -131,6 +132,7 @@ void *input(void *p)
 
 void *logic(void *p)
 {/*{{{*/
+	(void)p;
 	while (inp != 'q' && exit_flag) {
 		usleep(TPS);
 		switch (inp) {

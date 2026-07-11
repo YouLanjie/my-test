@@ -5,7 +5,7 @@
 #include <sys/time.h>
 
 void run(int i) {
-	printf("Time is up!\n");
+	printf("[i:%d] Time is up!\n", i);
 	return;
 }
 
@@ -33,7 +33,7 @@ int main() {
 		perror("setitimer");
 		return -1;
 	}
-	while (1);
+	sleep(15);
 	// for (int i = 0; i < 10; i++) {
 		// printf("%d\n", i);
 		// sleep(1);

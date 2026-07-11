@@ -36,7 +36,9 @@ Camera_t *camera_create()
 		free(p);
 		return NULL;
 	}
-	*((PrivatCamera_t*)p->private_data) = (PrivatCamera_t){{0},{0},{0}, false};
+	*((PrivatCamera_t*)p->private_data) = (PrivatCamera_t){
+		(Vec_t){}, (Vec_t){}, (Vec_t){}, false
+	};
 	return p;
 }
 

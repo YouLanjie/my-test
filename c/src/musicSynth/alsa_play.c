@@ -170,8 +170,8 @@ int main(int argc, char *argv[])
 			if (ctx->amplitude > 100 || ctx->amplitude < 0) ctx->amplitude = 1.0;
 			break;
 		case 'I':
-		case 'i': strncpy(input, optarg, sizeof(input)); break;
-		case 'f': strncpy(wavfile, optarg, sizeof(input)); break;
+		case 'i': strncpy(input, optarg, sizeof(input)-1); break;
+		case 'f': strncpy(wavfile, optarg, sizeof(input)-1); break;
 		case 'n': ctx->flg_no_fade = true; break;
 		case 'm': ctx->flg_smooth = true; break;
 		case 'H': ctx->flg_no_har = true; break;

@@ -77,6 +77,7 @@ get_mem_by_grep_and_save() {
 	echo "TAG: '$tag'"
 	echo "DELAY: '$delay'"
 	echo "OUTPUT: '$outputf'"
+	echo "Time,VmRSS,VmSwap,Total"
 	echo "Time,VmRSS,VmSwap,Total" >>"$outputf"
 	while line="" ;do
 		result=$(get_mem_by_grep -t "$tag"|sed '1d')

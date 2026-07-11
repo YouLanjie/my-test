@@ -161,6 +161,7 @@ int read_config(char *file_path)
 
 int main(int argc, char *argv[])
 {
+	(void)argc;
 	char path[PATH_MAX] = "";
 	strcpy(path, argv[0]);
 #ifdef __linux__

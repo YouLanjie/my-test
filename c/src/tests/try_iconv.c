@@ -15,7 +15,7 @@
 #include <iconv.h>
 /*#include <wchar.h>*/
 
-int main(int argc, char *argv[])
+int main()
 {
 	char fromcode[1024] = {0}, tocode[1024] = {0};
 	printf(">>>> GET INPUT\n");

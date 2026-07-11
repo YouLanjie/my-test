@@ -16,7 +16,7 @@ size_t har_set_##x(const Harmonics_t ** harp) \
 	return ARRAY_LEN(har_arr_##x);       \
 }
 
-const static Harmonics_t har_arr_piano1[] = {
+static const Harmonics_t har_arr_piano1[] = {
 	{1,  1,     0},
 	{2,  0.340, 0},
 	{3,  0.102, 0},
@@ -99,7 +99,7 @@ double wave_square(double t)
  */
 double wave_triangle(double t)
 {
-	const static double T = M_PI, A = 1;
+	static const double T = M_PI, A = 1;
 	double x = fmod(t, T);
 	if (x < 0)
 		x += T;

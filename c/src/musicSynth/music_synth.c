@@ -211,8 +211,8 @@ int main(int argc, char *argv[])
 			if (ctx->amplitude > 100 || ctx->amplitude < 0) ctx->amplitude = 1.0;
 			break;
 		case 'o':
-			if (optarg && *optarg) strncpy(filename, optarg, sizeof(filename));
-			else strncpy(filename, "output.wav", sizeof(filename));
+			if (optarg && *optarg) strncpy(filename, optarg, sizeof(filename)-1);
+			else strncpy(filename, "output.wav", sizeof(filename)-1);
 			break;
 		case 'i': id = (int)strtod(optarg, NULL) % ARRAY_LEN(NOTELIST); break;
 		case 'I': strncpy(input, optarg, sizeof(input)); break;
