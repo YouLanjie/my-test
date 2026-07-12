@@ -6,6 +6,9 @@
  */
 
 #include "lib/render3d.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #define MAX_FRAME 100000
 uint8_t FPS = 40;
@@ -39,9 +42,11 @@ typedef struct {
 	double          theta;
 	Vec_t           v;      /* 物体速度 */
 	Vec_t           cav;    /* 相机速度 */
+	bool            rlt_accelr;    /* 相对镜头加速度 */
 	bool            suspend;
 	bool            no_fiction;
 	bool            no_focus;
+	bool            no_box;
 } Runtimedata_t;
 
 /* 单帧动画处理
@@ -49,14 +54,15 @@ typedef struct {
 static bool frame(Runtimedata_t *dat)
 {
 	if (!dat || !dat->obj || !dat->camera || !dat->backend) return false;
+	Vec_t accelr = (Vec_t){};
 
 	/* 输入处理 */
 	switch (kbhitGetchar()) {
-	case ' ': dat->v.y += (dat->v.y < 0 ? 1.5 : 0.5); break;
-	case 'w': dat->v.z -= 0.1; break;
-	case 's': dat->v.z += 0.1; break;
-	case 'a': dat->v.x -= 0.1; break;
-	case 'd': dat->v.x += 0.1; break;
+	case ' ': accelr.y = (dat->v.y < 0 ? 1.5 : 0.5); break;
+	case 'w': accelr.z = -0.1; break;
+	case 's': accelr.z = +0.1; break;
+	case 'a': accelr.x = -0.1; break;
+	case 'd': accelr.x = +0.1; break;
 	case 'j': dat->theta += 0.01*2*M_PI; break;
 	case 'k': dat->theta -= 0.01*2*M_PI; break;
 	case '+':
@@ -84,14 +90,26 @@ static bool frame(Runtimedata_t *dat)
 
 	case '1': if (FPS > 1) FPS--; break;
 	case '2': if (FPS < (uint8_t)-1) FPS++; break;
+	case '3': dat->no_fiction=!dat->no_fiction; break;
+	case '4': dat->rlt_accelr=!dat->rlt_accelr; break;
+	case '5': dat->no_box=!dat->no_box; break;
 	case 'f': dat->no_focus=!dat->no_focus; break;
-	case '`': dat->no_fiction=!dat->no_fiction; break;
 	case 'r': setup(&dat->backend, dat->camera, dat->backend->id); break;
 	case 'c': printf("\x1b[2J"); break;
 	case '\t': setup(&dat->backend, dat->camera, dat->backend->id+1); break;
 	case 'p': dat->suspend=!dat->suspend; break;
 	case 'q': return true; break;
 	}
+	if (dat->rlt_accelr &&
+	    (accelr.x != 0 || accelr.z != 0)) {
+		Vec_t z = dat->camera->forward;
+		z.y = 0;
+		Vec_t x = vec_cross_product((Vec_t){0, 1, 0}, z);
+		accelr = vec_add3((Vec_t){0, accelr.y, 0},
+				  vec_mul(vec_direct(x), -accelr.x),
+				  vec_mul(vec_direct(z), -accelr.z));
+	}
+	dat->v = vec_add(dat->v, accelr);
 	if (dat->suspend) return false;
 
 	camera_shift(dat->camera, dat->cav);
@@ -114,8 +132,10 @@ static bool frame(Runtimedata_t *dat)
 #define CP dat->obj->center
 #define BOX(var, min, max, rate) \
 	if ((CP.var > (max) && dat->v.var > 0) || (CP.var < (min) && dat->v.var < 0)) dat->v.var *= (rate)
-	BOX(x, -5, 5, -0.7);
-	BOX(z, -50, 10, -0.7);
+	if (!dat->no_box) {
+		BOX(x, -5, 5, -0.7);
+		BOX(z, -50, 10, -0.7);
+	}
 	/* 地面碰撞处理 */
 	static const int ground = -1;
 	if (CP.y <= ground && dat->v.y <= 0 && dat->v.y > -0.5) {
@@ -234,8 +254,14 @@ int main(int argc, char *argv[])
 		data.backend->render(data.backend);
 		data.backend->clean(data.backend);
 
-		printf("=> FPS: %d, VS: %.0f, VD: %.0f, BS: %5.1f%%, F: %ld %s\n",
+		printf("=> FPS: %d, VS: %.0f, VD: %.0f, BS: %5.1f%%, F: %ld "
+		       "%s%s%s%s%s %s\n",
 		       FPS, data.camera->scale, data.camera->dept, busy, i,
+		       data.rlt_accelr||data.no_fiction||data.no_box ? "[" : "",
+		       data.no_fiction ? "F" : "",
+		       data.rlt_accelr ? "R" : "",
+		       data.no_box ? "B" : "",
+		       data.rlt_accelr||data.no_fiction||data.no_box ? "]" : "",
 		       busy < 100 ? "           ": "(OVERLOAD) ");
 		printf("=> Center xyz: %.3f, %.3f, %.3f \n",
 		       block->center.x,
@@ -247,7 +273,11 @@ int main(int argc, char *argv[])
 		printf("=> Ca P/V xyz: (%.2f,%.2f,%.2f) (%.2f,%.2f,%.2f) \n",
 		       data.camera->position.x, data.camera->position.y, data.camera->position.z,
 		       data.cav.x, data.cav.y, data.cav.z);
+#ifdef _WIN32
+		Sleep(1./FPS * 1e3);
+#else
 		busy = (busy + (1-(sleep_fixed_step(1./FPS))/(1./FPS)) * 100)/2;
+#endif
 	}
 	obj_free(line);
 	obj_free(block);

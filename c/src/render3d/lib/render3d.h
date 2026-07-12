@@ -11,6 +11,7 @@
 #define _RENDER3D_H
 
 #include "../../../include/tools.h"
+#include <stdint.h>
 #include <math.h>
 
 /* 向量 */
@@ -44,7 +45,7 @@ typedef struct {
 	double width;      /* 投影平面宽度(影响投影后返回值范围) */
 	double scale;      /* 观测原点到投影平面的距离(可当作焦距/缩放、视场角) */
 	double dept;       /* 可视深度 */
-	double near;       /* 最小可视距离 */
+	double z_near;     /* 最小可视距离 */
 	double offset_x;   /* 投影中轴水平偏移(左右斜着看) */
 	double offset_y;   /* 投影中轴垂直偏移(上下斜着看) */
 	Point_t position;  /* 观测原点位置 */

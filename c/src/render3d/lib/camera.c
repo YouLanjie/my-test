@@ -24,7 +24,7 @@ Camera_t *camera_create()
 		.width = 16*100,
 		.scale = 70,
 		.dept = 20,
-		.near = 1e-6,
+		.z_near = 1e-6,
 		.offset_x = 0,
 		.offset_y = 0,
 		.position = (Point_t){0,0,0},
@@ -119,7 +119,7 @@ int camera_cast_line(Camera_t *camera, Point_t p1, Point_t p2, Point2d_t *ret_p1
 	if (p1.z < 0 || p2.z < 0) {    /* 确保深度都为正 */
 		Point_t *pp1 = p1.z < 0 ? &p1 : &p2,
 			*pp2 = p1.z > 0 ? &p1 : &p2;
-		*pp1 = vec_add(*pp1, vec_mul(vec_sub(*pp2, *pp1), (camera->near-pp1->z)/(pp2->z-pp1->z)));
+		*pp1 = vec_add(*pp1, vec_mul(vec_sub(*pp2, *pp1), (camera->z_near-pp1->z)/(pp2->z-pp1->z)));
 	}
 	if (p1.z > camera->dept || p2.z > camera->dept) {    /* 确保深度不超纲 */
 		Point_t *pp1 = p1.z > camera->dept ? &p1 : &p2,

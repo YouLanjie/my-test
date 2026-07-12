@@ -75,7 +75,6 @@ CFLAGS_t CFILEFLAGS[] = {
 	FLG("tests/input.c",       "m"),
 	FLG("tests/sin.c",         "m"),
 
-	FLG("lrc.c",               "SDL2_mixer SDL2"),
 	FLG("tetris.c",            "ncurses"),
 };
 #undef MUS
