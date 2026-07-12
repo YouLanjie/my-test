@@ -9,69 +9,95 @@
  */
 
 
+#include <stddef.h>
+#define _GNU_SOURCE
 #include "../include/tools.h"
+#include <wchar.h>
 
-int print_in_box(char *ch, int x_start, int y_start, int width, int heigh, int hide, int focus, char *color_code, int flag_hl)
+#define TAB_WIDTH 8
+
+static void check_border(str_window_t *win)
 {
-	int count = 0,
-	    line_num = 0;
+	if (!win) return;
+	const int col = get_winsize_col();
+	const int row = get_winsize_row();
 
-	x_start = x_start > get_winsize_col() ? 1 : x_start;
-	if (x_start < 1) x_start = 1;
-	y_start = y_start > get_winsize_row() ? 1 : y_start;
-	if (y_start < 1) y_start = 1;
+	win->x = win->x > col ? 1 : win->x;
+	win->y = win->y > row ? 1 : win->y;
+	if (win->x < 1) win->x = 1;
+	if (win->y < 1) win->y = 1;
 
-	width = width + x_start > get_winsize_col() ? get_winsize_col() - x_start + 1 : width;
-	if (width < 0) width = get_winsize_col() - x_start + 1;
-	heigh = heigh + y_start > get_winsize_row() ? get_winsize_row() - y_start + 1 : heigh;
-	if (heigh < 0) heigh = get_winsize_row() - y_start + 1;
+	win->width = win->width + win->x > col ? col - win->x + 1 : win->width;
+	win->heigh = win->heigh + win->y > row ? row - win->y + 1 : win->heigh;
+	if (win->width < 0) win->width = col - win->x + 1;
+	if (win->heigh < 0) win->heigh = row - win->y + 1;
+}
 
-	focus = focus - 1;
-	if (!color_code) color_code = "\033[0m";
+/* 需要 setlocale(LC_ALL, ""); */
+int print_in_box(str_window_t win, const char *str)
+{
+	check_border(&win);
+	if (!win.color_code) win.color_code = "\033[0m";
+	if (!str) str = "(null)";
 
-	printf("%s", color_code);
-	for (int i1 = y_start; i1 < y_start + heigh; i1++) {
-		for (int i2 = x_start; i2 < x_start + width; i2++) {
+	// 清屏
+	printf("%s", win.color_code);
+	for (int i1 = win.y; i1 < win.y + win.heigh; i1++) {
+		for (int i2 = win.x; i2 < win.x + win.width; i2++) {
 			printf("\033[%d;%dH ", i1, i2);
 		}
 	}
-	printf("\033[%d;%dH", y_start + line_num - (hide > line_num ? 0 : hide), x_start);
-	while (ch && *ch != '\0' && width >= 8) {
-		char buf[20] = {*ch, '\0', '\0', '\0'};
-		if (*ch & 0x80) {
-			buf[1] = ch[1];
-			buf[2] = ch[2];
-			count++;
-			if (strcmp("…", buf) == 0) count--;
-		} else if (*ch == '\t') {
-			count += 7;
-			strcpy(buf, "        ");
+	printf("\033[%d;%dH", win.y - (win.hide > 0 ? 0 : win.hide), win.x);
+
+	size_t size = strlen(str);
+	size_t position = 0;
+	wchar_t wc = L'\0';
+	mbstate_t state = (mbstate_t){};
+	size_t len = 0;
+	int width = 0;
+	int column = 0, line = 0;
+	while (position < size && line - win.hide < win.heigh) {
+		len = mbrtowc(&wc, str+position, size-position, &state);
+		if (len == (size_t)-1 || len == (size_t)-2 || len == 0) {
+			// -1 无效的多字节序列：按一个字节处理，视觉宽度视为1
+			// -2 剩余字节不完整（不应发生在完整字符串中），跳出
+			//  0 遇到空字符（L'\0'），通常不会出现在字符串中间，将其视为宽度0
+			len = 1;
+			width = 1;
+			wc = L'?';
+			// 重置状态，尝试从下一个字节重新同步
+			state = (mbstate_t){};
+		} else if (wc == L'\b') {
+			width = -1;
+		} else if (wc == L'\t') {
+			width = TAB_WIDTH - (win.x-1+column) % TAB_WIDTH;
+		} else if (wc == L'\r' || wc == L'\n') {
+			width = -column;
+		} else {
+			width = wcwidth(wc);
 		}
-		count++;
+		column += width;
 
-		int cond_out = (count > width && ch && *ch != '\0');
-		int cond_print = (line_num - hide >= 0 && line_num - hide < heigh);
-
-		if (cond_out || *ch == '\n' || *ch == '\r') {
-			/* 行数增加 */
-			line_num++;
-			/* 字符清零 */
-			count = 0;
-			/* 移动光标 */
-			if (cond_print) printf("\033[%d;%dH", y_start + line_num - (hide > line_num ? 0 : hide), x_start);
-			/*kbhitGetchar();*/
-			/* 字符指针下移 */
-			if (*ch == '\n' || *ch == '\r') {
-				ch++;
+#define cond_print (line >= win.hide && line - win.hide < win.heigh)
+		if (column > win.width || wc == L'\r' || wc == L'\n') {
+			line++;
+			if (cond_print)
+				printf("\033[%d;%dH",
+				       win.y + line - (win.hide > line ? 0 : win.hide),
+				       win.x);
+			if (column <= win.width) {
+				column = 0;
+				position += len;
+				continue;
 			}
-			continue;
+			column = width >= 0 ? width : 0;
 		}
-
-		int cond_hl = (line_num == focus && flag_hl);
-		cond_print = (line_num - hide >= 0 && line_num - hide < heigh);
-		if (cond_print) printf("%s%s%s", cond_hl ? "\033[7m" : "", buf, cond_hl ? color_code : "");
-		/* 字符指针下移 */
-		ch += *ch & 0x80 ? 3 : 1;
+		if (cond_print) {
+			if (line == win.focus) printf("\033[7m");
+			printf("%lc", wc);
+			if (line == win.focus) printf("%s", win.color_code);
+		}
+		position += len;
 	}
 	printf("\033[0m");
 	kbhitGetchar();

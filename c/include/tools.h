@@ -65,8 +65,19 @@ extern int get_winsize_col();
 extern int get_winsize_row();
 /* 读取文件 */
 extern char *_fread(FILE *fp);
+
+
+typedef struct {
+	int x;        /* 起始列 */
+	int y;        /* 起始行 */
+	int width;    /* 窗口宽度 */
+	int heigh;    /* 窗口高度 */
+	int hide;     /* 隐藏的行数 */
+	int focus;    /* 焦点行（反色行）行号 */
+	const char *color_code;    /* 背景颜色 */
+} str_window_t;
 /* 在指定范围内打印 */
-extern int print_in_box(char *ch, int x_start, int y_start, int width, int heigh, int hide, int focus, char *color_code, int flag_hl);
+int print_in_box(str_window_t win, const char *str);
 
 #ifdef __linux__
 /* timespec操作，高精度单步sleep */
