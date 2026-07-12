@@ -233,7 +233,7 @@ int main(int argc, char *argv[])
 	/*obj_rotate(block, (Vec_t){0, 1, 0}, M_PI*5);*/
 	data.obj = block;
 
-	printf("\x1b[2J");
+	printf("\e[2J");
 	size_t i = 0;
 	double busy = 0, skip_farme = 0;
 	for (i = 0; i < MAX_FRAME; ++i) {

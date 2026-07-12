@@ -68,6 +68,7 @@ CFLAGS_t CFILEFLAGS[] = {
 	MUS("music_synth.c",       ,),
 
 	FLG("render3d/render3d.c", "m render3d"),
+	FLG("render3d/r3d_rotate.c", "m render3d"),
 
 	FLG("tests/libav_test.c",  "avformat avcodec avutil swresample m"),
 	FLG("tests/social.c",      "m"),

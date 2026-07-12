@@ -118,6 +118,7 @@ bool obj_merge(Obj_t *obj, Obj_t *from);
 bool obj_merge_and_free(Obj_t *obj, Obj_t *from);
 Obj_t *obj_create_line_from_point(Point_t p1, Point_t p2);
 Obj_t *obj_create_box_from_point(Point_t points[8]);
+Obj_t *obj_create_cube(double edge_len);
 Obj_t *obj_create_image_from_str(Point_t center, double k, const char *p, char ch);
 void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend);
 

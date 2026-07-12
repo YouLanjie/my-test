@@ -7,6 +7,7 @@
 
 #include "render3d.h"
 #include <assert.h>
+#include <stdcountof.h>
 
 /* 创建物体 */
 Obj_t *obj_create(Point_t initial_position,
@@ -180,6 +181,25 @@ Obj_t *obj_create_box_from_point(Point_t points[8])
 	return obj_create((Point_t){0,0,0}, 8, points, 12,
 			  (Line_t[]){ {0,4},{1,5},{2,6},{3,7}, {0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4} },
 			  0, NULL);
+}
+
+/* 创建正立方体 */
+Obj_t *obj_create_cube(double edge_len)
+{
+	Point_t points[] = {
+		{-1,-1,1},
+		{1,-1,1},
+		{1,1,1},
+		{-1,1,1},
+		{-1,-1,-1},
+		{1,-1,-1},
+		{1,1,-1},
+		{-1,1,-1}
+	};
+	for (int i = 0; i < countof(points); i++) {
+		points[i] = vec_mul(points[i], edge_len/2);
+	}
+	return obj_create_box_from_point(points);
 }
 
 Obj_t *obj_create_image_from_str(Point_t center, double k, const char *p, char ch)
