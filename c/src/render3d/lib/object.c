@@ -7,7 +7,6 @@
 
 #include "render3d.h"
 #include <assert.h>
-#include <stdcountof.h>
 
 /* 创建物体 */
 Obj_t *obj_create(Point_t initial_position,
@@ -72,7 +71,7 @@ void obj_free(Obj_t *obj)
 /* 将物体沿给定的Vec方向移动 */
 Obj_t *obj_shift(Obj_t *obj, Vec_t v)
 {
-	if (!obj || !obj->points) return obj;
+	if (!obj) return obj;
 	obj->center = vec_add(obj->center, v);
 	return obj;
 }
@@ -90,9 +89,9 @@ Obj_t *obj_transform_shift(Obj_t *obj, Vec_t v)
 }
 
 /* 绕指定轴旋转 */
-void obj_rotate(Obj_t *obj, Vec_t direction, double theta)
+Obj_t *obj_rotate(Obj_t *obj, Vec_t direction, double theta)
 {
-	if (!obj || !vec_len(direction)) return;
+	if (!obj || !vec_len(direction)) return NULL;
 	Point_t *p = NULL;
 	double s = sin(theta), c = cos(theta), rc = 1-c;
 	size_t j = 0;
@@ -103,6 +102,7 @@ void obj_rotate(Obj_t *obj, Vec_t direction, double theta)
 			      vec_mul(vec_cross_product(direction, *p), s),
 			      vec_mul(*p, c));
 	}
+	return obj;
 }
 
 void obj_scale(Obj_t *obj, double k)
@@ -156,7 +156,13 @@ bool obj_merge(Obj_t *obj, Obj_t *from)
 	return true;
 }
 
-/* 会自动释放from对象的内存（方便传参） */
+/**
+ * @brief 合并两个物体
+ *
+ * @param obj 合并后的目标物体
+ * @param from 被合并物体，合并后会自动free
+ * @return 成功返回true 失败返回false
+ */
 bool obj_merge_and_free(Obj_t *obj, Obj_t *from)
 {
 	if (!obj || !from) return false;
@@ -165,17 +171,12 @@ bool obj_merge_and_free(Obj_t *obj, Obj_t *from)
 	return true;
 }
 
-/* 从两端点创建线段(p1,p2为绝对坐标) */
 Obj_t *obj_create_line_from_point(Point_t p1, Point_t p2)
 {
 	Point_t center = vec_mul(vec_add(p1, p2), 0.5);
 	return obj_create(center, 2, (Point_t[]){vec_sub(p1,center), vec_sub(p2,center)}, 1, (Line_t[]){{0,1}}, 0, NULL);
 }
 
-/* 从8顶点创建立方体
- * 前四|后四：两对立面的四个顶点
- * 边：p[n]与p[n+1]相连(0<=0<8)
- *     p[n]与p[n+4]相连(0<=n<4) */
 Obj_t *obj_create_box_from_point(Point_t points[8])
 {
 	return obj_create((Point_t){0,0,0}, 8, points, 12,
@@ -183,7 +184,6 @@ Obj_t *obj_create_box_from_point(Point_t points[8])
 			  0, NULL);
 }
 
-/* 创建正立方体 */
 Obj_t *obj_create_cube(double edge_len)
 {
 	Point_t points[] = {
@@ -196,7 +196,7 @@ Obj_t *obj_create_cube(double edge_len)
 		{1,1,-1},
 		{-1,1,-1}
 	};
-	for (int i = 0; i < countof(points); i++) {
+	for (size_t i = 0; i < countof(points); i++) {
 		points[i] = vec_mul(points[i], edge_len/2);
 	}
 	return obj_create_box_from_point(points);

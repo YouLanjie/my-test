@@ -66,9 +66,6 @@ void camera_unlock(Camera_t *camera)
 	((PrivatCamera_t*)camera->private_data)->locked = false;
 }
 
-/* 将点投影到虚拟屏幕(相机)上
- * 返回：投影到相机后的二维点（z轴作为深度>0）
- * 若z<=0则为无法投影点或屏幕外点 */
 Point2d_t camera_cast(Camera_t *camera, Point_t p)
 {
 	if (!camera || !camera->private_data || camera->scale <= 0) return (Point_t){0,0,-1};
@@ -95,6 +92,16 @@ Point2d_t camera_cast(Camera_t *camera, Point_t p)
 
 /* 投影线条(需要传入两个端点的地址)
  * ret < 0 : 无投影 */
+/**
+ * @brief 投影线条
+ *
+ * @param camera 相机
+ * @param p1 线段端点1
+ * @param p2 线段端点2
+ * @param ret_p1 存储投影后端点1地址
+ * @param ret_p2 存储投影后端点2地址
+ * @return 若ret < 0则无投影
+ */
 int camera_cast_line(Camera_t *camera, Point_t p1, Point_t p2, Point2d_t *ret_p1, Point2d_t *ret_p2)
 {
 	if (!camera || !camera->private_data || camera->scale <= 0 || !ret_p1 || !ret_p2) return -1;
@@ -181,7 +188,9 @@ void camera_look(Camera_t *camera, Point_t point, Vec_t hold)
 {
 	if (!camera) return;
 	if (vec_len(hold) == 0) hold = (Vec_t){0, 1, 0};    /* 默认向上保持 */
-	camera->forward = vec_direct(vec_sub(point, camera->position));
+	double len = vec_len(vec_sub(point, camera->position));
+	if (len <= 0) return;    /* 忽略非法请求 */
+	camera->forward = vec_mul(vec_sub(point, camera->position), 1./len);
 	camera->up = vec_direct(vec_cross_product(vec_cross_product(camera->forward, hold), camera->forward));
 }
 
