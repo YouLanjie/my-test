@@ -180,6 +180,7 @@ void camera_shift(Camera_t *camera, Vec_t direction)
 void camera_rotate(Camera_t *camera, Vec_t direction, double theta)
 {
 	if (!camera) return;
+	direction = vec_direct(direction);
 	camera->forward = vec_rotate(camera->forward, direction, theta);
 	camera->up = vec_rotate(camera->up, direction, theta);
 }
@@ -190,7 +191,34 @@ void camera_look(Camera_t *camera, Point_t point, Vec_t hold)
 	if (vec_len(hold) == 0) hold = (Vec_t){0, 1, 0};    /* 默认向上保持 */
 	double len = vec_len(vec_sub(point, camera->position));
 	if (len <= 0) return;    /* 忽略非法请求 */
-	camera->forward = vec_mul(vec_sub(point, camera->position), 1./len);
-	camera->up = vec_direct(vec_cross_product(vec_cross_product(camera->forward, hold), camera->forward));
+	const Vec_t forward = vec_mul(vec_sub(point, camera->position), 1./len);
+	Vec_t right = vec_cross_product(forward, hold);
+	if (right.x == 0 && right.y == 0 && right.z == 0)    /* 避免万向节锁错误 */
+		right = vec_cross_product(camera->forward, hold);
+	camera->forward = forward;
+	camera->up = vec_direct(vec_cross_product(right, forward));
+}
+
+void camera_look_no_hold(Camera_t *camera, Point_t point)
+{
+	if (!camera) return;
+	double len = vec_len(vec_sub(point, camera->position));
+	if (len <= 0) return;    /* 忽略非法请求 */
+	const Vec_t forward = vec_mul(vec_sub(point, camera->position), 1./len);
+	Vec_t mu = vec_cross_product(camera->forward, forward);
+	if ((len = vec_len(mu)) < 1e-12) {    /* 共线 */
+		if (vec_point_product(forward, camera->forward) > 0) return;    /* 同向不变 */
+		camera->up = vec_mul(camera->up, -1);
+		return;
+	}
+	mu = vec_mul(mu, 1./len);
+	// 复习： ^a * ^b == |^a| * |^b| * cos(theta)
+	double cos_angele =
+		vec_point_product(camera->forward, forward) /
+		(vec_len(forward)*vec_len(camera->forward));
+	if (cos_angele > 1.0) cos_angele = 1.0;
+	if (cos_angele < -1.0) cos_angele = -1.0;
+	camera->forward = forward;
+	camera->up = vec_direct(vec_rotate(camera->up, mu, acos(cos_angele)));
 }
 

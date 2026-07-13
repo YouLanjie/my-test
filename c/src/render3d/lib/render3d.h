@@ -49,7 +49,14 @@ Vec_t vec_cross_product(Vec_t a, Vec_t b);
 double vec_len(Vec_t v);
 /* 获取该方向的单位向量 */
 Vec_t vec_direct(Vec_t v);
-/* 旋转向量 */
+/**
+ * @brief 旋转向量
+ *
+ * @param v 被选择向量
+ * @param direction 转轴方向(要求归一化)
+ * @param theta 转动角度
+ * @return 旋转后的向量
+ */
 Vec_t vec_rotate(Vec_t v,Vec_t direction, double theta);
 /* 便捷多向量加法 */
 Vec_t vec_add3(Vec_t v1, Vec_t v2, Vec_t v3);
@@ -89,7 +96,21 @@ Point_t camera_cast(Camera_t *camera, Point_t p);
 int camera_cast_line(Camera_t *camera, Point_t p1, Point_t p2, Point2d_t *ret_p1, Point2d_t *ret_p2);
 void camera_shift(Camera_t *camera, Vec_t direction);
 void camera_rotate(Camera_t *camera, Vec_t direction, double theta);
+/**
+ * @brief 让相机看向某一绝对坐标点同时保持画面朝上
+ *
+ * @param camera 相机
+ * @param point 看向的点的绝对坐标
+ * @param hold 保持作为向上的方向(有可能造成奇点)
+ */
 void camera_look(Camera_t *camera, Point_t point, Vec_t hold);
+/**
+ * @brief 让相机看向指定点，跟随保持原有up方向
+ *
+ * @param camera 相机
+ * @param point 看向点的绝对坐标
+ */
+void camera_look_no_hold(Camera_t *camera, Point_t point);
 
 
 /* 渲染后端 */

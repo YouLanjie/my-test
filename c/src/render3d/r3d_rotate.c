@@ -15,7 +15,7 @@
 #define MAX_FRAME 100000
 #define FPS 40
 /* 时间缩放倍率，一秒等于1h */
-#define TIME_SCALE (60*60/FPS)
+#define TIME_SCALE (60.*60/FPS)
 
 typedef struct {
 	const char *name;
@@ -23,7 +23,9 @@ typedef struct {
 	double mass;    /* 质量(kg) */
 	double self_omiga;    /* 自转速度(rad/s) */
 	Vec_t self_rotate;    /* 自转方向 */
-	Vec_t speed;    /* 速度(km/s) */
+	Vec_t speed;     /* 速度(km/s) */
+	Point_t watchpoint;
+	Camera_t cam;    /* 随身相机 */
 } Star_t;
 
 const double G = 6.672e-11;
@@ -80,19 +82,23 @@ static int choose_star(Star_t *stars, size_t len, int *choice, const char *hint)
 	return 0;
 }
 
-static void input_handle(int inp, Star_t *star, Camera_t *camera)
+static void input_handle(int inp, Star_t *star, Camera_t *camera, Point_t *watchpoint)
 {
 	if (!camera) return;
 #define v_forward vec_direct(camera->forward)
 #define v_up vec_direct(camera->up)
 #define v_right vec_direct(vec_cross_product(camera->forward, camera->up))
 	switch (inp) {
-        case '-': camera_shift(camera, vec_mul(v_forward, -0.5*SCALE)); break;
-        case '=': camera_shift(camera, vec_mul(v_forward, 0.5*SCALE)); break;
-	case 'W': camera_shift(camera, vec_mul(v_up, 0.5*SCALE)); break;
-	case 'S': camera_shift(camera, vec_mul(v_up, -0.5*SCALE)); break;
-	case 'A': camera_shift(camera, vec_mul(v_right, -0.5*SCALE)); break;
-	case 'D': camera_shift(camera, vec_mul(v_right, 0.5*SCALE)); break;
+#define cam_shift(vec, k) \
+		camera_shift(camera, vec_mul((vec), (k))), \
+		(watchpoint ? *watchpoint=vec_add(*watchpoint, vec_mul((vec), (k))) : (Vec_t){})
+        case '-': cam_shift(v_forward, -0.5*SCALE); break;
+        case '=': cam_shift(v_forward, 0.5*SCALE); break;
+	case 'W': cam_shift(v_up, 0.5*SCALE); break;
+	case 'S': cam_shift(v_up, -0.5*SCALE); break;
+	case 'A': cam_shift(v_right, -0.5*SCALE); break;
+	case 'D': cam_shift(v_right, 0.5*SCALE); break;
+#undef cam_shift
 	default:
 		if (!star || !star->obj) return;
 		break;
@@ -103,7 +109,9 @@ static void input_handle(int inp, Star_t *star, Camera_t *camera)
 	switch (inp) {
 	case '_': star->speed = vec_mul(star->speed, 0.1); break;
 	case ' ': accelerate(vec_mul(v_forward, 5*accelerate)); break;
+	case 'N': accelerate(vec_mul(v_forward, 50*accelerate)); break;
 	case 'b': accelerate(vec_mul(v_forward, -5*accelerate)); break;
+	case 'B': accelerate(vec_mul(v_forward, -50*accelerate)); break;
 	case 'w': accelerate(vec_mul(v_up, accelerate)); break;
 	case 's': accelerate(vec_mul(v_up, -accelerate)); break;
 	case 'a': accelerate(vec_mul(v_right, -accelerate)); break;
@@ -122,7 +130,8 @@ static void voyage_helper(Star_t *stars, size_t len)
 	int from = -1, to = -1;
 	choose_star(stars, len, &from, "正在驾驶的");
 	choose_star(stars, len, &to, "要驶入的");
-	if (!(from >= 0 && (size_t)from < len && stars[from].obj) || 
+	/* byd clang-tidy这还能污点数据越界？ */
+	if (!(from >= 0 && (size_t)from < len && stars[from].obj) ||
 	    !(to >= 0 && (size_t)to < len && stars[to].obj)) {
 		printf("选择非法（回车返回）\n");
 		kbhitGetchar();
@@ -197,8 +206,11 @@ int main(void)
 	camera->position = (Vec_t){0, 0, 20*SCALE};
 	camera->dept = 100*SCALE;
 	const Camera_t orig_cam_dat = *camera;
-	// camera->scale = 10;
-	// double G = 
+	for (size_t i = 0; i < countof(objs); i++) {
+		objs[i].cam = orig_cam_dat;    /* 同步相机配置 */
+		// objs[i].watchpoint = orig_cam_dat.position;
+	}
+	Camera_t *active_cam = camera;
 
 	printf("\e[2J");
 	int destination_to = -1;
@@ -208,7 +220,7 @@ int main(void)
 	bool pause = false;
 	size_t i = 0;
 	int inp = 0;
-#define item_in_objs(ind) (follow >= 0 && (size_t)ind < countof(objs) && objs[ind].obj)
+#define item_in_objs(ind) (ind >= 0 && (size_t)ind < countof(objs) && objs[ind].obj)
 	for (i = 0; i < MAX_FRAME; ++i) {
 		switch (inp = kbhitGetchar()) {
 		case 'f': choose_star(objs, countof(objs), &follow, "跟随"); break;
@@ -216,22 +228,23 @@ int main(void)
 		case 't': choose_star(objs, countof(objs), &destination_to, "测距"); break;
 		case '?': voyage_helper(objs, countof(objs)); break;
 		case '+':
-			*camera = orig_cam_dat;
-			look_to = -1;
-			follow = -1;
-			destination_to = -1;
+			*active_cam = orig_cam_dat;
+			if (item_in_objs(follow)) objs[follow].watchpoint = (Vec_t){};
 			break;
-		case '-': case '=': case '_': case ' ': case 'b':
+		case '-': case '=': case '_':
+		case ' ': case 'b':
+		case 'N': case 'B':
 		case 'w': case 'a': case 's': case 'd':
 		case 'W': case 'A': case 'S': case 'D':
-			input_handle(inp, item_in_objs(follow) ? objs+follow : NULL, camera);
+			input_handle(inp, item_in_objs(follow) ? objs+follow : NULL,
+				     active_cam, item_in_objs(follow) ? &objs[follow].watchpoint : NULL);
 			break;
-		case '9': camera->dept/=2; break;
-		case '0': camera->dept*=2; break;
 		case 'i': axis = !axis; break;
 		case 'p': pause = !pause; break;
-		case '7': camera->scale-=1; break;
-		case '8': camera->scale+=1; break;
+		case '7': active_cam->scale-=1; break;
+		case '8': active_cam->scale+=1; break;
+		case '9': active_cam->dept/=2; break;
+		case '0': active_cam->dept*=2; break;
 		case '.':
 			pause = true;
 			physics_update(objs, countof(objs));
@@ -242,30 +255,32 @@ int main(void)
 			break;
 		}
 		if (!pause) physics_update(objs, countof(objs));
-		if (item_in_objs(follow))
-			camera->position = vec_add(objs[follow].obj->center,
-						   vec_mul(vec_direct(camera->forward), -vec_len(orig_cam_dat.position)));
+		if (item_in_objs(follow)) {
+			active_cam = &objs[follow].cam;
+			active_cam->position = vec_add3(objs[follow].obj->center,
+							vec_mul(vec_direct(active_cam->forward), -vec_len(orig_cam_dat.position)),
+							objs[follow].watchpoint);
+		} else active_cam = camera;
 		if (item_in_objs(look_to))
-			camera_look(camera, objs[look_to].obj->center, (Vec_t){0,1,0});
+			camera_look_no_hold(active_cam, objs[look_to].obj->center);
 		else if (item_in_objs(follow) && vec_len(objs[follow].speed) > 0)
-			camera_look(camera, vec_add(camera->position, objs[follow].speed),
-				    (Vec_t){0,1,0});
+			camera_look_no_hold(active_cam, vec_add(active_cam->position, objs[follow].speed));
 
 		if (axis && item_in_objs(follow)) {
 			axis_helper->center = objs[follow].obj->center;
-			obj_cast(axis_helper, camera, backend);
+			obj_cast(axis_helper, active_cam, backend);
 		}
 		for (size_t i = 0; i < countof(objs); i++) {
 			if (!objs[i].obj) continue;
-			obj_cast(objs[i].obj, camera, backend);
+			obj_cast(objs[i].obj, active_cam, backend);
 		}
 		printf("\e[H");
 		backend->render(backend);
 		backend->clean(backend);
 		printf("\e[0m\e[2K\rCamera[%.1f,%.1f,%.1f]",
-		       camera->position.x / SCALE,
-		       camera->position.y / SCALE,
-		       camera->position.z / SCALE);
+		       active_cam->position.x / SCALE,
+		       active_cam->position.y / SCALE,
+		       active_cam->position.z / SCALE);
 		if (item_in_objs(follow)) {
 			printf(" | %s (%.1f,%.1f,%.1f) %.1f km/s",
 			       objs[follow].name ? objs[follow].name : "Unknow",

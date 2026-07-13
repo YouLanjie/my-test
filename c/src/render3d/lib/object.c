@@ -95,7 +95,7 @@ Obj_t *obj_rotate(Obj_t *obj, Vec_t direction, double theta)
 	Point_t *p = NULL;
 	double s = sin(theta), c = cos(theta), rc = 1-c;
 	size_t j = 0;
-	direction = vec_direct(direction);
+	direction = vec_direct(direction);    /* 归一化是必要的 */
 	for (j=0, p=obj->points; p && j < obj->count_point; j++,p++) {
 		/* 不使用vec_rotate，因为sin(theta)和cos(theta)都相同,避免多重计算 */
 		*p = vec_add3(vec_mul(direction, vec_point_product(direction, *p)*rc),

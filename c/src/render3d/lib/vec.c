@@ -7,7 +7,6 @@
 
 #include "render3d.h"
 
-/* 向量加法 */
 Vec_t vec_add(Vec_t v1, Vec_t v2)
 {
 	return (Vec_t){
@@ -17,7 +16,6 @@ Vec_t vec_add(Vec_t v1, Vec_t v2)
 	};
 }
 
-/* 向量减法 */
 Vec_t vec_sub(Vec_t v1, Vec_t v2)
 {
 	return (Vec_t){
@@ -27,7 +25,6 @@ Vec_t vec_sub(Vec_t v1, Vec_t v2)
 	};
 }
 
-/* 向量数乘 */
 Vec_t vec_mul(Vec_t v, double k)
 {
 	return (Vec_t){
@@ -37,13 +34,11 @@ Vec_t vec_mul(Vec_t v, double k)
 	};
 }
 
-/* 向量点乘 */
 double vec_point_product(Vec_t a, Vec_t b)
 {
 	return a.x*b.x + a.y*b.y + a.z*b.z;
 }
 
-/* 向量叉乘(a,b的顺序很重要) */
 Vec_t vec_cross_product(Vec_t a, Vec_t b)
 {
 	return (Vec_t){
@@ -54,13 +49,11 @@ Vec_t vec_cross_product(Vec_t a, Vec_t b)
 ;
 }
 
-/* 向量长度 */
 double vec_len(Vec_t v)
 {
 	return sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
 }
 
-/* 获取该方向的单位向量 */
 Vec_t vec_direct(Vec_t v)
 {
 	double len = vec_len(v);
@@ -69,7 +62,6 @@ Vec_t vec_direct(Vec_t v)
 	return vec_mul(v, 1/len);
 }
 
-/* 旋转向量 */
 Vec_t vec_rotate(Vec_t v,Vec_t direction, double theta)
 {
 	return vec_add3(vec_mul(direction, vec_point_product(direction, v)*(1-cos(theta))),
@@ -77,7 +69,6 @@ Vec_t vec_rotate(Vec_t v,Vec_t direction, double theta)
 			vec_mul(v, cos(theta)));
 }
 
-/* 便捷多向量加法 */
 Vec_t vec_add3(Vec_t v1, Vec_t v2, Vec_t v3)
 {
 	return (Vec_t){
