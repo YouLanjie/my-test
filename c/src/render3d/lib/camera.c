@@ -121,14 +121,14 @@ int camera_cast_line(Camera_t *camera, Point_t p1, Point_t p2, Point2d_t *ret_p1
 	p2 = (Vec_t){vec_point_product(p2,pc->x), vec_point_product(p2,pc->y), vec_point_product(p2,pc->z)};
 	p2.z = -p2.z;
 
-	/* 如果两端都同侧越界，则认为非法跳过 */
-	if ((p1.z <= 0 && p2.z <= 0) || (p1.z > camera->dept && p2.z > camera->dept)) return -2;
+	/* 如果两端都同侧越界，则认为非法跳过(若dept小于零则忽略) */
+	if ((p1.z <= 0 && p2.z <= 0) || (camera->dept > 0 && p1.z > camera->dept && p2.z > camera->dept)) return -2;
 	if (p1.z < 0 || p2.z < 0) {    /* 确保深度都为正 */
 		Point_t *pp1 = p1.z < 0 ? &p1 : &p2,
 			*pp2 = p1.z > 0 ? &p1 : &p2;
 		*pp1 = vec_add(*pp1, vec_mul(vec_sub(*pp2, *pp1), (camera->z_near-pp1->z)/(pp2->z-pp1->z)));
 	}
-	if (p1.z > camera->dept || p2.z > camera->dept) {    /* 确保深度不超纲 */
+	if (camera->dept > 0 && (p1.z > camera->dept || p2.z > camera->dept)) {    /* 确保深度不超纲 */
 		Point_t *pp1 = p1.z > camera->dept ? &p1 : &p2,
 			*pp2 = p1.z < camera->dept ? &p1 : &p2;
 		*pp1 = vec_add(*pp2, vec_mul(vec_sub(*pp1, *pp2), (camera->dept-pp2->z)/(pp1->z-pp2->z)));

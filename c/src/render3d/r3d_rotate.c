@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MAX_FRAME 100000
+#define MAX_FRAME INT64_MAX
 #define FPS 40
 /* 时间缩放倍率，一秒等于1h */
 double TIME_SCALE = 60.*60/FPS;
@@ -28,7 +28,7 @@ typedef struct {
 	Camera_t cam;         /* 随身相机 */
 } Star_t;
 
-const double G = 6.672e-11;
+const double G = 6.6743e-11;    /* 引力常量 N*(m^2)/(kg^2) */
 const double SCALE = 1e3;    /* 将距离换算成 1单位 = 1km */
 #define pow2(x) ((x)*(x))
 
@@ -46,6 +46,7 @@ typedef struct {
 	double gtime;
 	int  inp;
 	bool axis;
+	bool guidline;
 	bool pause;
 } Runtimedata_t;
 
@@ -163,6 +164,8 @@ static void voyage_helper(Runtimedata_t *rt)
 		printf("重试...\n");
 	while ((to = choose_star(rt, "要驶入的", NULL)) == NULL)
 		printf("重试...\n");
+	if (from->mass > to->mass)
+		printf("[TIPS] from比to重，结果可能不正确\n");
 	const Vec_t direct = vec_sub(to->obj->center, from->obj->center);
 	double distance = vec_len(direct);
 	if (distance <= 0) distance = 1e-20;
@@ -214,6 +217,7 @@ static bool input_handle(Runtimedata_t *rt)
 	case 't': rt->destination_to = choose_star(rt, "测距", rt->destination_to); break;
 	case '?': voyage_helper(rt); break;
 	case 'i': rt->axis = !rt->axis; break;
+	case 'I': rt->guidline = !rt->guidline; break;
 	case 'p': rt->pause = !rt->pause; break;
 	case '7': rt->active_cam->scale-=1; break;
 	case '8': rt->active_cam->scale+=1; break;
@@ -230,8 +234,8 @@ static bool input_handle(Runtimedata_t *rt)
 #define cam_shift(vec, k) camera_shift(rt->active_cam, vec_mul(vec_direct(vec), (k)))
         case '-': cam_shift(v_forward, -0.5*SCALE); break;
         case '=': cam_shift(v_forward, 0.5*SCALE); break;
-	case '_': cam_shift(v_forward, -5e2*SCALE); break;
-        case '+': cam_shift(v_forward, 5e2*SCALE); break;
+	case '_': cam_shift(v_forward, rt->follow?-vec_len(vec_sub(rt->follow->obj->center, rt->active_cam->position)):-5e2*SCALE); break;
+        case '+': cam_shift(v_forward, rt->follow?vec_len(vec_sub(rt->follow->obj->center, rt->active_cam->position))/2:5e2*SCALE); break;
 	case 'W': cam_shift(v_up, 0.5*SCALE); break;
 	case 'S': cam_shift(v_up, -0.5*SCALE); break;
 	case 'A': cam_shift(v_right, -0.5*SCALE); break;
@@ -319,12 +323,61 @@ int main(void)
 			.self_rotate = (Vec_t){0, 0, 1},
 			.self_omiga = 2*M_PI/(30.5*24*60*60),
 		}, (Star_t){
+			.name = "水星",
+			.mass = 3.301e23,
+			.obj = obj_shift(obj_create_cube(2439.7*2), (Vec_t){57.91e6, 0, 0}),
+			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 47.87),
+			.self_rotate = (Vec_t){0, 0, 1},
+			.self_omiga = 2*M_PI/(1407.6*60*60),
+		}, (Star_t){
+			.name = "金星",
+			.mass = 4.867e24,
+			.obj = obj_shift(obj_create_cube(6051.8*2), (Vec_t){108.21e6, 0, 0}),
+			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 35.02),
+			.self_rotate = (Vec_t){0, 0, -1},
+			.self_omiga = 2*M_PI/(5832.6*60*60),
+		}, (Star_t){
+			.name = "火星",
+			.mass = 6.417e23,
+			.obj = obj_shift(obj_create_cube(3389.5*2), (Vec_t){227.94e6, 0, 0}),
+			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 24.07),
+			.self_rotate = (Vec_t){0, 0, 1},
+			.self_omiga = 2*M_PI/(24.6*60*60),
+		}, (Star_t){
+			.name = "木星",
+			.mass = 1.898e27,
+			.obj = obj_shift(obj_create_cube(69911*2), (Vec_t){778.57e6, 0, 0}),
+			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 13.07),
+			.self_rotate = (Vec_t){0, 0, 1},
+			.self_omiga = 2*M_PI/(9.93*60*60),
+		}, (Star_t){
+			.name = "土星",
+			.mass = 5.683e26,
+			.obj = obj_shift(obj_create_cube(58232*2), (Vec_t){1433.53e6, 0, 0}),
+			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 9.69),
+			.self_rotate = (Vec_t){0, 0, 1},
+			.self_omiga = 2*M_PI/(10.66*60*60),
+		}, (Star_t){
+			.name = "天王星",
+			.mass = 8.681e25,
+			.obj = obj_shift(obj_create_cube(25362*2), (Vec_t){2872.46e6, 0, 0}),
+			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 6.81),
+			.self_rotate = (Vec_t){0, 0, -1},
+			.self_omiga = 2*M_PI/(17.24*60*60),
+		}, (Star_t){
+			.name = "海王星",
+			.mass = 1.024e26,
+			.obj = obj_shift(obj_create_cube(24622*2), (Vec_t){4495.06e6, 0, 0}),
+			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 5.43),
+			.self_rotate = (Vec_t){0, 0, 1},
+			.self_omiga = 2*M_PI/(16.11*60*60),
+		}, (Star_t){
 			.name = "太阳",
 			.obj = obj_shift(obj_create_cube(695700*2), (Vec_t){0, 384400, 0}),
 			.mass = 1.989e30,
 			.speed = vec_mul(vec_direct((Vec_t){0, 0, 0}), 1.022),
 			.self_rotate = (Vec_t){0, 0, 1},
-			.self_omiga = 2*M_PI/(30.5*24*60*60),
+			.self_omiga = 2*M_PI/(25.4*60*60),
 		}, (Star_t){ .name = "列表结束", },
 	};
 
@@ -337,6 +390,8 @@ int main(void)
 	rt.objs = objs;
 	rt.obj_count = countof(objs);
 	rt.follow = objs;
+	rt.camera->position = (Vec_t){0, 0, 1e6*SCALE};
+	rt.camera->dept = 1e8*SCALE;
 
 	printf("按键说明：\nwasd 控制偏转\n"
 	       "bB 减速 空格或N加速\n"
@@ -345,7 +400,10 @@ int main(void)
 	       "7/8 控制焦距 9/0 控制可视距离\n"
 	       "f 跟随  F 看向某物体  t 测距\n"
 	       "[]{} 控制时间流速\n"
-	       "? 进行数学辅助计算\n");
+	       "? 进行数学辅助计算\n"
+	       "f跟随时视角会调整方向为绝对速度\n"
+	       "F选择看向自身视角会追踪该速度方向\n"
+	       "使用t进行测距视角可以追踪相对速度方向\n");
 	rt.inp = 'f';
 	input_handle(&rt);
 
@@ -357,7 +415,7 @@ int main(void)
 		if (!rt.pause) rt.gtime += physics_update(&rt);
 		if (rt.look_to) {
 			Vec_t direct = rt.look_to == rt.follow ? \
-				       rt.follow->speed : \
+				       (rt.destination_to ? vec_sub(rt.follow->speed, rt.destination_to->speed) : rt.follow->speed) : \
 				       vec_sub(rt.look_to->obj->center, rt.follow->obj->center);
 			double dist = vec_len(vec_sub(rt.follow->obj->center,
 						      rt.active_cam->position));
@@ -375,6 +433,12 @@ int main(void)
 			if (!objs[i].obj) continue;
 			obj_cast(objs[i].obj, rt.active_cam, rt.backend);
 		}
+		if (rt.guidline && rt.follow && rt.destination_to) {
+			/* 似乎有点浪费性能（全是syscall） */
+			Obj_t *guidline = obj_create_line_from_point(rt.follow->obj->center, rt.destination_to->obj->center);
+			obj_cast(guidline, rt.active_cam, rt.backend);
+			obj_free(guidline);
+		}
 		printf("\e[H");
 		rt.backend->render(rt.backend);
 		rt.backend->clean(rt.backend);
@@ -386,7 +450,7 @@ int main(void)
 		if (rt.follow) {
 			printf(" | %s (%g km/s)",
 			       rt.follow->name ? rt.follow->name : "Unknow",
-			       vec_len(rt.follow->speed));
+			       rt.destination_to ? vec_len(vec_sub(rt.follow->speed, rt.destination_to->speed)) : vec_len(rt.follow->speed));
 		}
 		if (rt.follow && rt.destination_to) {
 			const Vec_t dist = vec_sub(rt.destination_to->obj->center, rt.follow->obj->center);

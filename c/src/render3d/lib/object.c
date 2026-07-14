@@ -251,7 +251,7 @@ void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 	for (i = 0; i < obj->count_point; i++) {
 		p = camera_cast(camera, vec_add(obj->points[i], obj->center));
 		if (p.z <= 0) continue;
-		backend->draw(backend, (Point2d_t){p.x, p.y, p.z/camera->dept});
+		backend->draw(backend, (Point2d_t){p.x, p.y, p.z/fabs(camera->dept)});
 	}
 	Point2d_t p2;
 	double dx, dy, dz;
@@ -266,12 +266,12 @@ void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 		if (fabs(dx) >= fabs(dy)) {
 			step = dx < 0 ? -1 : 1;
 			for (int x = p.x; (x-p2.x)*step <= 0; x+=step) {
-				backend->draw(backend, (Point2d_t){x, p.y+(x-p.x)*dy/dx, (p.z+(x-p.x)*dz/dx)/camera->dept});
+				backend->draw(backend, (Point2d_t){x, p.y+(x-p.x)*dy/dx, (p.z+(x-p.x)*dz/dx)/fabs(camera->dept)});
 			}
 		} else {
 			step = dy < 0 ? -1 : 1;
 			for (int y = p.y; (y-p2.y)*step <= 0; y+=step) {
-				backend->draw(backend, (Point2d_t){p.x+(y-p.y)*dx/dy, y, (p.z+(y-p.y)*dz/dy)/camera->dept});
+				backend->draw(backend, (Point2d_t){p.x+(y-p.y)*dx/dy, y, (p.z+(y-p.y)*dz/dy)/fabs(camera->dept)});
 			}
 		}
 		p = (Point_t){0, 0, 0}, p2 = (Point2d_t){0, 0, 0};

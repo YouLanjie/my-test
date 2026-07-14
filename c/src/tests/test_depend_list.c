@@ -64,7 +64,7 @@ void target_depend_append(Target_t *target, Target_t *dependency)
 		target->dependencies = malloc(target->depend_len*sizeof(*target->dependencies));
 	} else {
 		target->depend_len++;
-		target->dependencies = reallocarray(target->dependencies, target->depend_len, sizeof(*target->dependencies));
+		target->dependencies = realloc(target->dependencies, target->depend_len*sizeof(*target->dependencies));
 	}
 	if (!target->dependencies) {
 		target->depend_len = 0;

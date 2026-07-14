@@ -70,7 +70,7 @@ typedef struct {
 	double height;     /* 投影平面高度(影响投影后返回值范围,一般需要设置为与输出后端大小相等或者比它大) */
 	double width;      /* 投影平面宽度(影响投影后返回值范围) */
 	double scale;      /* 观测原点到投影平面的距离(可当作焦距/缩放、视场角) */
-	double dept;       /* 可视深度 */
+	double dept;       /* 可视深度(小于0则不作限制) */
 	double z_near;     /* 最小可视距离 */
 	double offset_x;   /* 投影中轴水平偏移(左右斜着看) */
 	double offset_y;   /* 投影中轴垂直偏移(上下斜着看) */
