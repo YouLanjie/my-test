@@ -5,13 +5,7 @@
  * @brief       路径处理函数
  */
 
-#include "../include/string_view.h"
-#include <sys/stat.h>
-
-typedef SVA_t Path_t;
-
-#define path_from_cstr sva_from_cstr
-#define path_from_sv sva_from_sv
+#include "../include/path.h"
 
 SV_t path_basename(SV_t path)
 {
@@ -23,7 +17,6 @@ SV_t path_basename(SV_t path)
 	return last;
 }
 
-/* 切断 */
 SV_t path_father(SV_t path)
 {
 	while (path.len > 1 && path.p[path.len] == '/') path.len--;
@@ -61,7 +54,6 @@ static inline void _path_tails_process(Path_t *path, char c)
 	if (c) path->len++;
 }
 
-/* 规范化path路径并保存到path */
 Path_t * path_normalize(Path_t *path)
 {
 	if (!path || !path->capacity) return NULL;
@@ -94,14 +86,6 @@ Path_t *path_join(Path_t *path, SV_t child)
 	else sva_sprintfcat(path, "%c%.*s", sep, (int)child.len, child.p);
 	return path_normalize(path);
 }
-
-typedef struct {
-	struct stat st;
-	bool isexist;
-	bool islink;
-	bool isdir;
-	bool isfile;
-} Path_st_t;
 
 /* fl的文件是否比f的新 */
 Path_st_t path_get_st(Path_t f)

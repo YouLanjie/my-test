@@ -114,13 +114,16 @@ int sva_free(SVA_t *s)
 	return 0;
 }
 
-/* 应当仅用于初始化 */
 SVA_t *sva_from_sv(SVA_t *s, SV_t sv)
 {
 	if (!s || !sv.p) return NULL;
 	s->len = sv.len;
-	s->capacity = s->len+1;
-	s->p = malloc(s->capacity);
+	/* 若已申请内存且长度足够则不申请内存 */
+	if (!s->p || s->capacity <= s->len) {
+		if (s->p) free(s->p);
+		s->capacity = s->len+1;
+		s->p = malloc(s->capacity);
+	}
 	if (!s->p) {
 		s->capacity = 0;
 		s->len = 0;
@@ -226,15 +229,5 @@ SVA_t *sva_sprintfcat(SVA_t *ret, char *fmt, ...)
 
 SVA_t *sva_strcpy(SVA_t *ret, const SVA_t *from)
 {
-	if (!ret || !from || from->len+1 <= 0) return NULL;
-	if (ret->capacity < from->len+1 || !ret->p) {
-		ret->capacity = from->len+1;
-		ret->len = from->len;
-		if (ret->p) ret->p = realloc(ret->p, ret->capacity);
-		else ret->p = malloc(ret->capacity);
-		if (!ret->p) return ret->capacity = 0, NULL;
-	}
-	strncpy(ret->p, from->p, ret->len);
-	ret->p[ret->len] = 0;
-	return ret;
+	return sva_from_sv(ret, sv_from_sva(from));
 }

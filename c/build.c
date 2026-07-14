@@ -227,10 +227,10 @@ Path_t *path_hander_obj_replace(Path_t* path)
 	for (size_t n = 0; n < path->len; n++) if (path->p[n] == '/') path->p[n] = '_';
 	SV_t sv = path_basename(sv_from_sva(path));
 	while (sv.len > 0 && (sv.p[0] == '.' || sv.p[0] == '_')) sv_chop_left(&sv, 1);
-	SVA_t old = *path;    /* 保存替换前的地址 */
-	path_join(sva_from_cstr(path, BUILD_DIR), sv);
-	sva_sprintfcat(path, ".o");
-	sva_free(&old);
+	SVA_t new = {0};
+	sva_from_sva(&new, path);
+	sva_strcpy(path, sva_sprintfcat(path_join(sva_from_cstr(&new, BUILD_DIR), sv), ".o"));
+	sva_free(&new);
 	return path;
 }
 /* 将路径变为 BIN_DIR/xxx */

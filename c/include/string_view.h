@@ -41,23 +41,27 @@ typedef struct {
 	char *p;
 } SVA_t;
 SVA_t *sva_create(SVA_t *s);
-int    sva_free(SVA_t *s);
+int sva_free(SVA_t *s);
+/**
+ * @brief 将sv复制到SVA(strcpy)
+ *
+ * @param s 目标地址，会自动申请、扩大内存
+ * @param sv 原字符串
+ * @return 设置后的地址
+ */
 SVA_t *sva_from_sv(SVA_t *s, SV_t sv);
 SVA_t *sva_from_cstr(SVA_t *s, const char *p);
+#define sva_from_sva(ret, from) sva_from_sv(ret, sv_from_sva(from))
+SVA_t *sva_strcpy(SVA_t *ret, const SVA_t *from);
 static inline SV_t sv_from_sva(const SVA_t *s)   /* 注意需要避免SVA释放后SV仍存在 */
 {
 	return s ? (SV_t){.len=s->len, .p=s->p} : (SV_t){.len=0, .p=NULL};
 }
 SVA_t *sva_smallest(SVA_t *s);
+/* 二倍扩大内存空间 */
 SVA_t *sva_double(SVA_t *s);
 SVA_t *sva_sprintf(SVA_t *ret,char *fmt, ...) __attribute__((format(printf, 2, 3)));
 SVA_t *sva_sprintfcat(SVA_t *ret, char *fmt, ...) __attribute__((format(printf, 2, 3)));
-static inline bool sva_cmp(SVA_t s1, SVA_t s2)
-{
-	if (s1.len != s2.len) return false;
-	if (s1.p == s2.p) return true;
-	return strncmp(s1.p, s2.p, s1.len) == 0;
-}
 #define sva_cmp(s1, s2) sv_cmp(sv_from_sva(s1), sv_from_sva(s2))
 
 #endif //STRING_VIEW_H
