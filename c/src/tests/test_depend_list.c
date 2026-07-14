@@ -150,6 +150,8 @@ static Target_t *fordir(Target_t *list, char *cwd, char *dirname)
 		sub_target = target_create(sv_from_sva(&obj));
 		target_append(list, sub_target);
 		target_depend_append(sub_target, target);  // elf 依赖 .o
+
+		// target_depend_append(sub_target, target);  // elf 依赖 libs
 	}
 	closedir(dp);
 	sva_free(&tmp);
@@ -167,7 +169,7 @@ int main(void)
 		printf("[%p] '%.*s' <- {", p, (int)p->name.len, p->name.p);
 		for (size_t i = 0; i < p->depend_len; i++) {
 			if (!p->dependencies[i]) continue;
-			printf("%p,", p->dependencies[i]);
+			printf("%s,", p->dependencies[i]->name.p);
 		}
 		printf("}\n");
 	}

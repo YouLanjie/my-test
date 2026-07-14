@@ -97,6 +97,15 @@ int camera_cast_line(Camera_t *camera, Point_t p1, Point_t p2, Point2d_t *ret_p1
 void camera_shift(Camera_t *camera, Vec_t direction);
 void camera_rotate(Camera_t *camera, Vec_t direction, double theta);
 /**
+ * @brief 转动相机(同时移动位置和视线方向)
+ *
+ * @param camera 相机
+ * @param about_point 旋转中心点
+ * @param direction 转轴方向
+ * @param theta 转动角度
+ */
+void camera_rotate_about_point(Camera_t *camera, Point_t about_point, Vec_t direction, double theta);
+/**
  * @brief 让相机看向某一绝对坐标点同时保持画面朝上
  *
  * @param camera 相机

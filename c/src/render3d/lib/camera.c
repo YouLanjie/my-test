@@ -185,6 +185,19 @@ void camera_rotate(Camera_t *camera, Vec_t direction, double theta)
 	camera->up = vec_rotate(camera->up, direction, theta);
 }
 
+void camera_rotate_about_point(Camera_t *camera, Point_t about_point, Vec_t direction, double theta)
+{
+	if (!camera) return;
+	direction = vec_direct(direction);
+
+	Vec_t diff = vec_sub(camera->position, about_point);
+	diff = vec_rotate(diff, direction, theta);
+	camera->position = vec_add(about_point, diff);
+
+	camera->forward = vec_rotate(camera->forward, direction, theta);
+	camera->up = vec_rotate(camera->up, direction, theta);
+}
+
 void camera_look(Camera_t *camera, Point_t point, Vec_t hold)
 {
 	if (!camera) return;
