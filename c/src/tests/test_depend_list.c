@@ -5,11 +5,13 @@
  * @brief       测试“依赖列表”功能
  */
 
+#include <ctype.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <dirent.h>
+#include <stdcountof.h>
 #include "../../include/path.h"
 
 typedef struct Target_t {
@@ -63,6 +65,11 @@ void target_depend_append(Target_t *target, Target_t *dependency)
 		target->depend_len = 1;
 		target->dependencies = malloc(target->depend_len*sizeof(*target->dependencies));
 	} else {
+		Target_t *p = target;
+		while (p) {
+			if (p == dependency) return;
+			p = p->next;
+		}
 		target->depend_len++;
 		target->dependencies = realloc(target->dependencies, target->depend_len*sizeof(*target->dependencies));
 	}
@@ -73,11 +80,111 @@ void target_depend_append(Target_t *target, Target_t *dependency)
 	target->dependencies[target->depend_len-1] = dependency;
 }
 
+Target_t *target_get_by_name(Target_t *list, SV_t name)
+{
+	while (list && sv_cmp(sv_from_sva(&list->name), name) != true) {
+		list = list->next;
+	}
+	return list;
+}
 
 
 
+typedef struct {
+	const char *libname;
+	const char *libfile;
+	const char *sources[10];
+} CLIBS_t;
+
+typedef struct {
+	const char *filename;
+	const char *flg_comp;
+	const char *flg_link;
+	const char *libs;
+	const char *deps;
+	const bool no_elf;
+} CFLAGS_t;
+
+#define SOURCE_DIR "./src/"
+#define LIB_DIR    "./lib/"
 #define BUILD_DIR  "./.build/"
 #define BIN_DIR    "./bin/"
+#define COMPILOR   "gcc"
+#define CCOMFLAGS  "-Wall -Wextra -O2 -g"
+#define CLINKFLAGS "-L"BUILD_DIR" -lctools"
+
+
+#define LIB(l, ...) (CLIBS_t){.libname=l, .libfile=BUILD_DIR "lib"l".a", .sources={__VA_ARGS__}}
+#define MUSDIR SOURCE_DIR"musicSynth/lib/"
+#define R3DDIR SOURCE_DIR"render3d/lib/"
+CLIBS_t CLIBS[] = {
+	LIB("ctools", LIB_DIR"tools.c", LIB_DIR"print_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c"),
+	LIB("cmenu", LIB_DIR"menu.c"),
+	LIB("cmusicsynth", MUSDIR"core.c", MUSDIR"wave_func.c", MUSDIR"note_parser.c", MUSDIR"music_ctx.c"),
+	LIB("render3d", R3DDIR"camera.c", R3DDIR"object.c", R3DDIR"vec.c", R3DDIR"draw_ascii.c", R3DDIR"draw_utf8.c"),
+};
+#undef R3DDIR
+#undef MUSDIR
+#undef LIB
+
+#define FLG(f, l, ...) (CFLAGS_t){.filename=SOURCE_DIR f, .libs=l, __VA_ARGS__}
+#define MUS(f, l, ...) FLG("musicSynth/" f, l" m cmusicsynth", __VA_ARGS__)
+CFLAGS_t CFILEFLAGS[] = {
+	MUS("lib/core.c",          "m\0",),
+	MUS("alsa_play.c",         "asound",),
+	MUS("sdl2_play.c",         "SDL2",),
+	MUS("music_synth.c",       ,),
+
+	FLG("render3d/render3d.c", "m render3d"),
+	FLG("render3d/r3d_rotate.c", "m render3d"),
+
+	FLG("tests/libav_test.c",  "avformat avcodec avutil swresample m"),
+	FLG("tests/social.c",      "m"),
+	FLG("tests/try_iconv.c",   "iconv"),
+	FLG("tests/input.c",       "m"),
+	FLG("tests/sin.c",         "m"),
+
+	FLG("tetris.c",            "ncurses"),
+};
+#undef MUS
+#undef MUSDEP
+#undef FLG
+// 配置区结束
+// ================================
+
+
+Target_t *get_target_by_libname(Target_t *list, SV_t libname)
+{
+	if (!list) return NULL;
+	Path_t libfile = {0};
+	sva_sprintf(&libfile, "%s/lib%.*s.a", BUILD_DIR, (int)libname.len, libname.p);
+	path_normalize(&libfile);
+	Target_t *ret = target_get_by_name(list, sv_from_sva(&libfile)),
+		 *sub_target;
+	sva_free(&libfile);
+	if (ret) return ret;
+
+	uint64_t i = 0, j = 0;
+	for (i = 0; i < countof(CLIBS); i++) {
+		if (strncmp(CLIBS[i].libname, libname.p, libname.len) != 0) continue;
+		// 只添加在表内的库
+		ret = target_create(sv_from_sva(&libfile));
+		target_append(list, ret);
+		for (j = 0; j < countof(CLIBS[i].sources); j++) {
+			sub_target = target_get_by_name(list, sv_from_cstr(CLIBS[i].sources[j]));
+			if (!sub_target) {
+				sub_target = target_create(sv_from_cstr(CLIBS[i].sources[j]));
+				target_append(list, sub_target);
+			}
+			target_depend_append(ret, sub_target);
+			
+		}
+		break;
+	}
+	return list;
+}
+
+
 /* 将路径变为 BUILD_DIR/xxx_xxx_xxx.o */
 static Path_t *path_hander_obj_replace(Path_t* path)
 {
@@ -138,20 +245,40 @@ static Target_t *fordir(Target_t *list, char *cwd, char *dirname)
 		target = target_create(sv_from_sva(&obj));
 		if (!list) list = target;
 		target_append(list, target);
-		sva_strcpy(&tmp, &obj);
 
+		sva_strcpy(&tmp, &obj);
 		path_hander_obj_replace(&tmp);
 		sub_target = target_create(sv_from_sva(&tmp));
 		target_append(list, sub_target);
 		target_depend_append(sub_target, target);  // obj 依赖 .c
 		target = sub_target;
 
-		path_hander_elf(&obj);
-		sub_target = target_create(sv_from_sva(&obj));
+		sva_strcpy(&tmp, &obj);
+		path_hander_elf(&tmp);
+		sub_target = target_create(sv_from_sva(&tmp));
 		target_append(list, sub_target);
 		target_depend_append(sub_target, target);  // elf 依赖 .o
 
-		// target_depend_append(sub_target, target);  // elf 依赖 libs
+		const CFLAGS_t *flag = NULL;
+		for (uint64_t i = 0; i < countof(CFILEFLAGS); i++) {
+			if (!CFILEFLAGS[i].filename) continue;
+			path_normalize(sva_from_cstr(&tmp, CFILEFLAGS[i].filename));    // 借用obj
+			if (!sva_cmp(&tmp, &obj)) continue;
+			flag = CFILEFLAGS+i;
+			break;
+		}
+		if (!flag) continue;
+		SV_t deps = sv_from_cstr(flag->deps), left;
+		deps = sv_from_cstr(flag->libs);
+		while (deps.len > 0) {
+			sv_trim_left_by_type(&deps, isspace);
+			if (deps.len <= 0) break;
+			left = sv_chop_by_type(&deps, isspace);
+			if(left.len <= 0) break;
+
+			target = get_target_by_libname(list, left);
+			target_depend_append(sub_target, target);  // elf 依赖 libs
+		}
 	}
 	closedir(dp);
 	sva_free(&tmp);
