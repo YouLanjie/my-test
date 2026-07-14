@@ -15,7 +15,7 @@
 #define MAX_FRAME 100000
 #define FPS 40
 /* 时间缩放倍率，一秒等于1h */
-#define TIME_SCALE (60.*60/FPS)
+double TIME_SCALE = 60.*60/FPS;
 
 typedef struct {
 	const char *name;
@@ -32,9 +32,9 @@ const double G = 6.672e-11;
 const double SCALE = 1e3;    /* 将距离换算成 1单位 = 1km */
 #define pow2(x) ((x)*(x))
 
-static void physics_update(Star_t *stars, size_t len)
+static double physics_update(Star_t *stars, size_t len)
 {
-	if (!stars || len == 0) return;
+	if (!stars || len == 0) return 0;
 	len %= 1024;
 	Vec_t acc[len] = {};
 	Vec_t diff;
@@ -61,7 +61,7 @@ static void physics_update(Star_t *stars, size_t len)
 		obj_shift(stars[i].obj, vec_mul(stars[i].speed, TIME_SCALE));
 		obj_rotate(stars[i].obj, stars[i].self_rotate, stars[i].self_omiga*TIME_SCALE);
 	}
-	return;
+	return TIME_SCALE;
 }
 
 static int choose_star(Star_t *stars, size_t len, int *choice, const char *hint)
@@ -70,7 +70,9 @@ static int choose_star(Star_t *stars, size_t len, int *choice, const char *hint)
 	printf("\e[0m\n可选天体：\n [0] 空选择\n");
 	for (size_t i = 0; i < len; i++) {
 		if (!stars[i].obj) continue;
-		printf(" [%lu] %s\n", i+1, stars[i].name ? stars[i].name : "{未命名星体}");
+		printf(" [%lu] %s (%gkg)\n", i+1,
+		       stars[i].name ? stars[i].name : "{未命名星体}",
+		       stars[i].mass);
 	}
 	printf("(当前：%d)请输入要%s物体的id[0~%lu]：",
 	       *choice + 1, hint ? hint : "选择", len);
@@ -82,9 +84,9 @@ static int choose_star(Star_t *stars, size_t len, int *choice, const char *hint)
 	return 0;
 }
 
-static void input_handle(int inp, Star_t *star, Camera_t *camera, Point_t *watchpoint)
+static double input_handle(int inp, Star_t *star, Camera_t *camera, Point_t *watchpoint)
 {
-	if (!camera) return;
+	if (!camera) return 0;
 #define v_forward vec_direct(camera->forward)
 #define v_up vec_direct(camera->up)
 #define v_right vec_direct(vec_cross_product(camera->forward, camera->up))
@@ -100,28 +102,29 @@ static void input_handle(int inp, Star_t *star, Camera_t *camera, Point_t *watch
 	case 'D': cam_shift(v_right, 0.5*SCALE); break;
 #undef cam_shift
 	default:
-		if (!star || !star->obj) return;
+		if (!star || !star->obj) return 0;
 		break;
 	}
 
-	static const double accelerate = 10/pow2(SCALE)*TIME_SCALE;
-#define accelerate(var) star->speed = vec_add(star->speed, (var))
+	double accel = 10/pow2(SCALE)*TIME_SCALE;
+#define accelerate(var, k) star->speed = vec_add(star->speed, vec_mul((var), (k))), accel = k
 	switch (inp) {
 	case '_': star->speed = vec_mul(star->speed, 0.1); break;
-	case ' ': accelerate(vec_mul(v_forward, 5*accelerate)); break;
-	case 'N': accelerate(vec_mul(v_forward, 50*accelerate)); break;
-	case 'b': accelerate(vec_mul(v_forward, -5*accelerate)); break;
-	case 'B': accelerate(vec_mul(v_forward, -50*accelerate)); break;
-	case 'w': accelerate(vec_mul(v_up, accelerate)); break;
-	case 's': accelerate(vec_mul(v_up, -accelerate)); break;
-	case 'a': accelerate(vec_mul(v_right, -accelerate)); break;
-	case 'd': accelerate(vec_mul(v_right, accelerate)); break;
+	case ' ': accelerate(v_forward, 5*accel); break;
+	case 'N': accelerate(v_forward, 50*accel); break;
+	case 'b': accelerate(v_forward, -5*accel); break;
+	case 'B': accelerate(v_forward, -50*accel); break;
+	case 'w': accelerate(v_up, accel); break;
+	case 's': accelerate(v_up, -accel); break;
+	case 'a': accelerate(v_right, -accel); break;
+	case 'd': accelerate(v_right, accel); break;
+	default: accel = 0;
 #undef accelerate
 	}
 #undef v_forward
 #undef v_up
 #undef v_right
-	return;
+	return fabs(accel);
 }
 
 static void voyage_helper(Star_t *stars, size_t len)
@@ -161,6 +164,7 @@ int main(void)
 	const int term_w = get_winsize_col() - 0;
 	const int term_h = get_winsize_row() - 1;
 	RenderBackend_t *backend = backend_create_utf8(term_w, term_h);
+	// RenderBackend_t *backend = backend_create_ascii_8bit(term_w, term_h);
 	Camera_t        *camera = camera_create();
 	Star_t           objs[] = {
 		(Star_t){
@@ -179,12 +183,12 @@ int main(void)
 			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0.8}), 7.9),
 		}, (Star_t){
 			.name = "地球大卫星",
-			.obj = obj_shift(obj_create_cube(2000), (Vec_t){-11000, 0, 0}),
+			.obj = obj_shift(obj_create_cube(900), (Vec_t){-11000, 0, 0}),
 			.mass = 1e10,
 			// GM = Rv^2
 			// > sqrt((6.67*10^-11) * (5.965*10^24) / (11000*1000))/1000
 			// 6.0141159707
-			.speed = vec_mul(vec_direct((Vec_t){0, 1, -0.5}), 6.0141159707),
+			.speed = vec_mul(vec_direct((Vec_t){0, -1, 0.1}), 6.0141159707),
 			.self_rotate = (Vec_t){1, 1, -1},
 			.self_omiga = 2*M_PI/(24*60*60),
 		}, (Star_t){
@@ -220,9 +224,15 @@ int main(void)
 	bool pause = false;
 	size_t i = 0;
 	int inp = 0;
+	double consumption = 0;
+	double gtime = 0;
 #define item_in_objs(ind) (ind >= 0 && (size_t)ind < countof(objs) && objs[ind].obj)
 	for (i = 0; i < MAX_FRAME; ++i) {
 		switch (inp = kbhitGetchar()) {
+		case '[': TIME_SCALE/=2; break;
+		case ']': TIME_SCALE*=2; break;
+		case '{': TIME_SCALE=1./FPS; break;
+		case '}': TIME_SCALE=(60.*60/FPS); break;
 		case 'f': choose_star(objs, countof(objs), &follow, "跟随"); break;
 		case 'F': choose_star(objs, countof(objs), &look_to, "看向"); break;
 		case 't': choose_star(objs, countof(objs), &destination_to, "测距"); break;
@@ -236,8 +246,8 @@ int main(void)
 		case 'N': case 'B':
 		case 'w': case 'a': case 's': case 'd':
 		case 'W': case 'A': case 'S': case 'D':
-			input_handle(inp, item_in_objs(follow) ? objs+follow : NULL,
-				     active_cam, item_in_objs(follow) ? &objs[follow].watchpoint : NULL);
+			consumption += input_handle(inp, item_in_objs(follow) ? objs+follow : NULL,
+						    active_cam, item_in_objs(follow) ? &objs[follow].watchpoint : NULL);
 			break;
 		case 'i': axis = !axis; break;
 		case 'p': pause = !pause; break;
@@ -247,14 +257,14 @@ int main(void)
 		case '0': active_cam->dept*=2; break;
 		case '.':
 			pause = true;
-			physics_update(objs, countof(objs));
+			gtime += physics_update(objs, countof(objs));
 			break;
 		case 'q':
 		case 'Q':
 			goto EXIT_AND_CLEANUP;
 			break;
 		}
-		if (!pause) physics_update(objs, countof(objs));
+		if (!pause) gtime += physics_update(objs, countof(objs));
 		if (item_in_objs(follow)) {
 			active_cam = &objs[follow].cam;
 			active_cam->position = vec_add3(objs[follow].obj->center,
@@ -277,22 +287,22 @@ int main(void)
 		printf("\e[H");
 		backend->render(backend);
 		backend->clean(backend);
-		printf("\e[0m\e[2K\rCamera[%.1f,%.1f,%.1f]",
-		       active_cam->position.x / SCALE,
-		       active_cam->position.y / SCALE,
-		       active_cam->position.z / SCALE);
+		printf("\e[0m\e[2K\r[SC:%g, DP:%g, TS:%g, GT:%.1fd, C:%g]",
+		       active_cam->scale, active_cam->dept, TIME_SCALE*FPS,
+		       gtime/(24.*60*60),consumption);
 		if (item_in_objs(follow)) {
-			printf(" | %s (%.1f,%.1f,%.1f) %.1f km/s",
+			printf(" | %s (%g km/s)",
 			       objs[follow].name ? objs[follow].name : "Unknow",
-			       objs[follow].obj->center.x / SCALE,
-			       objs[follow].obj->center.y / SCALE,
-			       objs[follow].obj->center.z / SCALE,
 			       vec_len(objs[follow].speed));
 			if (item_in_objs(destination_to)) {
-				printf(" 距离'%s'还有 %.1f km",
+				const Vec_t dist = vec_sub(objs[destination_to].obj->center,
+							   objs[follow].obj->center);
+				const Vec_t dv = vec_sub(objs[follow].speed,
+							 objs[destination_to].speed);
+				printf(" 距离'%s'还有 %.1f km (%g km/s)",
 				       objs[destination_to].name ? objs[destination_to].name : "Unknow",
-				       vec_len(vec_sub(objs[destination_to].obj->center,
-						       objs[follow].obj->center)));
+				       vec_len(dist),
+				       (vec_point_product(dist, dv)>=0?1:-1)*vec_len(dv));
 			}
 		}
 		sleep_fixed_step(1./FPS);
