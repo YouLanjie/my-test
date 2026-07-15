@@ -26,8 +26,8 @@ static inline SV_t sv_from_cstr(const char *p)
 }
 void sv_chop_left(SV_t *s, size_t len);
 void sv_chop_right(SV_t *s, size_t len);
-SV_t sv_chop_by_delim(SV_t *s, char delim);    // 返回左侧部分，*s保存右侧部分
-SV_t sv_chop_by_type(SV_t *s, int (*istype)(int c));
+SV_t sv_chop_by_delim(SV_t *s, char delim);    // 返回左侧部分，*s保存右侧部分，分隔符不保留
+SV_t sv_chop_by_type(SV_t *s, int (*istype)(int c));    // 返回左侧部分，*s保存右侧部分
 void sv_trim_left_by_type(SV_t *s, int (*istype)(int c));
 bool sv_cmp(SV_t s1, SV_t s2);
 bool sv_end_with(SV_t s, const char *pat);

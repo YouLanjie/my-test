@@ -225,7 +225,7 @@ Path_t *path_hander_obj_replace(Path_t* path)
 {
 	if (!path || !path->p) return NULL;
 	for (size_t n = 0; n < path->len; n++) if (path->p[n] == '/') path->p[n] = '_';
-	SV_t sv = path_basename(sv_from_sva(path));
+	SV_t sv = path_stemname(sv_from_sva(path));
 	while (sv.len > 0 && (sv.p[0] == '.' || sv.p[0] == '_')) sv_chop_left(&sv, 1);
 	SVA_t new = {0};
 	sva_from_sva(&new, path);
@@ -238,7 +238,7 @@ Path_t *path_hander_elf(Path_t* path)
 {
 	if (!path || !path->p) return NULL;
 	SVA_t basename = {0};
-	sva_from_sv(&basename, path_basename(sv_from_sva(path)));
+	sva_from_sv(&basename, path_stemname(sv_from_sva(path)));
 	if (basename.p == NULL) return NULL;
 	sva_sprintf(path, "%s/%.*s", BIN_DIR, (int)basename.len, basename.p);
 	sva_free(&basename);

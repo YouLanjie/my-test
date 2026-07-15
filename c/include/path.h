@@ -27,12 +27,18 @@ typedef struct {
 #define path_from_sv sva_from_sv
 
 /**
- * @brief 获得文件名（无路径）
+ * @brief 获得文件名
  *
  * @param path 要判断的字符串
  * @return 截取后的字符串
  */
 SV_t path_basename(SV_t path);
+/* @brief 获得文件前缀
+ * @return 不存在`.`时长度为0 */
+SV_t path_stemname(SV_t path);
+/* @brief 获得文件后缀(保留`.`)
+ * @return 不存在`.`时长度为0 */
+SV_t path_suffixname(SV_t path);
 /**
  * @brief 获得上级路径
  *

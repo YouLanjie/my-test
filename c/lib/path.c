@@ -9,12 +9,32 @@
 
 SV_t path_basename(SV_t path)
 {
-	SV_t last = {0, NULL};
-	while (path.len != 0) last = sv_chop_by_delim(&path, '/');
-	path = last;
-	last.len = 0;
-	while (last.len == 0 && path.len != 0) last = sv_chop_by_delim(&path, '.');
-	return last;
+	SV_t left = {0, path.p};
+	while (path.len != 0) left = sv_chop_by_delim(&path, '/');
+	return left;
+}
+
+SV_t path_stemname(SV_t path)
+{
+	path = path_basename(path);
+	size_t i = 0;
+	while (i < path.len && path.p[path.len-i-1] != '.') i++;
+	if (i >= path.len) i = 0;
+	else i = path.len-i-1;
+	path.len = i;
+	return path;
+}
+
+SV_t path_suffixname(SV_t path)
+{
+	path = path_basename(path);
+	size_t i = 0;
+	while (i < path.len && path.p[path.len-i-1] != '.') i++;
+	if (i >= path.len) i = path.len;
+	else i = path.len-i-1;
+	path.p += i;
+	path.len -= i;
+	return path;
 }
 
 SV_t path_father(SV_t path)
@@ -95,6 +115,7 @@ Path_st_t path_get_st(Path_t f)
 		st.isexist = false;
 		return st;
 	}
+	st.isexist = true;
 	st.isdir = S_ISDIR(st.st.st_mode);
 	st.isfile = S_ISREG(st.st.st_mode);
 	st.islink = S_ISLNK(st.st.st_mode);
