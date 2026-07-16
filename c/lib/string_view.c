@@ -71,20 +71,18 @@ bool sv_cmp(SV_t s1, SV_t s2)
 	return memcmp(s1.p, s2.p, s1.len) == 0;
 }
 
-bool sv_begin_with(SV_t s, const char *pat)
+bool sv_begin_with(SV_t s, SV_t pat)
 {
-	if (!s.p || !pat) return false;
-	const size_t pat_len = strlen(pat);
-	if (s.len < pat_len) return false;
-	return !strncmp(s.p, pat, pat_len);
+	if (!s.p || !pat.p) return false;
+	if (s.len < pat.len) return false;
+	return !strncmp(s.p, pat.p, pat.len);
 }
 
-bool sv_end_with(SV_t s, const char *pat)
+bool sv_end_with(SV_t s, SV_t pat)
 {
-	if (!s.p || !pat) return false;
-	const size_t pat_len = strlen(pat);
-	if (s.len < pat_len) return false;
-	return !strncmp(s.p+s.len-pat_len, pat, pat_len);
+	if (!s.p || !pat.p) return false;
+	if (s.len < pat.len) return false;
+	return !strncmp(s.p+s.len-pat.len, pat.p, pat.len);
 }
 
 

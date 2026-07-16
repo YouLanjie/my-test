@@ -50,7 +50,7 @@ typedef struct {
 #define MUSDIR SOURCE_DIR"musicSynth/lib/"
 #define R3DDIR SOURCE_DIR"render3d/lib/"
 CLIBS_t CLIBS[] = {
-	LIB("ctools", LIB_DIR"tools.c", LIB_DIR"print_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c"),
+	LIB("ctools", LIB_DIR"tools.c", LIB_DIR"print_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c", LIB_DIR"target_list.c"),
 	// LIB("cmenu", LIB_DIR"menu.c"),
 	LIB("cmusicsynth", MUSDIR"core.c", MUSDIR"wave_func.c", MUSDIR"note_parser.c", MUSDIR"music_ctx.c"),
 	LIB("render3d", R3DDIR"camera.c", R3DDIR"object.c", R3DDIR"vec.c", R3DDIR"draw_ascii.c", R3DDIR"draw_utf8.c"),
@@ -293,7 +293,7 @@ void fordir(char *cwd, char *dirname)
 {
 	if (!dirname) return;
 	if (!cwd) cwd = "./";
-	if (sv_begin_with(sv_from_cstr(dirname), "lib")) return;
+	if (sv_begin_with(sv_from_cstr(dirname), sv_from_lstr("lib"))) return;
 
 	static int pcount = 0;
 	Path_t path = {0};
@@ -317,7 +317,7 @@ void fordir(char *cwd, char *dirname)
 		if (type == DT_DIR) {
 			fordir(path.p, dp_item->d_name);
 		}
-		if (type != DT_REG || !sv_end_with(sv_from_cstr(dp_item->d_name),".c"))
+		if (type != DT_REG || !sv_end_with(sv_from_cstr(dp_item->d_name),sv_from_lstr(".c")))
 			continue;
 		while (pcount >= MAX_PTR) if (wait(NULL) > 0) pcount--;
 		pid_t pid = fork();
