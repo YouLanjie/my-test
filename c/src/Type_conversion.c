@@ -1,4 +1,11 @@
-#include "../include/tools.h"
+#include <dirent.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <unistd.h>
+#include <wait.h>
 
 int flag_3gp = 0;
 

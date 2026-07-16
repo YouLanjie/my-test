@@ -171,12 +171,13 @@ SVA_t *sva_double(SVA_t *s)
 
 SVA_t *sva_adjust_minimun(SVA_t *s, size_t size)
 {
-	if (!s || s->capacity == 0 || s->p == NULL) return NULL;
+	if (!s) return NULL;
 	if (s->capacity >= size) return s;
 	s->capacity = size;
 	char *old_p = s->p;
-	s->p = realloc(s->p, s->capacity);
-	if (!s->p) {
+	if (old_p) s->p = realloc(s->p, s->capacity);
+	else s->p = malloc(s->capacity);
+	if (!s->p && old_p) {
 		free(old_p);
 		s->capacity = 0;
 		s->len = 0;

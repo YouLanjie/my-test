@@ -4,12 +4,12 @@
  *   文件名称：get_elf_str.c
  *   创 建 者：u0_a216
  *   创建日期：2025年10月19日
- *   描    述：
+ *   描    述：尝试提取elf里的字符串
  *
  */
 
 
-#include "../include/tools.h"
+#include <stdio.h>
 
 int main(int argc, char *argv[])
 {

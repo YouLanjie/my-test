@@ -6,6 +6,7 @@
  */
 
 #include "../include/path.h"
+#include <dirent.h>
 
 SV_t path_basename(SV_t path)
 {
@@ -92,6 +93,7 @@ Path_t * path_normalize(Path_t *path)
 		_path_tails_process(path, path->p[i]);
 	}
 	if (!path->p) return NULL;
+	if (path->len >= path->capacity) sva_double(path);
 	path->p[path->len] = 0;
 	_path_tails_process(path, '\0');
 	if (path->len == 0) sva_sprintf(path, "./");
@@ -111,7 +113,7 @@ Path_t *path_join(Path_t *path, SV_t child)
 Path_st_t path_get_st(Path_t f)
 {
 	Path_st_t st = {0};
-	if (stat(f.p, &st.st) == -1) {
+	if (!f.p || stat(f.p, &st.st) == -1) {
 		st.isexist = false;
 		return st;
 	}
@@ -146,7 +148,40 @@ int path_mkdir(SV_t path, int mode)
 		}
 		if ((len = strlen(sva.p)) < sva.len) sva.p[len] = '/';
 	} while (strlen(sva.p) < sva.len);
+	sva_free(&sva);
 	return ret;
+}
+
+int path_remove(SV_t path)
+{
+	if (!path.p || path.len == 0) return -1;
+	DIR *dp = opendir(path.p);
+	SVA_t tmp = {};
+	int stat = 0;
+	if (!dp) {
+		Path_st_t st = path_get_st(*sva_from_sv(&tmp, path));
+		if (st.isexist && !st.isdir) {
+			stat = remove(tmp.p);
+			sva_free(&tmp);
+			return stat;
+		}
+		sva_free(&tmp);
+		return -1;
+	}
+	struct dirent *dp_item = NULL;
+	do {
+		if ((dp_item = readdir(dp)) == NULL) break;
+		sva_sprintf(&tmp, "%.*s/%s", (int)path.len, path.p, dp_item->d_name);
+		if (dp_item->d_type == DT_DIR) {
+			stat += path_remove(sv_from_sva(&tmp));
+			stat += remove(tmp.p);
+			continue;
+		}
+		stat += remove(tmp.p);
+	} while (dp_item);
+	sva_free(&tmp);
+	closedir(dp);
+	return stat;
 }
 
 SVA_t *path_readfile(SV_t path, SVA_t *dest, size_t maxsize)

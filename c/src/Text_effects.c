@@ -1,4 +1,5 @@
-#include "../include/tools.h"
+#include <stdio.h>
+#include <unistd.h>
 
 int flag_times = 0;
 

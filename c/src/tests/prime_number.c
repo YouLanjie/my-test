@@ -9,7 +9,9 @@
  */
 
 
-#include "../../include/tools.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #define Lim 10000
 
