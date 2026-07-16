@@ -11,6 +11,7 @@
 #define _PATH_H
 
 #include "string_view.h"
+#include <unistd.h>
 #include <sys/stat.h>
 
 typedef SVA_t Path_t;
@@ -62,6 +63,8 @@ Path_t * path_normalize(Path_t *path);
  */
 Path_t *path_join(Path_t *path, SV_t child);
 Path_st_t path_get_st(Path_t f);
+/* 可递归创建文件夹 */
+int path_mkdir(SV_t path, int mode);
 
 #endif //PATH_H
 

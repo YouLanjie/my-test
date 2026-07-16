@@ -5,6 +5,7 @@
  * @brief       测试“依赖列表”功能
  */
 
+#include <sys/stat.h>
 #include <time.h>
 #include <ctype.h>
 #include <stdbool.h>
@@ -13,8 +14,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <dirent.h>
-#include <stdcountof.h>
 #include <unistd.h>
+#include <dlfcn.h>
+#include <stdcountof.h>
 #include "../../include/path.h"
 
 typedef struct Target_t {
@@ -146,7 +148,7 @@ void target_build(Target_t *target)
 		target->status = TS_SUCCESS;
 		return;
 	}
-	if (target->type != TY_PHONY && !isexist && !target->build) {
+	if (!isexist && !target->build) {
 		printf("[ERROR] 没有规则用于构建 %.*s\n", (int)target->name.len, target->name.p);
 		target->status = TS_FAILD;
 		return;
@@ -353,6 +355,11 @@ static bool build_c2obj(Target_t *target)
 	}
 	if (flag->flg_comp) sva_sprintfcat(&cmd, " %s", flag->flg_comp);
 
+	sva_from_sv(&obj, path_father(sv_from_sva(&target->name)));
+	if (access(obj.p, F_OK) != 0) {
+		mkdir(obj.p, 0755);
+	}
+
 	EXEC_AND_PRINT();
 	sva_free(&obj);
 	sva_free(&cmd);
@@ -409,6 +416,11 @@ static bool build_obj2elf(Target_t *target)
 		sva_sprintfcat(&cmd, " -l%.*s", (int)left.len, left.p);
 	}
 
+	sva_from_sv(&obj, path_father(sv_from_sva(&target->name)));
+	if (access(obj.p, F_OK) != 0) {
+		mkdir(obj.p, 0755);
+	}
+
 	EXEC_AND_PRINT();
 	sva_free(&obj);
 	sva_free(&cmd);
@@ -418,7 +430,14 @@ static bool build_obj2elf(Target_t *target)
 static bool build_obj2alib(Target_t *target)
 {
 	if (!target) return false;
+	if (target->depend_len == 0) return false;
 	SVA_t cmd = {};
+
+	sva_from_sv(&cmd, path_father(sv_from_sva(&target->name)));
+	if (access(cmd.p, F_OK) != 0) {
+		mkdir(cmd.p, 0755);
+	}
+
 	sva_sprintf(&cmd, "%s '%.*s'", "ar rcs ", (int)target->name.len, target->name.p);
 	for (size_t i = 0; i < target->depend_len; i++) {
 		if (!target->dependencies[i]) break;
@@ -458,6 +477,7 @@ static Target_t *get_target_by_libname(Target_t *list, SV_t libname)
 		// 追加表源文件
 		for (j = 0; j < countof(CLIBS[i].sources); j++) {
 			sourcefile = sv_from_cstr(CLIBS[i].sources[j]);
+			if (sourcefile.len == 0) break;
 			if (sv_end_with(sourcefile, "/*")) {
 				sv_chop_right(&sourcefile, 1);
 				list = target_fordir(list, NULL, sourcefile, rule_fordir, action_c_lib);
@@ -473,14 +493,31 @@ static Target_t *get_target_by_libname(Target_t *list, SV_t libname)
 		bool stat = false;
 		const char *prefix = getenv("PREFIX");
 		if (!prefix) prefix = "/usr";
-		sva_sprintf(&libfile, "%s/lib/lib%.*s.so", prefix, (int)libname.len, libname.p);
-		if (!(stat = (access(libfile.p, F_OK) == 0))) {
-			sva_sprintf(&libfile, "%s/lib/lib%.*s.a", prefix, (int)libname.len, libname.p);
-			stat = (access(libfile.p, F_OK) == 0);
+		sva_sprintf(&libfile, "%s/lib/lib%.*s.a", prefix, (int)libname.len, libname.p);
+		stat = (access(libfile.p, F_OK) == 0);
+		if (!stat) {
+			sva_sprintf(&libfile, "lib%.*s.so", (int)libname.len, libname.p);
+			void *handle = NULL;
+			handle = dlopen(libfile.p, RTLD_NOW);
+			if (handle) {
+				stat = true;
+				dlclose(handle);
+			}
 		}
 		if (stat) {
 			ret = target_get_or_create(list, sv_from_sva(&libfile));
-			if (ret) ret->type = TY_PHONY;
+			if (ret) {
+				ret->status = TS_SUCCESS;
+				ret->type = TY_PHONY;
+			}
+		}
+	}
+	if (!ret) {
+		sva_sprintf(&libfile, "<lib_not_found>%.*s", (int)libname.len, libname.p);
+		ret = target_get_or_create(list, sv_from_sva(&libfile));
+		if (ret) {
+			ret->status = TS_FAILD;
+			ret->type = TY_PHONY;
 		}
 	}
 	sva_free(&libfile);
@@ -565,6 +602,7 @@ static Target_t *action_c_elf(Target_t *list, SV_t full_path)
 	sub_target = target_get_or_create(list, sv_from_sva(&tmp));
 	if (sub_target) {
 		sub_target->build = build_obj2elf;
+		target_depend_append(sub_target, get_target_by_libname(list, sv_from_cstr("ctools")));
 	}
 	target_depend_append(sub_target, target);  // elf 依赖 .o
 	target = sub_target;
@@ -612,8 +650,8 @@ static Target_t *action_c_lib(Target_t *list, SV_t full_path)
 	SVA_t objpath = {};
 	for (size_t i = 0; i < countof(CLIBS); i++) {
 		testpath = sv_from_cstr(CLIBS[i].sources[0]);
-		if (!sv_end_with(testpath, "/*")) continue;
-		sv_chop_right(&testpath, 1);
+		if (sv_end_with(testpath, "/*")) sv_chop_right(&testpath, 1);
+		else testpath = path_father(testpath);
 		if (!sv_cmp(testpath, libdir)) continue;
 
 		lib = get_target_by_libname(list, sv_from_cstr(CLIBS[i].libname));

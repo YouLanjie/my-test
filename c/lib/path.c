@@ -122,3 +122,29 @@ Path_st_t path_get_st(Path_t f)
 	return st;
 }
 
+int path_mkdir(SV_t path, int mode)
+{
+	if (!path.p || path.len == 0) return -1;
+	Path_t sva = {};
+	path_normalize(sva_from_sv(&sva, path));
+	char *p = NULL;
+	while (access(sva.p, F_OK) != 0 && (p = strrchr(sva.p, '/')) && p != sva.p) {
+		*p = '\0';
+	}
+	int ret = 0;
+	size_t len = 0;
+	Path_st_t st;
+	do {
+		st = path_get_st(sva);
+		if (st.isexist && !st.isdir) {
+			ret = -2;
+			break;
+		}
+		if (!st.isexist) {
+			ret = mkdir(sva.p, mode);
+			if (ret) break;
+		}
+		if ((len = strlen(sva.p)) < sva.len) sva.p[len] = '/';
+	} while (strlen(sva.p) < sva.len);
+	return ret;
+}
