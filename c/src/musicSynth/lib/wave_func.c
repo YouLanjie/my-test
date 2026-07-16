@@ -5,7 +5,7 @@
  * @brief       各种预设回调函数集
  */
 
-#include "../core.h"
+#include "music_synth.h"
 
 /* 泛音列定义设置 */
 #define HARMONIC(x)                           \

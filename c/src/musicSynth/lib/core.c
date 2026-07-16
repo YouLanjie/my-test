@@ -6,7 +6,7 @@
  *              文件头、声音合成、滤波器、包络器
  */
 
-#include "../core.h"
+#include "music_synth.h"
 
 uint32_t SAMPLE_RATE = 44100;
 

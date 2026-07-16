@@ -5,7 +5,7 @@
  * @brief       音频合成器导出应用（原ALSA.c）
  */
 
-#include "core.h"
+#include "lib/music_synth.h"
 #include <errno.h>
 #include <stddef.h>
 #include <time.h>

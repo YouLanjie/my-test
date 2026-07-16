@@ -5,7 +5,7 @@
  * @brief       旋律相关（旋律处理，合并轨道）
  */
 
-#include "../core.h"
+#include "music_synth.h"
 
 void music_ctx_free(MusicCtx_t *ctx)
 {

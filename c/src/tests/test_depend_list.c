@@ -26,6 +26,7 @@ typedef struct Target_t {
 	bool (*build)(struct Target_t*);
 	void *cfgdata;    /* 任意配置字段 */
 
+	bool isupdated;
 	enum {TY_NORM = 0, TY_PHONY, TY_DEP} type;
 	enum {TS_NOCHECK = 0, TS_WORKING, TS_SUCCESS, TS_FAILD} status;
 
@@ -127,6 +128,7 @@ void target_build(Target_t *target)
 	target->time = st.st.st_mtim.tv_sec + st.st.st_mtim.tv_nsec*1e-9;
 	isexist = st.isexist;
 	if (!st.isexist) need_build = true;
+	double waittime = 0;
 	for (size_t i = 0; i < target->depend_len; i++) {
 		target_build(target->dependencies[i]);
 		switch (target->dependencies[i]->status) {
@@ -146,6 +148,11 @@ void target_build(Target_t *target)
 		if (need_wait && i+1 >= target->depend_len) {
 			i = -1;
 			usleep(0.1e6);
+			waittime += 0.1e6;
+			if (waittime > 60) {
+				target->status = TS_FAILD;
+				return;
+			}
 		}
 	}
 	if (!need_build) {
@@ -163,6 +170,7 @@ void target_build(Target_t *target)
 		if (target->status == TS_SUCCESS) {
 			st = path_get_st(target->name);
 			target->time = st.st.st_mtim.tv_sec + st.st.st_mtim.tv_nsec*1e-9;
+			target->isupdated = true;
 		}
 	}
 	return;
@@ -224,13 +232,28 @@ static Target_t *target_fordir(Target_t *list, char *cwd, SV_t dirname,
 	return list;
 }
 
-void target_printlist(Target_t *list)
+/**
+ * @brief 打印任务列表
+ *
+ * @param list 列表本身
+ * @param mode 模式
+ * 0: TS_NOCHECK (ON)
+ * 1: TS_WORKING
+ * 2: TS_SUCCESS
+ * 3: TS_FAILD   (ON)
+ * 4: TY_NORM    (ON)
+ * 5: TY_PHONY   (ON)
+ * 6: TY_DEP     (ON)
+ * 7: 仅有已更新项目
+ */
+void target_printlist(Target_t *list, uint8_t mode)
 {
 	if (!list) return;
+	mode ^= 0b01111001;    /* 切换默认模式 */
 	static const char *statusstr[] = {
 		[TS_NOCHECK] = "",
-		[TS_SUCCESS] = "\e[32m<DONE>\e[0m",
 		[TS_WORKING] = "\e[33m<WORKING>\e[0m",
+		[TS_SUCCESS] = "\e[32m<DONE>\e[0m",
 		[TS_FAILD] = "\e[31m<FAILD>\e[0m",
 	};
 	static const char *typestr[] = {
@@ -239,6 +262,8 @@ void target_printlist(Target_t *list)
 		[TY_DEP] = "\e[2m(DEP)\e[0m",
 	};
 	for (Target_t *p = list; p; p = p->next) {
+		if (!(mode&(1<<p->status) && mode&(1<<(p->type+4)))) continue;
+		if (mode&(1<<7) && !p->isupdated) continue;
 		printf("[\e[2m%p\e[0m] %s%s'\e[32m%.*s\e[0m'",
 		       p, statusstr[p->status%countof(statusstr)],
 		       typestr[p->type%countof(typestr)],
@@ -273,6 +298,9 @@ typedef struct {
 	const bool no_elf;
 } CFLAGS_t;
 
+// ===============================
+// 配置区
+#define MAX_PTR    8
 #define SOURCE_DIR "./src/"
 #define LIB_DIR    "./lib/"
 #define BUILD_DIR  "./.build/"
@@ -281,32 +309,30 @@ typedef struct {
 #define CCOMFLAGS  "-Wall -Wextra -O2 -g"
 #define CLINKFLAGS "-L"BUILD_DIR
 
-
 #define LIB(l, h, ...) (CLIBS_t){.libname=l, .header=h, .sources={__VA_ARGS__}}
 CLIBS_t CLIBS[] = {
 	LIB("ctools", ((const char*[]){"include/tools.h", "include/print_in_box.h", "include/string_view.h", "include/path.h", NULL}),
-	    LIB_DIR"tools.c", LIB_DIR"print_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c"),
-	LIB("cmenu", ((const char *[]){"include/cmneu.h", NULL}), LIB_DIR"menu.c"),
-	LIB("cmusicsynth", ((const char *[]){"core.h", NULL}), SOURCE_DIR"musicSynth/lib/*"),
+	    LIB_DIR"tools.c", LIB_DIR"*"),
+	LIB("cmenu", ((const char *[]){"lib/cmneu.h", NULL}), SOURCE_DIR"cmenu/lib/menu.c"),
+	LIB("cmusicsynth", ((const char *[]){"lib/music_synth.h", NULL}), SOURCE_DIR"musicSynth/lib/*"),
 	LIB("render3d", ((const char *[]){"lib/render3d.h", NULL}),    SOURCE_DIR"render3d/lib/*"),
 };
 #undef LIB
 
 #define FLG(f, l, ...) (CFLAGS_t){.filename=SOURCE_DIR f, .libs=l, __VA_ARGS__}
 CFLAGS_t CFILEFLAGS[] = {
-	// MUS("lib/core.c",          "m\0",),
-	FLG("musicSynth/alsa_play.c",         "m asound",),
-	FLG("musicSynth/sdl2_play.c",         "m SDL2",),
-	FLG("musicSynth/music_synth.c",       "m",),
+	FLG("musicSynth/alsa_play.c",   "m asound",),
+	FLG("musicSynth/sdl2_play.c",   "m SDL2",),
+	FLG("musicSynth/music_synth.c", "m",),
 
-	FLG("render3d/render3d.c", "m"),
+	FLG("render3d/render3d.c",   "m"),
 	FLG("render3d/r3d_rotate.c", "m"),
 
-	FLG("tests/libav_test.c",  "avformat avcodec avutil swresample m"),
-	FLG("tests/social.c",      "m"),
-	FLG("tests/try_iconv.c",   "iconv"),
-	FLG("tests/input.c",       "m"),
-	FLG("tests/sin.c",         "m"),
+	FLG("tests/libav_test.c", "avformat avcodec avutil swresample m"),
+	FLG("tests/try_iconv.c",  "iconv"),
+	FLG("tests/social.c",     "m"),
+	FLG("tests/input.c",      "m"),
+	FLG("tests/sin.c",        "m"),
 
 	// FLG("tetris.c",            "ncurses"),
 };
@@ -332,7 +358,7 @@ static Target_t *action_c_lib(Target_t *list, SV_t full_path);
 #define EXEC_AND_PRINT() \
 	printf("[RUN] '\e[45m%.*s\e[0m'\n", (int)cmd.len, cmd.p); \
 	bool ret = system(cmd.p) == 0; \
-	printf("[RESULT] %s\n", ret ? "\e[32mtrue\e[0m" : "\e[31mfalse\e[0m")
+	if (!ret) printf("[RESULT] %s\n", ret ? "\e[32mtrue\e[0m" : "\e[31mfalse\e[0m")
 
 static bool build_c2obj(Target_t *target)
 {
@@ -718,7 +744,7 @@ int main(int argc, char *argv[])
 	/* 打印 */
 	printf("[INFO] 运行构建\n");
 	target_buildlist(list);
-	target_printlist(list);
+	target_printlist(list, 0);
 
 	target_freelist(list);
 	return 0;

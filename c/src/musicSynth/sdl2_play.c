@@ -6,8 +6,8 @@
  */
 
 #include <SDL2/SDL.h>
+#include "lib/music_synth.h"
 #include "../../include/tools.h"
-#include "core.h"
 
 // 全局或静态的播放上下文（也可以在回调中通过 userdata 传递）
 typedef struct {

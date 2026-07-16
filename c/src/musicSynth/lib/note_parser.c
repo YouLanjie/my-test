@@ -5,7 +5,7 @@
  * @brief       音符解释器
  */
 
-#include "../core.h"
+#include "music_synth.h"
 
 /* 打印音符 */
 void print_note(Note_t *note)

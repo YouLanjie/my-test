@@ -10,8 +10,8 @@
 
 
 #include <alsa/asoundlib.h>
+#include "lib/music_synth.h"
 #include "../../include/tools.h"
-#include "core.h"
 
 #define FLG_PLAY (1 << 0)
 #define FLG_SAVE (1 << 1)
