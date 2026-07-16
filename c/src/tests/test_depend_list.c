@@ -8,7 +8,8 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <dlfcn.h>
-#include <linux/limits.h>
+#include <limits.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdcountof.h>
 #include <stddef.h>
@@ -136,7 +137,7 @@ void target_build(Target_t *target)
 			need_wait = true;
 			break;
 		case TS_SUCCESS:
-			if (target->dependencies[i]->time > target->time)
+			if (target->type == TY_PHONY || target->dependencies[i]->time > target->time)
 				need_build = true;
 			break;
 		case TS_NOCHECK:
@@ -147,12 +148,13 @@ void target_build(Target_t *target)
 		}
 		if (need_wait && i+1 >= target->depend_len) {
 			i = -1;
-			usleep(0.1e6);
-			waittime += 0.1e6;
-			if (waittime > 60) {
+			usleep(1e3);
+			waittime += 1e3;
+			if (waittime > 60e6) {
 				target->status = TS_FAILD;
 				return;
 			}
+			need_wait = false;
 		}
 	}
 	if (!need_build) {
@@ -172,7 +174,7 @@ void target_build(Target_t *target)
 			target->time = st.st.st_mtim.tv_sec + st.st.st_mtim.tv_nsec*1e-9;
 			target->isupdated = true;
 		}
-	}
+	} else target->status = TS_SUCCESS;
 	return;
 }
 
@@ -182,6 +184,58 @@ void target_buildlist(Target_t *list)
 	for (Target_t *p = list; p; p = p->next) {
 		if (p->type != TY_NORM) continue;
 		target_build(p);
+	}
+}
+
+void *target_build_for_pthread(void *target)
+{
+	if (!target) return NULL;
+	target_build(target);
+	pthread_exit(NULL);
+	return NULL;
+}
+
+void target_buildlist_for_pthread(Target_t *list, int8_t ptr_max)
+{
+	if (!list) return;
+	if (ptr_max < 0) {    /* 单线程 */
+		target_buildlist(list);
+		return;
+	}
+	else if (ptr_max == 0) ptr_max = 8;
+
+	int8_t count = 0, i;
+	Target_t *ptr_target[ptr_max] = {};
+	pthread_t ptrs[ptr_max] = {};
+	for (Target_t *p = list; p; p = p->next) {
+		if (p->type != TY_NORM) continue;
+		while (count >= ptr_max) {
+			for (i = 0; i < ptr_max; i++) {
+				if (!ptrs[i] || !ptr_target[i]) continue;
+				if (ptr_target[i]->status == TS_WORKING) continue;
+				pthread_join(ptrs[i], NULL);
+				ptrs[i] = 0;
+				ptr_target[i] = NULL;
+				count--;
+			}
+			usleep(1e3);
+		}
+		for (i = 0; ptrs[i] && i < ptr_max; i++);
+		// target_build(p);
+		pthread_create(&ptrs[i], NULL, target_build_for_pthread, p);
+		ptr_target[i] = p;
+		count++;
+	}
+	while (count > 0) {
+		for (i = 0; i < ptr_max; i++) {
+			if (!ptrs[i] || !ptr_target[i]) continue;
+			if (ptr_target[i]->status == TS_WORKING) continue;
+			pthread_join(ptrs[i], NULL);
+			ptrs[i] = 0;
+			ptr_target[i] = NULL;
+			count--;
+		}
+		usleep(1e3);
 	}
 }
 
@@ -300,7 +354,6 @@ typedef struct {
 
 // ===============================
 // 配置区
-#define MAX_PTR    8
 #define SOURCE_DIR "./src/"
 #define LIB_DIR    "./lib/"
 #define BUILD_DIR  "./.build/"
@@ -742,8 +795,12 @@ int main(int argc, char *argv[])
 	}
 
 	/* 打印 */
+	// target_printlist(list, 0);
 	printf("[INFO] 运行构建\n");
-	target_buildlist(list);
+	if (argv[0][0] == '.')
+		target_buildlist_for_pthread(list, 0);
+	else
+		target_buildlist(list);
 	target_printlist(list, 0);
 
 	target_freelist(list);
