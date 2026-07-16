@@ -63,8 +63,6 @@ extern int kbhitGetchar();
 extern int get_winsize_col();
 /* Get the size(y) of the window(range:0~) */
 extern int get_winsize_row();
-/* 读取文件 */
-extern char *_fread(FILE *fp);
 
 
 typedef struct {

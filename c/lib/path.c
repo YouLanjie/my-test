@@ -148,3 +148,34 @@ int path_mkdir(SV_t path, int mode)
 	} while (strlen(sva.p) < sva.len);
 	return ret;
 }
+
+SVA_t *path_readfile(SV_t path, SVA_t *dest, size_t maxsize)
+{
+	if (!path.p || !path.len || !dest) return NULL;
+	SVA_t file = {};
+	sva_from_sv(&file, path);
+	FILE *fp = fopen(file.p, "r");
+	if (!fp) return NULL;
+
+	size_t size = 0;
+	fseek(fp, 0L, SEEK_END);
+	size = ftell(fp);
+	fseek(fp, 0L, SEEK_SET);
+	do {
+		if (size <= 0 || size >= UINT64_MAX || size+1 == 0) break;
+		if (size > maxsize) size = maxsize;
+		sva_free(dest);
+		dest->capacity = size+1;
+		dest->p = malloc(dest->capacity);
+		if (!dest->p) {
+			dest->capacity = 0;
+			perror("The file is too big");
+			break;
+		}
+		dest->len = size;
+		fread(dest->p, 1, size, fp);
+		if (dest->len < dest->capacity) dest->p[dest->len] = '\0';
+	} while (0);
+	fclose(fp);
+	return dest;
+}

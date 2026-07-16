@@ -5,13 +5,8 @@
  * @brief       空观旋转.elf
  */
 
-#include "./lib/render3d.h"
-#include <math.h>
-#include <stdbool.h>
-#include <stdcountof.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include "lib/render3d.h"
+#include "../../include/tools.h"
 
 #define MAX_FRAME INT64_MAX
 #define FPS 40

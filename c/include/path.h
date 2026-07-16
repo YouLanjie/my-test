@@ -11,6 +11,8 @@
 #define _PATH_H
 
 #include "string_view.h"
+#include <stdint.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/stat.h>
 
@@ -65,6 +67,9 @@ Path_t *path_join(Path_t *path, SV_t child);
 Path_st_t path_get_st(Path_t f);
 /* 可递归创建文件夹 */
 int path_mkdir(SV_t path, int mode);
+/* @brief 读取文件内容最多maxsize并保存到dest
+ * @return 保存地址dest，出错为NULL */
+SVA_t *path_readfile(SV_t path, SVA_t *dest, size_t maxsize);
 
 #endif //PATH_H
 

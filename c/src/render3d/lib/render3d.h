@@ -10,11 +10,14 @@
 #ifndef _RENDER3D_H
 #define _RENDER3D_H
 
-#include "../../../include/tools.h"
+#include <math.h>
+#include <stdbool.h>
+#include <stdcountof.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdcountof.h>
-#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* 向量 */
 typedef struct {

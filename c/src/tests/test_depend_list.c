@@ -5,26 +5,30 @@
  * @brief       测试“依赖列表”功能
  */
 
-#include <sys/stat.h>
-#include <time.h>
 #include <ctype.h>
+#include <dirent.h>
+#include <dlfcn.h>
+#include <linux/limits.h>
 #include <stdbool.h>
+#include <stdcountof.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <dirent.h>
+#include <string.h>
+#include <time.h>
 #include <unistd.h>
-#include <dlfcn.h>
-#include <stdcountof.h>
 #include "../../include/path.h"
 
 typedef struct Target_t {
 	SVA_t name;
-	enum {TY_NORM = 0, TY_PHONY, TY_DEP} type;
-	enum {TS_NOCHECK = 0, TS_WORKING, TS_SUCCESS, TS_FAILD} status;
 	double time;
 	bool (*build)(struct Target_t*);
+	void *cfgdata;    /* 任意配置字段 */
+
+	enum {TY_NORM = 0, TY_PHONY, TY_DEP} type;
+	enum {TS_NOCHECK = 0, TS_WORKING, TS_SUCCESS, TS_FAILD} status;
+
 	size_t depend_len;
 	struct Target_t **dependencies;
 	struct Target_t *prev;
@@ -247,7 +251,7 @@ void target_printlist(Target_t *list)
 			       i+1 >= p->depend_len ? "" : ", ");
 		}
 		if (p->depend_len > 0) printf("}");
-		if (p->build) printf(" <- func<%p>", p->build);
+		if (p->build) printf(" <- func<\e[2m%p\e[0m>", p->build);
 		printf("\n");
 	}
 }
@@ -256,6 +260,7 @@ void target_printlist(Target_t *list)
 
 typedef struct {
 	const char *libname;
+	const char **header;
 	const char *sources[10];
 } CLIBS_t;
 
@@ -274,28 +279,28 @@ typedef struct {
 #define BIN_DIR    "./bin/"
 #define COMPILOR   "gcc"
 #define CCOMFLAGS  "-Wall -Wextra -O2 -g"
-#define CLINKFLAGS "-L"BUILD_DIR" -lctools"
+#define CLINKFLAGS "-L"BUILD_DIR
 
 
-#define LIB(l, ...) (CLIBS_t){.libname=l, .sources={__VA_ARGS__}}
+#define LIB(l, h, ...) (CLIBS_t){.libname=l, .header=h, .sources={__VA_ARGS__}}
 CLIBS_t CLIBS[] = {
-	LIB("ctools", LIB_DIR"tools.c", LIB_DIR"print_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c"),
-	LIB("cmenu", LIB_DIR"menu.c"),
-	LIB("cmusicsynth", SOURCE_DIR"musicSynth/lib/*"),
-	LIB("render3d",    SOURCE_DIR"render3d/lib/*"),
+	LIB("ctools", ((const char*[]){"include/tools.h", "include/print_in_box.h", "include/string_view.h", "include/path.h", NULL}),
+	    LIB_DIR"tools.c", LIB_DIR"print_in_box.c", LIB_DIR"path.c", LIB_DIR"string_view.c"),
+	LIB("cmenu", ((const char *[]){"include/cmneu.h", NULL}), LIB_DIR"menu.c"),
+	LIB("cmusicsynth", ((const char *[]){"core.h", NULL}), SOURCE_DIR"musicSynth/lib/*"),
+	LIB("render3d", ((const char *[]){"lib/render3d.h", NULL}),    SOURCE_DIR"render3d/lib/*"),
 };
 #undef LIB
 
 #define FLG(f, l, ...) (CFLAGS_t){.filename=SOURCE_DIR f, .libs=l, __VA_ARGS__}
-#define MUS(f, l, ...) FLG("musicSynth/" f, l" m cmusicsynth", __VA_ARGS__)
 CFLAGS_t CFILEFLAGS[] = {
-	MUS("lib/core.c",          "m\0",),
-	MUS("alsa_play.c",         "asound",),
-	MUS("sdl2_play.c",         "SDL2",),
-	MUS("music_synth.c",       ,),
+	// MUS("lib/core.c",          "m\0",),
+	FLG("musicSynth/alsa_play.c",         "m asound",),
+	FLG("musicSynth/sdl2_play.c",         "m SDL2",),
+	FLG("musicSynth/music_synth.c",       "m",),
 
-	FLG("render3d/render3d.c", "m render3d"),
-	FLG("render3d/r3d_rotate.c", "m render3d"),
+	FLG("render3d/render3d.c", "m"),
+	FLG("render3d/r3d_rotate.c", "m"),
 
 	FLG("tests/libav_test.c",  "avformat avcodec avutil swresample m"),
 	FLG("tests/social.c",      "m"),
@@ -334,7 +339,7 @@ static bool build_c2obj(Target_t *target)
 	if (!target) return false;
 	// const size_t arr_len = ;
 	SVA_t cmd = {};
-	sva_sprintf(&cmd, "%s -o '%.*s' -c", "gcc", (int)target->name.len, target->name.p);
+	sva_sprintf(&cmd, "%s -o '%.*s' -c", COMPILOR, (int)target->name.len, target->name.p);
 	// TODO: get flags
 	for (size_t i = 0; i < target->depend_len; i++) {
 		if (!target->dependencies[i]) break;
@@ -357,7 +362,7 @@ static bool build_c2obj(Target_t *target)
 
 	sva_from_sv(&obj, path_father(sv_from_sva(&target->name)));
 	if (access(obj.p, F_OK) != 0) {
-		mkdir(obj.p, 0755);
+		path_mkdir(sv_from_sva(&obj), 0755);
 	}
 
 	EXEC_AND_PRINT();
@@ -369,40 +374,26 @@ static bool build_c2obj(Target_t *target)
 static bool build_obj2elf(Target_t *target)
 {
 	if (!target) return false;
-	// const size_t arr_len = ;
-	SVA_t cmd = {};
+	SVA_t cmd = {}, obj = {};
 	sva_sprintf(&cmd, "%s -o '%.*s'", "gcc", (int)target->name.len, target->name.p);
-	// TODO: get flags
-	Target_t *sourcefile = NULL;
 	for (size_t i = 0; i < target->depend_len; i++) {
-		if (!target->dependencies[i] || target->dependencies[i]->type == TY_PHONY) break;
-		/* 根据依赖反查配置的c文件 */
-		if (!sourcefile && sv_end_with(sv_from_sva(&target->dependencies[i]->name), ".o")) {
-			for (size_t j = 0; j < target->dependencies[i]->depend_len; j++) {
-				if (sv_end_with(sv_from_sva(&target->dependencies[i]->dependencies[j]->name), ".c"))
-					sourcefile = target->dependencies[i]->dependencies[j];
-			}
+		if (!target->dependencies[i]) break;
+		if (target->dependencies[i]->type == TY_PHONY) continue;
+		if (target->dependencies[i]->type == TY_DEP &&
+		    sv_end_with(sv_from_sva(&target->dependencies[i]->name), ".a")) {
+			const CLIBS_t *lib = target->dependencies[i]->cfgdata;
+			if (!lib) continue;
+			sva_sprintfcat(&obj, " -l%s", lib->libname);
+			continue;
 		}
 		sva_sprintfcat(&cmd, " '%.*s'",
 			       (int)target->dependencies[i]->name.len,
 			       target->dependencies[i]->name.p);
 	}
 
-	if (!sourcefile) {
-		sva_free(&cmd);
-		return false;
-	}
-
 	/* 加载flag */
-	SVA_t obj = {};
 	const CFLAGS_t *flag = &(CFLAGS_t){.filename=NULL};
-	for (uint64_t i = 0; i < countof(CFILEFLAGS); i++) {
-		if (!CFILEFLAGS[i].filename) continue;
-		path_normalize(sva_from_cstr(&obj, CFILEFLAGS[i].filename));
-		if (!sva_cmp(&obj, &sourcefile->name)) continue;
-		flag = CFILEFLAGS+i;
-		break;
-	}
+	if (target->cfgdata) flag = target->cfgdata;
 	if (flag->flg_link) sva_sprintfcat(&cmd, " %s", flag->flg_link);
 
 	/* 加载链接库 */
@@ -415,10 +406,13 @@ static bool build_obj2elf(Target_t *target)
 		if(left.len <= 0) break;
 		sva_sprintfcat(&cmd, " -l%.*s", (int)left.len, left.p);
 	}
+	if (obj.p && obj.len) {
+		sva_sprintfcat(&cmd, "%.*s", (int)obj.len, obj.p);
+	}
 
 	sva_from_sv(&obj, path_father(sv_from_sva(&target->name)));
 	if (access(obj.p, F_OK) != 0) {
-		mkdir(obj.p, 0755);
+		path_mkdir(sv_from_sva(&obj), 0755);
 	}
 
 	EXEC_AND_PRINT();
@@ -435,7 +429,7 @@ static bool build_obj2alib(Target_t *target)
 
 	sva_from_sv(&cmd, path_father(sv_from_sva(&target->name)));
 	if (access(cmd.p, F_OK) != 0) {
-		mkdir(cmd.p, 0755);
+		path_mkdir(sv_from_sva(&cmd), 0755);
 	}
 
 	sva_sprintf(&cmd, "%s '%.*s'", "ar rcs ", (int)target->name.len, target->name.p);
@@ -471,6 +465,7 @@ static Target_t *get_target_by_libname(Target_t *list, SV_t libname)
 		// 只添加在表内的库
 		ret = target_create(sv_from_sva(&libfile));
 		if (!ret) continue;
+		ret->cfgdata = (void*)(CLIBS+i);    /* 存储配置指针 */
 		ret->build = build_obj2alib;
 		ret->type = TY_DEP;
 		target_append(list, ret);
@@ -491,18 +486,19 @@ static Target_t *get_target_by_libname(Target_t *list, SV_t libname)
 	/* 若没有找到则尝试查找系统库 */
 	if (!ret) {
 		bool stat = false;
-		const char *prefix = getenv("PREFIX");
-		if (!prefix) prefix = "/usr";
-		sva_sprintf(&libfile, "%s/lib/lib%.*s.a", prefix, (int)libname.len, libname.p);
-		stat = (access(libfile.p, F_OK) == 0);
+
+		sva_sprintf(&libfile, "lib%.*s.so", (int)libname.len, libname.p);
+		void *handle = NULL;
+		handle = dlopen(libfile.p, RTLD_NOW);
+		if (handle) {
+			stat = true;
+			dlclose(handle);
+		}
 		if (!stat) {
-			sva_sprintf(&libfile, "lib%.*s.so", (int)libname.len, libname.p);
-			void *handle = NULL;
-			handle = dlopen(libfile.p, RTLD_NOW);
-			if (handle) {
-				stat = true;
-				dlclose(handle);
-			}
+			const char *prefix = getenv("PREFIX");
+			if (!prefix) prefix = "/usr";
+			sva_sprintf(&libfile, "%s/lib/lib%.*s.a", prefix, (int)libname.len, libname.p);
+			stat = (access(libfile.p, F_OK) == 0);
 		}
 		if (stat) {
 			ret = target_get_or_create(list, sv_from_sva(&libfile));
@@ -522,6 +518,37 @@ static Target_t *get_target_by_libname(Target_t *list, SV_t libname)
 	}
 	sva_free(&libfile);
 	return ret;
+}
+
+
+/* 自动为elf目标导入需要链接的库 */
+static void autoimport_by_header(Target_t *list, Target_t *target_elf, Target_t *target_c)
+{
+	if (!list || !target_elf) return;
+	SVA_t content = {};
+	path_readfile(sv_from_sva(&target_c->name), &content, 10*PATH_MAX);
+	if (!content.p) return;
+	for (size_t i = 0, j = 0; i < content.len; i++) {
+		if (content.p[i] == '\n') j++;
+		if (j >= 50) {
+			content.p[i] = '\0';
+			break;
+		}
+	}
+	Target_t *lib = NULL;
+	size_t i, j;
+	for (i = 0; i < countof(CLIBS); i++) {
+		for (j = 0; CLIBS[i].header[j]; j++) {
+			if (!strstr(content.p, CLIBS[i].header[j]))
+				continue;
+			// printf("FOUND %s <- (%s) [%s]\n", target_c->name.p, CLIBS[i].libname, CLIBS[i].header[j]);
+			lib = get_target_by_libname(list, sv_from_cstr(CLIBS[i].libname));
+			if (!lib) continue;
+			target_depend_append(target_elf, lib);
+		}
+	}
+	sva_free(&content);
+	return;
 }
 
 
@@ -574,40 +601,41 @@ static bool rule_fordir(SV_t d_name, uint8_t d_type)
 	return false;
 }
 
+// static int 
+
 static Target_t *action_c_elf(Target_t *list, SV_t full_path)
 {
 	if (!full_path.p) return list;
-	Target_t *target, *sub_target;
+	Target_t *target_c, *target_obj, *target_elf, *target_lib;
 	Path_t tmp = {0};
 
 	/* 创建.c目标 */
-	target = target_get_or_create(list, full_path);
-	if (!list) list = target;
-	if (target) target->type = TY_DEP;
+	target_c = target_get_or_create(list, full_path);
+	if (!list) list = target_c;
+	if (target_c) target_c->type = TY_DEP;
 
 	sva_from_sv(&tmp, full_path);
 	path_hander_obj_replace(&tmp);
 	/* 创建.o目标 */
-	sub_target = target_get_or_create(list, sv_from_sva(&tmp));
-	if (sub_target) {
-		sub_target->type = TY_DEP;
-		sub_target->build = build_c2obj;
+	target_obj = target_get_or_create(list, sv_from_sva(&tmp));
+	if (target_obj) {
+		target_obj->type = TY_DEP;
+		target_obj->build = build_c2obj;
 	}
-	target_depend_append(sub_target, target);  // obj 依赖 .c
-	target = sub_target;
+	target_depend_append(target_obj, target_c);  // obj 依赖 .c
 
 	sva_from_sv(&tmp, full_path);
 	path_hander_elf(&tmp);
 	/* 创建elf目标 */
-	sub_target = target_get_or_create(list, sv_from_sva(&tmp));
-	if (sub_target) {
-		sub_target->build = build_obj2elf;
-		target_depend_append(sub_target, get_target_by_libname(list, sv_from_cstr("ctools")));
+	target_elf = target_get_or_create(list, sv_from_sva(&tmp));
+	if (target_elf) {
+		target_elf->build = build_obj2elf;
 	}
-	target_depend_append(sub_target, target);  // elf 依赖 .o
-	target = sub_target;
+	target_depend_append(target_elf, target_obj);  // elf 依赖 .o
 
-	/* 查找对应的需求库 */
+	/* 自动导入 */
+	autoimport_by_header(list, target_elf, target_c);
+	/* 查找显式要求的库 */
 	const CFLAGS_t *flag = NULL;
 	for (uint64_t i = 0; i < countof(CFILEFLAGS); i++) {
 		if (!CFILEFLAGS[i].filename) continue;
@@ -621,18 +649,20 @@ static Target_t *action_c_elf(Target_t *list, SV_t full_path)
 		return list;
 	}
 	/* 添加需求库 */
+	if (target_obj) target_obj->cfgdata = (void*)flag;    /* 为obj添加cfg */
+	if (target_elf) target_elf->cfgdata = (void*)flag;    /* 为elf添加cfg */
 	SV_t deps = sv_from_cstr(flag->deps), left;
 	deps = sv_from_cstr(flag->libs);
-	while (target && deps.len > 0) {
+	while (target_elf && deps.len > 0) {
 		sv_trim_left_by_type(&deps, isspace);
 		if (deps.len <= 0) break;
 		left = sv_chop_by_type(&deps, isspace);
 		if(left.len <= 0) break;
 
-		sub_target = get_target_by_libname(list, left);
-		if (!sub_target) target->status = TS_FAILD;
-		else sub_target->build = build_obj2alib;
-		target_depend_append(target, sub_target);  // elf 依赖 libs
+		target_lib = get_target_by_libname(list, left);
+		if (!target_lib) target_elf->status = TS_FAILD;
+		else target_lib->build = build_obj2alib;
+		target_depend_append(target_elf, target_lib);  // elf 依赖 libs
 	}
 	sva_free(&tmp);
 	return list;
