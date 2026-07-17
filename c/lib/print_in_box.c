@@ -33,7 +33,8 @@ static void check_border(str_window_t *win)
 	if (win->heigh < 0) win->heigh = row - win->y + 1;
 }
 
-/* 需要 setlocale(LC_ALL, ""); */
+/* 需要 setlocale(LC_ALL, "");
+ * 完全打印返回0，未完全打印返回 */
 int print_in_box(str_window_t win, const char *str)
 {
 	check_border(&win);
@@ -101,6 +102,6 @@ int print_in_box(str_window_t win, const char *str)
 	}
 	printf("\033[0m");
 	kbhitGetchar();
-	return 0;
+	return !(position >= size);
 }
 

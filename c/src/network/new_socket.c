@@ -6,18 +6,22 @@
  */
 
 #include "../../include/string_view.h"
+#include "../../include/tools.h"
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <pthread.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdcountof.h>
 #include <string.h>
 #include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 typedef struct {
@@ -205,6 +209,7 @@ typedef struct Users_t {
 typedef struct {
 	uint64_t mid;          /* 消息id */
 	uint64_t owner_uid;    /* 发送用户id */
+	double timestamp;
 	SVA_t content;
 	enum { MT_TEXT, MT_MD, MT_ORG, MT_FILE } type;
 } Messages_t;
@@ -229,7 +234,11 @@ typedef struct {
 	DA_t users;
 	DA_t messages;
 	DA_t fds;
+	SVA_t logs;
+	SVA_t input;
+
 	int fd;
+	int flag_lock;    /* getch的输入锁变量 */
 	bool flag_exited;
 } Runtimedata_t;
 
@@ -255,6 +264,77 @@ void send_to_all(int sender_fd, char *buf, int nbytes,
 	}
 }
 
+double getnowtime()
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	return ts.tv_sec + ts.tv_nsec/1e9;
+}
+
+bool redraw(Runtimedata_t *rt)
+{
+	if (!rt) return true;
+	const char *colors[] = {
+		"\e[0;30;42m",
+		"\e[0;30;43m",
+	};
+	str_window_t win = {};
+	// [2026-07-18 04:03:00] -> len() == 21
+	const int left = 23;
+	const int logwidth = 15;
+	const int msgheigh = 2;
+	int col = 0, row = 0;
+	if (!rt->flag_lock) {
+		col = get_winsize_col();
+		row = get_winsize_row();
+		win = (str_window_t){
+			.x = col - logwidth - 3,
+			.y = 1,
+			.width = 3,
+			.heigh = col-msgheigh,
+			.focus = -1,
+			.color_code = NULL,
+		};
+		print_in_box(win, "");
+		win.x = left;
+		win.width = col - left - logwidth - 3;
+		win.heigh = 1;
+		win.focus = -1;
+	}
+	for (size_t i = (int)rt->messages.len>=(row-msgheigh)?rt->messages.len-(row-msgheigh):0, j = 0;
+	     !rt->flag_lock && i < rt->messages.len && (int)j < row-msgheigh; i++, j++) {
+		win.y = j+1;
+		win.color_code = colors[i%countof(colors)];
+		Messages_t *msg = da_get(&rt->messages, i);
+		if (!msg) continue;
+		time_t p = msg->timestamp;
+		struct tm *tm_info = localtime(&p);
+		char buf[30];
+		strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm_info);
+		printf("\e[0m\e[%zu;0H[%s]", i+1, buf);
+		if (print_in_box(win, msg->content.p)) printf("...");
+	}
+	win = (str_window_t){
+		.x = col - logwidth+1,
+		.y = 1,
+		.width = logwidth,
+		.heigh = col-msgheigh,
+		.focus = -1,
+		.color_code = "\e[0;34m",
+	};
+	print_in_box(win, rt->logs.p);
+	win = (str_window_t){
+		.x = 1,
+		.y = row - msgheigh+1,
+		.width = -1,
+		.heigh = msgheigh,
+		.focus = -1,
+		.color_code = "\e[0;2m",
+	};
+	print_in_box(win, rt->input.p?rt->input.p:"请输入文本");
+return false;
+}
+
 void *server(void *data)
 {
 	if (!data) return NULL;
@@ -268,7 +348,7 @@ void *server(void *data)
 
 	da_append(&rt->fds, &(struct pollfd){.fd = rt->fd, .events = POLLIN});
 
-	printf("等待连接中...\n");
+	sva_sprintfcat(&rt->logs, "等待连接中...\n");
 	while (!rt->flag_exited) {
 		if (poll(rt->fds.ptr, rt->fds.len, 2500) == -1) {
 			perror("poll");
@@ -290,17 +370,18 @@ void *server(void *data)
 					  .fd = newfd, .events = POLLIN});
 				fds = rt->fds.ptr;
 				char remoteIP[INET6_ADDRSTRLEN] = {};
-				printf("新连接: (%d)%s\n", newfd,
-				       inet_ntop(remoteaddr.ss_family,
-						 get_in_addr((struct sockaddr *)&remoteaddr),
-						 remoteIP,
-						 INET6_ADDRSTRLEN));
+				const void *tmp = get_in_addr((struct sockaddr *)&remoteaddr);
+				const char *p = inet_ntop(remoteaddr.ss_family, tmp, remoteIP, INET6_ADDRSTRLEN);
+				sva_sprintfcat(&rt->logs, "新连接: (%d) '%s'\n", newfd, p);
+				rt->flag_lock = false;
+				redraw(rt);
 				continue;
 			}
 			// 如果不是 listener，那就是客户端
 			da_append(&rt->messages, &(Messages_t){.mid = rt->messages.len});
 			Messages_t *new_msg = da_get(&rt->messages, rt->messages.len-1);
 			if (!new_msg) continue;
+			new_msg->timestamp = getnowtime();
 			sva_adjust_minimun(&new_msg->content, 10);
 			ssize_t ret;
 			do {
@@ -312,6 +393,7 @@ void *server(void *data)
 			} while (ret > 0 && new_msg->content.len == new_msg->content.capacity-1);
 			new_msg->content.p[new_msg->content.len] = '\0';
 
+			rt->flag_lock = false;
 			if (ret > 0) {
 				send_to_all(fds[i].fd, new_msg->content.p,
 					    new_msg->content.len,
@@ -319,11 +401,12 @@ void *server(void *data)
 				continue;
 			}
 			// 连接关闭或出错
-			if (ret == 0) printf("pollserver: socket %d hung up\n", fds[i].fd);
+			if (ret == 0) sva_sprintfcat(&rt->logs, "断连: (%d)\n", fds[i].fd);
 			else perror("recv");
 			close(fds[i].fd);
 			da_pop(&rt->fds, i, NULL);
 			i--;
+			redraw(rt);
 		}
 	}
 
@@ -336,7 +419,7 @@ void *client(void *data)
 {
 	/* 客户端： connect */
 	if (!data) return NULL;
-	Runtimedata_t *rt = data;
+	// Runtimedata_t *rt = data;
 	return NULL;
 }
 
@@ -366,10 +449,45 @@ int main(int argc, const char *argv[])
 		.fds.size = sizeof(struct pollfd),
 		.fd = fd
 	};
-	if (mode == 1) server(&rt);
+	pthread_t pid = 0;
+	if (mode == 1) pthread_create(&pid, NULL, server, &rt);
 	else client(&rt);
 
+	printf(/* "\033[?25l" */ "\e[2J");
+	while (!rt.flag_exited) {
+		redraw(&rt);
+		rt.flag_lock = true;
+		int ret = _getch_cond(&rt.flag_lock);
+		if (ret == '\n' && rt.input.p) {
+			if (strcmp(rt.input.p, "/exit") == 0) {
+				rt.flag_exited = 1;
+				printf("\e[%d;0H\n正在退出。。。\n", get_winsize_row());
+				break;
+			}
+			da_append(&rt.messages, &(Messages_t){.mid = rt.messages.len});
+			Messages_t *new_msg = da_get(&rt.messages, rt.messages.len-1);
+			if (!new_msg) {
+				memset(rt.input.p, 0, rt.input.len);
+				rt.input.len = 0;
+				continue;
+			}
+			new_msg->timestamp = getnowtime();
+			sva_strcpy(&new_msg->content, &rt.input);
+			send_to_all(rt.fd, rt.input.p, rt.input.len,
+				    rt.fds.ptr, rt.fds.len);
+			sva_free(&rt.input);
+			rt.flag_lock = false;
+		} else if (ret >= 0) {
+			sva_sprintfcat(&rt.input, "%c", ret);
+			while (kbhit()) sva_sprintfcat(&rt.input, "%c", _getch());
+		}
+		if (rt.input.len >= rt.input.capacity) sva_double(&rt.input);
+	}
+	pthread_join(pid, NULL);
+
 	if (rt.fd >= 0) close(rt.fd);
+	sva_free(&rt.input);
+	sva_free(&rt.logs);
 	da_free(&rt.fds, close_fds);
 	da_free(&rt.platforms, NULL);
 	da_free(&rt.logins, NULL);
