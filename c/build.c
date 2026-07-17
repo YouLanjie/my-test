@@ -687,6 +687,8 @@ int main(int argc, char *argv[])
 		Target_t *target = target_get_by_name(list, sv_from_sva(&tmp));
 		if (target && target->status == TS_SUCCESS && access(tmp.p, F_OK) == 0) {
 			char *exe = realpath(tmp.p, NULL);
+			printf("[INFO] 准备execvp到'%s'\n", exe);
+			printf("----------------------------------------\n");
 			argv[2] = tmp.p;
 			chdir(pwd.p);
 			if (execvp(exe, argv+2) == -1)
