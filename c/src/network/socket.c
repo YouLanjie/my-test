@@ -8,6 +8,7 @@
 #include <termios.h>
 #include <libintl.h>
 
+#define _ gettext
 #define MAXSIZE (1024*20)
 /* #define PORT 8002 */
 
@@ -35,7 +36,7 @@ int print_msg(int type, char *before, char *after, struct tm *tp)
 		printf("\033[0;1;33%sm[%04d-%02d-%02d %02d:%02d:%02d]", type & 1 ? ";47" : "",
 		       tp->tm_year + 1900, tp->tm_mon + 1, tp->tm_mday, tp->tm_hour + 8, tp->tm_min, tp->tm_sec);
 	}
-	printf(" %s > \033[0;%sm%s\033[0m%s", gettext(type & 1 ? "输出" : "输入"),
+	printf(" %s > \033[0;%sm%s\033[0m%s", _(type & 1 ? "输出" : "输入"),
 	       type & 1 ? "30;47" : "37",
 	       type & 2 ? "" : (type & 1 ? recbuf : sendbuf),
 	       after);
@@ -119,7 +120,7 @@ void *get_msg(void *p)
 			fcntl(STDIN_FILENO, F_SETFL, flag_termux);
 			fprintf(stderr,
 				"\n\033[1;31mERROR > %s: %s(error: %d)\033[0m\n",
-				gettext("获取信息错误"), strerror(errno),
+				_("获取信息错误"), strerror(errno),
 				errno);
 			exit(-6);
 		}
@@ -160,16 +161,16 @@ int help_in()
 	       "HELP > <Enter>      %s\n"
 	       "HELP > <Backspace>  %s"
 	       "\033[0m\n",
-	       gettext("显示这条帮助"),
-	       gettext("退出程序"),
-	       gettext("切换按下回车结束消息的功能"),
-	       gettext("查询当前的语言设置"),
-	       gettext("设置界面语言为英文"),
-	       gettext("设置界面语言为中文"),
-	       gettext("输入消息"),
-	       gettext("发送消息"),
-	       gettext("结束消息(需要FLAG_ENTER显示为True)"),
-	       gettext("删除字符(需开启回车结束消息，否则它不会工作)")
+	       _("显示这条帮助"),
+	       _("退出程序"),
+	       _("切换按下回车结束消息的功能"),
+	       _("查询当前的语言设置"),
+	       _("设置界面语言为英文"),
+	       _("设置界面语言为中文"),
+	       _("输入消息"),
+	       _("发送消息"),
+	       _("结束消息(需要FLAG_ENTER显示为True)"),
+	       _("删除字符(需开启回车结束消息，否则它不会工作)")
 	    );
 	return 0;
 }
@@ -184,13 +185,13 @@ int ui(void)
 
 	usleep(30000);
 
-	printf("\033[0;1;33mINFO > %s\033[0m\n", gettext("连接成功，输入`/help`然后按ESC或回车获取帮助"));
+	printf("\033[0;1;33mINFO > %s\033[0m\n", _("连接成功，输入`/help`然后按ESC或回车获取帮助"));
 	while (strcmp(sendbuf, "/exit") != 0) {
 		print_msg(0b10, "", "", gtime());
 		input(sendbuf);
 		print_msg(0, "\r", "\n", gtime());	/* Input : sendbuf */
 		if (flag_run == 0) {
-			printf("\033[0;1;33mINFO > %s\033[0m\n", gettext("对方已退出，重新开始等待连接"));
+			printf("\033[0;1;33mINFO > %s\033[0m\n", _("对方已退出，重新开始等待连接"));
 			break;
 		}
 		if (strcmp(sendbuf, "/flag_enter") == 0) {
@@ -243,25 +244,30 @@ void server(int port)
 	if ((listen_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
 		//如果创建套接字失败，返回错误信息
 		//strerror(int errnum)获取错误的描述字符串
-		fprintf(stderr, "\033[1;31m%s: %s(error: %d)\033[0m\n", gettext("创建套接字错误"), strerror(errno), errno);
+		fprintf(stderr, "\033[1;31m%s: %s(error: %d)\033[0m\n", _("创建套接字错误"), strerror(errno), errno);
 		exit(-1);
+	}
+	/* 允许复用端口(socketserver.TCPServer.allow_reuse_address) */
+	int reuse = 1;
+	if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == -1) {
+		perror("setsockopt");
 	}
 	//绑定套接字和本地IP地址和端口
 	if (bind(listen_fd, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1) {
 		//绑定出现错误
-		fprintf(stderr, "%s: %s(error: %d)\n", gettext("绑定套接字错误"), strerror(errno), errno);
-		printf("%s\n", gettext("小提示：一般情况下用`sudo lsof -i:$port`检查$port是否有进程占用$port，如果没有那么等一会可能就好了，或者更换端口"));
+		fprintf(stderr, "%s: %s(error: %d)\n", _("绑定套接字错误"), strerror(errno), errno);
+		printf("%s\n", _("小提示：一般情况下用`sudo lsof -i:$port`检查$port是否有进程占用$port，如果没有那么等一会可能就好了，或者更换端口"));
 		exit(-2);
 	}
 	//使得listen_fd变成监听描述符
 	if (listen(listen_fd, 10) == -1) {
-		fprintf(stderr, "%s: %s(error: %d)\n", gettext("监听端口错误"), strerror(errno), errno);
+		fprintf(stderr, "%s: %s(error: %d)\n", _("监听端口错误"), strerror(errno), errno);
 		exit(-3);
 	}
 
 	while (strcmp(sendbuf, "/exit") != 0) {
 		//accept阻塞等待客户端请求
-		printf("\033[0;1;33mINFO > %s\033[0m\n", gettext("等待客户端发起连接"));
+		printf("\033[0;1;33mINFO > %s\033[0m\n", _("等待客户端发起连接"));
 		flag_exit = 1;
 		if ((connect_fd = accept(listen_fd, (struct sockaddr *)NULL, NULL)) == -1) {
 			printf("accept socket error: %s(error: %d)\n", strerror(errno), errno);
@@ -272,7 +278,7 @@ void server(int port)
 		//关闭连接套接字
 		close(connect_fd);
 	}
-	printf("\033[0;1;33mINFO > %s\033[0m\n", gettext("检测到退出关键词，退出程序"));
+	printf("\033[0;1;33mINFO > %s\033[0m\n", _("检测到退出关键词，退出程序"));
 	//关闭监听套接字
 	close(listen_fd);
 	return;
@@ -290,13 +296,13 @@ void client(char *addr, int port)
 	if ((connect_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
 		//如果创建套接字失败，返回错误信息
 		//strerror(int errnum)获取错误的描述字符串
-		printf("%s: %s(error: %d)\n", gettext("创建套接字错误"), strerror(errno), errno);
+		printf("%s: %s(error: %d)\n", _("创建套接字错误"), strerror(errno), errno);
 		exit(-1);
 	}
 	//向服务器发送连接请求
 	if (connect(connect_fd, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1) {
 		//连接失败
-		printf("%s: %s(error: %d)\n", gettext("监听套接字错误"), strerror(errno), errno);
+		printf("%s: %s(error: %d)\n", _("监听套接字错误"), strerror(errno), errno);
 		exit(-2);
 	}
 
@@ -321,14 +327,14 @@ void help(int flag)
 	       "    -p <port>     %s\n"
 	       "    -e            %s\n"
 	       "    -h            %s\n",
-	       gettext("用法"),
-	       gettext("选项"),
-	       gettext("使用服务器模式"),
-	       gettext("使用客户端模式"),
-	       gettext("设置目标IP地址 [默认: 127.0.0.1]"),
-	       gettext("设置目标端口号 [默认: 8080]"),
-	       gettext("取消使用回车发送消息"),
-	       gettext("显示这条帮助")
+	       _("用法"),
+	       _("选项"),
+	       _("使用服务器模式"),
+	       _("使用客户端模式"),
+	       _("设置目标IP地址 [默认: 127.0.0.1]"),
+	       _("设置目标端口号 [默认: 8080]"),
+	       _("取消使用回车发送消息"),
+	       _("显示这条帮助")
 	    );
 	if (flag > 0)
 		flag--;
@@ -386,7 +392,7 @@ int main(int argc, char *argv[])
 	       "INFO > Entr: 0x%02X\t[0x0A:True | 0x1B:False]\n"
 	       "INFO > File: %s\n"
 	       "\033[0m\n",
-	       flag_mode, gettext("服务端"), gettext("客户端"), flag_addr,
+	       flag_mode, _("服务端"), _("客户端"), flag_addr,
 	       flag_port, flag_enter, filename);
 	if (flag_mode == 1)
 		server(flag_port);
