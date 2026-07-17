@@ -12,11 +12,11 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <pthread.h>
+#include <stdcountof.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdcountof.h>
 #include <string.h>
 #include <sys/poll.h>
 #include <sys/socket.h>
@@ -238,7 +238,6 @@ typedef struct {
 	SVA_t input;
 
 	int fd;
-	int flag_lock;    /* getch的输入锁变量 */
 	bool flag_exited;
 } Runtimedata_t;
 
@@ -284,25 +283,23 @@ bool redraw(Runtimedata_t *rt)
 	const int logwidth = 15;
 	const int msgheigh = 2;
 	int col = 0, row = 0;
-	if (!rt->flag_lock) {
-		col = get_winsize_col();
-		row = get_winsize_row();
-		win = (str_window_t){
-			.x = col - logwidth - 3,
-			.y = 1,
-			.width = 3,
-			.heigh = col-msgheigh,
-			.focus = -1,
-			.color_code = NULL,
-		};
-		print_in_box(win, "");
-		win.x = left;
-		win.width = col - left - logwidth - 3;
-		win.heigh = 1;
-		win.focus = -1;
-	}
+	col = get_winsize_col();
+	row = get_winsize_row();
+	win = (str_window_t){
+		.x = col - logwidth - 3,
+		.y = 1,
+		.width = 3,
+		.heigh = col-msgheigh,
+		.focus = -1,
+		.color_code = NULL,
+	};
+	print_in_box(win, "");
+	win.x = left;
+	win.width = col - left - logwidth - 3;
+	win.heigh = 1;
+	win.focus = -1;
 	for (size_t i = (int)rt->messages.len>=(row-msgheigh)?rt->messages.len-(row-msgheigh):0, j = 0;
-	     !rt->flag_lock && i < rt->messages.len && (int)j < row-msgheigh; i++, j++) {
+	     i < rt->messages.len && (int)j < row-msgheigh; i++, j++) {
 		win.y = j+1;
 		win.color_code = colors[i%countof(colors)];
 		Messages_t *msg = da_get(&rt->messages, i);
@@ -373,7 +370,6 @@ void *server(void *data)
 				const void *tmp = get_in_addr((struct sockaddr *)&remoteaddr);
 				const char *p = inet_ntop(remoteaddr.ss_family, tmp, remoteIP, INET6_ADDRSTRLEN);
 				sva_sprintfcat(&rt->logs, "新连接: (%d) '%s'\n", newfd, p);
-				rt->flag_lock = false;
 				redraw(rt);
 				continue;
 			}
@@ -393,11 +389,11 @@ void *server(void *data)
 			} while (ret > 0 && new_msg->content.len == new_msg->content.capacity-1);
 			new_msg->content.p[new_msg->content.len] = '\0';
 
-			rt->flag_lock = false;
 			if (ret > 0) {
 				send_to_all(fds[i].fd, new_msg->content.p,
 					    new_msg->content.len,
 					    fds, rt->fds.len);
+				redraw(rt);
 				continue;
 			}
 			// 连接关闭或出错
@@ -456,8 +452,7 @@ int main(int argc, const char *argv[])
 	printf(/* "\033[?25l" */ "\e[2J");
 	while (!rt.flag_exited) {
 		redraw(&rt);
-		rt.flag_lock = true;
-		int ret = _getch_cond(&rt.flag_lock);
+		int ret = _getch();
 		if (ret == '\n' && rt.input.p) {
 			if (strcmp(rt.input.p, "/exit") == 0) {
 				rt.flag_exited = 1;
@@ -476,7 +471,6 @@ int main(int argc, const char *argv[])
 			send_to_all(rt.fd, rt.input.p, rt.input.len,
 				    rt.fds.ptr, rt.fds.len);
 			sva_free(&rt.input);
-			rt.flag_lock = false;
 		} else if (ret >= 0) {
 			sva_sprintfcat(&rt.input, "%c", ret);
 			while (kbhit()) sva_sprintfcat(&rt.input, "%c", _getch());
