@@ -3,6 +3,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <fcntl.h>
 #include <termios.h>
@@ -110,6 +111,7 @@ void *get_msg(void *p)
 	flag_run = 1;
 	// 读取客户端发来的信息，会阻塞
 	while (flag_exit) {
+		memset(recbuf, 0, sizeof(recbuf));
 		ssize_t len = read(connect_fd, recbuf, sizeof(recbuf));
 		if (len <= 0) {
 			if (len == 0 || errno == EINTR) {

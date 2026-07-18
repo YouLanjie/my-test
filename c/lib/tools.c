@@ -96,9 +96,9 @@ static void signal_handler(int sig)
 	int is_tty = isatty(STDIN_FILENO);
 	if (is_tty) tcsetattr(STDIN_FILENO, TCSANOW, &old_attr);
 	fcntl(STDIN_FILENO, F_SETFL, old_fl);
-	if (old_handler[sig]) old_handler[sig](sig);
+	if (old_handler[sig] && old_handler[sig] != signal_handler) old_handler[sig](sig);
 	signal(sig, old_handler[sig] ? old_handler[sig] : SIG_DFL);
-	kill(getpid(), sig);
+	// kill(getpid(), sig);
 	return;
 }
 
@@ -205,7 +205,7 @@ extern int ct_getch_cond(int *cond)
 
 		struct pollfd fds[] = { (struct pollfd){.fd = STDIN_FILENO, .events = POLLIN}, };
 		int ret;
-		for (int i = 0; *cond && (ret = poll(fds, countof(fds), 1e3/20)) == 0; i++);
+		while (*cond && (ret = poll(fds, countof(fds), 1e3/20)) == 0);
 		if (ret == -1) break;
 		stat--;
 

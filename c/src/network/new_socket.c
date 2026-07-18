@@ -229,8 +229,11 @@ typedef struct {
 
 	const char *hint_text;
 	enum {DM_NORM, DM_SELECT, DM_FOCUS} dispaly_mode;
-	int msg_select;
+	size_t msg_select;
+	str_window_t win;
+
 	int fd;
+	bool flag_refresh_msgs;
 	bool flag_exited;
 	bool flag_esc_confirm;
 } Runtimedata_t;
@@ -272,6 +275,15 @@ User_t *user_create(Runtimedata_t *rt, SV_t name)
 	return user;
 }
 
+void user_free(void *ptr)
+{
+	if (!ptr) return;
+	User_t *user = ptr;
+	sva_free(&user->name);
+	sva_free(&user->passwd);
+	sva_free(&user->note);
+}
+
 Messages_t *message_create(Runtimedata_t *rt, User_t *user, SV_t content)
 {
 	if (!rt || !user) return NULL;
@@ -284,6 +296,7 @@ Messages_t *message_create(Runtimedata_t *rt, User_t *user, SV_t content)
 	Messages_t *new_msg = da_get(&rt->messages, len);
 	if (!new_msg) return NULL;
 	sva_from_sv(&new_msg->content, content);
+	rt->flag_refresh_msgs = true;
 	return new_msg;
 }
 
@@ -368,16 +381,24 @@ bool redraw(Runtimedata_t *rt)
 		win.color_code = colors[1];
 		print_in_box(win, "局域网聊天室（暂无消息）");
 	}
-	static size_t len = 0;
 	char buf[124];
 	size_t idx = (int)rt->messages.len>=(row-msgheigh)?rt->messages.len-(row-msgheigh):0;
 	if (rt->dispaly_mode == DM_SELECT) {
-		idx = rt->msg_select - row/2 > 0 ? rt->msg_select - row/2 : 0;
+		idx = rt->msg_select > (size_t)row/2 ? rt->msg_select - row/2 : 0;
 	}
-	for (size_t j = 0;
-	     len != rt->messages.len && idx < rt->messages.len && (int)j < row-msgheigh; idx++, j++) {
+	for (size_t j = 0; rt->flag_refresh_msgs && (int)j < row-msgheigh; idx++, j++) {
+		if (idx >= rt->messages.len) {
+			win.x = 1;
+			win.y = j+1;
+			win.width = col-logwidth;
+			win.color_code = NULL;
+			print_in_box(win, "");
+			continue;
+		}
+
 		if ((size_t)rt->msg_select == idx+1) win.focus = 0;
 		else win.focus = -1;
+
 		Messages_t *msg = da_get(&rt->messages, idx);
 		if (!msg) continue;
 		User_t *user = da_get(&rt->users, msg->owner_uid);
@@ -392,10 +413,18 @@ bool redraw(Runtimedata_t *rt)
 		print_in_box(winuser, user->name.p);
 		if (print_in_box(win, msg->content.p)) printf("...");
 	}
-	if (rt->dispaly_mode == DM_SELECT) {
-
+	if (rt->dispaly_mode == DM_FOCUS) {
+		rt->win.x = (col-msgheigh)/5;
+		rt->win.y = timewidth/2;
+		rt->win.width = col-timewidth-userwidth-logwidth-dotwidth;
+		rt->win.heigh = (row-msgheigh)*3/5;
+		rt->win.focus = -1;
+		rt->win.follow_end = false;
+		rt->win.color_code = "\e[0;37;44m";
+		Messages_t *msg = da_get(&rt->messages, rt->msg_select-1);
+		print_in_box(rt->win, msg ? msg->content.p : "（未找到对应消息）");
 	}
-	len = rt->messages.len;
+	rt->flag_refresh_msgs = false;
 	print_in_box((str_window_t){
 		     .x = col - logwidth+1,
 		     .y = 1,
@@ -405,8 +434,9 @@ bool redraw(Runtimedata_t *rt)
 		     .color_code = "\e[0;30;44m",
 		     .follow_end = true,
 		     }, rt->logs.p);
-	sprintf(buf, "|现在线数:%zu\n|ESC发消息:%s\n",
-		rt->fds.len, rt->flag_esc_confirm?"true":"false");
+	sprintf(buf, "|现在线数:%zu\n|ESC发消息:%s\n|M:%d, SEL:%zu",
+		rt->fds.len, rt->flag_esc_confirm?"true":"false",
+		rt->dispaly_mode, rt->msg_select);
 	print_in_box((str_window_t){
 		     .x = col-logwidth+1,
 		     .y = row-msgheigh+1,
@@ -515,25 +545,40 @@ void *client(void *data)
 	return NULL;
 }
 
+int input_handle(Runtimedata_t *rt, int ret);
+
 /* 返回值大于0应continue,小于0应break,等于0发消息 */
 int input_command(Runtimedata_t *rt)
 {
 	if (!rt || !rt->input.p || !rt->input.len) return -1;
-	int ret = 0;
+	int ret = 1;
 	if (strcmp(rt->input.p, "/exit") == 0 ||
 	    strcmp(rt->input.p, "/quit") == 0 ||
 	    strcmp(rt->input.p, "/leave") == 0) {
 		ret = -1;
 	} else if (strcmp(rt->input.p, "/enter") == 0) {
 		rt->flag_esc_confirm = !rt->flag_esc_confirm;
-		ret = 1;
 	} else if (strcmp(rt->input.p, "/select") == 0) {
-		rt->dispaly_mode = DM_SELECT;
-		rt->msg_select = 1;
-		ret = 1;
+		bool flag = rt->dispaly_mode == DM_SELECT;
+		rt->dispaly_mode = flag ? DM_NORM : DM_SELECT;
+		rt->msg_select = flag ? 0 : 1;
+		rt->flag_refresh_msgs = true;
+		if (!flag) rt->hint_text = "（选择模式：使用C-pnfb或命令移动选中项）";
+	} else if (strcmp(rt->input.p, "/show") == 0) {
+		if (rt->dispaly_mode == DM_SELECT && rt->msg_select > 0)
+			rt->dispaly_mode = DM_FOCUS;
+		rt->flag_refresh_msgs = true;
+	} else if (strcmp(rt->input.p, "/clear") == 0) {
+		rt->flag_refresh_msgs = true;
+		printf("\e[2J\e[H");
+	} else if (rt->dispaly_mode == DM_SELECT &&
+		   (strcmp(rt->input.p, "/s-h") == 0 || strcmp(rt->input.p, "/s-k") == 0)) {
+		input_handle(rt, 0x10);
+	} else if (rt->dispaly_mode == DM_SELECT &&
+		   (strcmp(rt->input.p, "/s-l") == 0 || strcmp(rt->input.p, "/s-j") == 0)) {
+		input_handle(rt, 0x0e);
 	} else {
 		rt->hint_text = "（非法的命令）请输入消息：";
-		ret = 1;
 	}
 	if (ret > 0) sva_clear(&rt->input);
 	return ret;
@@ -542,6 +587,60 @@ int input_command(Runtimedata_t *rt)
 int input_handle(Runtimedata_t *rt, int ret)
 {
 	if (!rt) return -1;
+	if (rt->dispaly_mode == DM_FOCUS) {
+		if (rt->msg_select <= 0 || rt->msg_select > rt->messages.len) ret = 'q';
+		switch (ret) {
+		case 'k': case 'h': rt->win.hide--; break;
+		case 'j': case 'l': rt->win.hide++; break;
+		case 'q':
+			rt->dispaly_mode = DM_NORM;
+			rt->flag_refresh_msgs = true;
+			rt->msg_select = 0;
+			printf("\e[2J\e[H");
+			break;
+		default: rt->hint_text = "（使用HJKL移动）"; break;
+		}
+		return 1;
+	}
+
+	if (rt->dispaly_mode == DM_SELECT) {
+		if (ret == '\e' && kbhit() > 0) {
+			_getch();
+			ret = _getch();
+			switch (ret) {
+			case 'A': case 'C': ret = 0x10; break;
+			case 'B': case 'D': ret = 0x0e; break;
+			}
+		}
+		switch (ret) {
+		case 0x10:    /* ^P */
+		case 0x02:    /* ^B */
+			if (rt->msg_select > 1) rt->msg_select--;
+			else rt->msg_select = rt->messages.len;
+			rt->flag_refresh_msgs = true;
+			return 1;
+			break;
+		case 0x0e:    /* ^N */
+		case 0x06:    /* ^F */
+			if (rt->msg_select < rt->messages.len) rt->msg_select++;
+			else rt->msg_select = 1;
+			rt->flag_refresh_msgs = true;
+			return 1;
+			break;
+		case '/':
+			break;
+		default:
+			if (rt->input.p && rt->input.len && rt->input.p[0] == '/')
+				break;
+			if (ret == '\n') {
+				sva_sprintf(&rt->input, "/show");
+				break;
+			}
+			return 1;
+			break;
+		}
+	}
+
 	if (rt->flag_esc_confirm?ret=='\e':ret == '\n') {
 		if (!rt->input.p || !rt->input.len) return 1;
 		ret = 0;
@@ -551,7 +650,6 @@ int input_handle(Runtimedata_t *rt, int ret)
 		return 0;
 	}
 	if (ret == 127) {
-		LOGVAR("%d", ret);
 		if (!rt->input.p || !rt->input.len) return 1;
 		/* 计算最后一个宽字符字节数 */
 		mbstate_t state = (mbstate_t){};
@@ -563,12 +661,14 @@ int input_handle(Runtimedata_t *rt, int ret)
 			state = (mbstate_t){};
 			len = 1;
 		}
-		LOGVAR("%zu", len);
 		sva_chop_right(&rt->input, len);
-	} else if (ret >= 0) {
+		return 1;
+	}
+	if (ret >= 0) {
 		if (rt->hint_text) rt->hint_text = NULL;
 		sva_sprintfcat(&rt->input, "%c", ret);
 		while (kbhit()) sva_sprintfcat(&rt->input, "%c", _getch());
+		return 1;
 	}
 	return 2;
 }
@@ -637,7 +737,7 @@ int main(int argc, const char *argv[])
 	da_free(&rt.fds, close_fds);
 	da_free(&rt.platforms, NULL);
 	da_free(&rt.logins, NULL);
-	da_free(&rt.users, NULL);
+	da_free(&rt.users, user_free);
 	da_free(&rt.messages, message_free);
 	return 0;
 }
