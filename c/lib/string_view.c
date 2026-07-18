@@ -246,3 +246,21 @@ SVA_t *sva_strcpy(SVA_t *ret, const SVA_t *from)
 {
 	return sva_from_sv(ret, sv_from_sva(from));
 }
+
+SVA_t *sva_chop_right(SVA_t *s, size_t len)
+{
+	if (!s || !s->p || !s->capacity) return NULL;
+	if (len > s->len) len = 0;
+	s->len -= len;
+	if (s->len < s->capacity) s->p[s->len] = '\0';
+	return s;
+}
+
+SVA_t *sva_clear(SVA_t *s)
+{
+	if (!s || !s->p || !s->capacity) return NULL;
+	if (s->len > s->capacity) s->len = s->capacity;
+	memset(s->p, 0, s->len);
+	s->len = 0;
+	return s;
+}

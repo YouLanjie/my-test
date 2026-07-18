@@ -533,7 +533,7 @@ static void get_input_and_process()
 	while(input != 'Q' && map.f) {
 		if (~flags & FLG_LOAD) {
 			create_fake();
-			input = _getch_cond((int*)&map.f);
+			input = ct_getch_cond((int*)&map.f);
 		} else {
 			while (flags&FLG_LOAD && !kbhit()) usleep(TPS);
 			flags &= ~FLG_LOAD;

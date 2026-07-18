@@ -67,6 +67,8 @@ SVA_t *sva_adjust_minimun(SVA_t *s, size_t size);
 SVA_t *sva_sprintf(SVA_t *ret,char *fmt, ...) __attribute__((format(printf, 2, 3)));
 SVA_t *sva_sprintfcat(SVA_t *ret, char *fmt, ...) __attribute__((format(printf, 2, 3)));
 #define sva_cmp(s1, s2) sv_cmp(sv_from_sva(s1), sv_from_sva(s2))
+SVA_t *sva_chop_right(SVA_t *s, size_t len);
+SVA_t *sva_clear(SVA_t *s);
 
 #endif //STRING_VIEW_H
 

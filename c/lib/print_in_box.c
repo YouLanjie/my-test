@@ -9,7 +9,6 @@
  */
 
 
-#include <stddef.h>
 #define _GNU_SOURCE
 #include "../include/tools.h"
 #include <wchar.h>
@@ -33,8 +32,10 @@ static void check_border(str_window_t *win)
 	if (win->heigh < 0) win->heigh = row - win->y + 1;
 }
 
-/* 需要 setlocale(LC_ALL, "");
- * 完全打印返回0，未完全打印返回 */
+/* @brief 在指定范围内打印文本
+ * （基于宽字符和wcwidth）
+ * 需要 setlocale(LC_ALL, ""); 让宽字符解释正常工作
+ * @return 剩余字节数 */
 int print_in_box(str_window_t win, const char *str)
 {
 	check_border(&win);
@@ -42,27 +43,30 @@ int print_in_box(str_window_t win, const char *str)
 	if (!str) str = "(null)";
 
 	// 清屏
-	printf("%s", win.color_code);
-	for (int i1 = win.y; i1 < win.y + win.heigh; i1++) {
-		for (int i2 = win.x; i2 < win.x + win.width; i2++) {
-			printf("\033[%d;%dH ", i1, i2);
+	if (!win.follow_end) {
+		printf("%s", win.color_code);
+		for (int i1 = win.y; i1 < win.y + win.heigh; i1++) {
+			for (int i2 = win.x; i2 < win.x + win.width; i2++) {
+				printf("\033[%d;%dH ", i1, i2);
+			}
 		}
+		printf("\033[%d;%dH", win.y - (win.hide > 0 ? 0 : win.hide), win.x);
 	}
-	printf("\033[%d;%dH", win.y - (win.hide > 0 ? 0 : win.hide), win.x);
 
 	size_t size = strlen(str);
 	size_t position = 0;
+	const char *fallback = NULL;
 	wchar_t wc = L'\0';
 	mbstate_t state = (mbstate_t){};
 	size_t len = 0;
 	int width = 0;
 	int column = 0, line = 0;
-	while (position < size && line - win.hide < win.heigh) {
+	while (position < size && (line - win.hide < win.heigh || win.follow_end)) {
 		len = mbrtowc(&wc, str+position, size-position, &state);
 		if (len == (size_t)-1 || len == (size_t)-2 || len == 0) {
 			// -1 无效的多字节序列：按一个字节处理，视觉宽度视为1
 			// -2 剩余字节不完整（不应发生在完整字符串中），跳出
-			//  0 遇到空字符（L'\0'），通常不会出现在字符串中间，将其视为宽度0
+			//  0 遇到空字符（L'\0'），通常不会出现在字符串中间，将其视为宽度1
 			len = 1;
 			width = 1;
 			wc = L'?';
@@ -70,6 +74,9 @@ int print_in_box(str_window_t win, const char *str)
 			state = (mbstate_t){};
 		} else if (wc == L'\b') {
 			width = -1;
+		} else if (wc == L'\e') {
+			fallback = "<ESC>";
+			width = strlen(fallback);
 		} else if (wc == L'\t') {
 			width = TAB_WIDTH - (win.x-1+column) % TAB_WIDTH;
 		} else if (wc == L'\r' || wc == L'\n') {
@@ -77,9 +84,14 @@ int print_in_box(str_window_t win, const char *str)
 		} else {
 			width = wcwidth(wc);
 		}
+		if (width > win.width) {
+			wc = L'?';
+			fallback = NULL;
+			width = 1;
+		}
 		column += width;
 
-#define cond_print (line >= win.hide && line - win.hide < win.heigh)
+#define cond_print (!win.follow_end && line >= win.hide && line - win.hide < win.heigh)
 		if (column > win.width || wc == L'\r' || wc == L'\n') {
 			line++;
 			if (cond_print)
@@ -95,13 +107,23 @@ int print_in_box(str_window_t win, const char *str)
 		}
 		if (cond_print) {
 			if (line == win.focus) printf("\033[7m");
-			printf("%lc", wc);
+			if (fallback) {
+				printf("%s", fallback);
+				fallback = NULL;
+			} else printf("%lc", wc);
 			if (line == win.focus) printf("%s", win.color_code);
 		}
 		position += len;
 	}
-	printf("\033[0m");
-	kbhitGetchar();
-	return !(position >= size);
+	if (!win.follow_end) {
+		printf("\033[0m");
+		fflush(stdout);
+	} else {
+		/* 通过两次计算测得最后长度 */
+		if (line+1 > win.heigh && win.hide < line+1-win.heigh) win.hide = line+1-win.heigh;
+		win.follow_end = false;
+		print_in_box(win, str);
+	}
+	return (int)position-(int)size;
 }
 

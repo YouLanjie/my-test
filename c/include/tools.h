@@ -15,6 +15,10 @@
 #include <string.h>
 /* strcat() strcmp() strcpy() */
 #include <dirent.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+#include <stdcountof.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <signal.h>
@@ -56,7 +60,8 @@ extern int kbhit();
 #endif
 /* 利用终端特性做的getch */
 extern int _getch(void);
-extern int _getch_cond(int *cond);
+extern int ct_getch_timeout(int millisecond);
+extern int ct_getch_cond(int *cond);
 /* 不阻塞输入 */
 extern int kbhitGetchar();
 /* Get the size(x) of the window(range:0~) */
@@ -66,13 +71,14 @@ extern int get_winsize_row();
 
 
 typedef struct {
-	int x;        /* 起始列 */
-	int y;        /* 起始行 */
-	int width;    /* 窗口宽度 */
-	int heigh;    /* 窗口高度 */
-	int hide;     /* 隐藏的行数 */
-	int focus;    /* 焦点行（反色行）行号 */
+	int x;        /* 起始列(从1开算) */
+	int y;        /* 起始行(从1开算) */
+	int width;    /* 窗口宽度(<0自动拓展) */
+	int heigh;    /* 窗口高度(<0自动拓展) */
+	int hide;     /* 隐藏的行数(从1开算) */
+	int focus;    /* 焦点行（反色行）行号(从0开算) */
 	const char *color_code;    /* 背景颜色 */
+	bool follow_end;    /* 自动滚动到文本结束处 */
 } str_window_t;
 /* 在指定范围内打印 */
 int print_in_box(str_window_t win, const char *str);
