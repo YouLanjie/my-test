@@ -6,6 +6,7 @@
  */
 
 #include "../../include/string_view.h"
+#include "../../include/dynamic_array.h"
 #include "../../include/tools.h"
 #include <arpa/inet.h>
 #include <locale.h>
@@ -27,97 +28,12 @@
 #include <unistd.h>
 #include <wchar.h>
 
-typedef struct {
-	void  *ptr;
-	size_t cap;
-	size_t len;
-	const size_t size;
-} DA_t;
-
-#define _DAP(da, offset) (da->ptr+(da->size*(offset)))
-/* 需要提前初始化好.size字段
- * 申请内存，至少可用长度cap(不会释放多出的空间) */
-DA_t *da_create(DA_t *da, size_t cap)
+double getnowtime()
 {
-	if (!da || da->size == 0) return NULL;
-	if (cap == 0) cap = 10;
-	if (da->ptr && da->cap >= cap) return da;
-	if (da->len > da->cap) da->len = 0;
-	void *p = da->ptr;
-	da->cap = cap;
-	if (da->ptr) da->ptr = realloc(da->ptr, da->size*da->cap);
-	else da->ptr = malloc(da->size*da->cap);
-
-	if (!da->ptr) {
-		if (p) free(p);
-		da->cap = 0;
-		da->len = 0;
-		return NULL;
-	}
-	memset(_DAP(da, da->len), 0, da->size*(da->cap-da->len));
-	return da;
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	return ts.tv_sec + ts.tv_nsec/1e9;
 }
-
-/* 在idx处插入含有指向ptr指针的元素(让da->ptr[idx] = ptr) */
-DA_t *da_insert(DA_t *da, size_t idx, void *ptr)
-{
-	if (!da || da->size == 0) return NULL;
-	if (idx >= da->cap) {
-		if (!da_create(da, idx)) return NULL;
-	}
-	if (da->len+1 > da->cap) {
-		if (!da_create(da, da->cap*2)) return NULL;
-	}
-	if (idx < da->len) {
-		memmove(_DAP(da, idx+1), _DAP(da, idx), da->size*(da->len-idx));
-	}
-	memcpy(_DAP(da, idx), ptr, da->size);
-	da->len++;
-	return da;
-}
-
-/* 将ptr里的内容（长度da->size）追加到末尾数组 */
-DA_t *da_append(DA_t *da, void *ptr)
-{
-	if (!da || da->size == 0) return NULL;
-	da_insert(da, da->len, ptr);
-	return da;
-}
-
-DA_t *da_free(DA_t *da, void (*free_function)(void *ptr))
-{
-	if (!da || da->size == 0) return NULL;
-	if (da->ptr) {
-		for (size_t i = 0; i < da->len && free_function; i++) {
-			if (_DAP(da, i)) free_function(_DAP(da, i));
-		}
-		free(da->ptr);
-	}
-	da->len = 0;
-	da->cap = 0;
-	da->ptr = NULL;
-	return da;
-}
-
-DA_t *da_pop(DA_t *da, size_t idx, void (*free_function)(void *ptr))
-{
-	if (!da || !da->ptr || da->size == 0) return NULL;
-	if (idx >= da->len) return da;
-	if (free_function && _DAP(da, idx)) free_function(_DAP(da, idx));
-	if (idx < da->len-1) memmove(_DAP(da, idx), _DAP(da, idx+1), da->size*(da->len-idx-1));
-	da->len--;
-	memset(_DAP(da, da->len), 0, da->size);
-	return da;
-}
-
-void *da_get(DA_t *da, size_t idx)
-{
-	if (!da || !da->ptr || da->size == 0 || idx >= da->len) return NULL;
-	return _DAP(da, idx);
-}
-
-#undef _DAP
-
 
 /**
  * @brief 尝试获得socket fd
@@ -219,11 +135,12 @@ typedef struct {
 } Messages_t;
 
 typedef struct {
-	DA_t platforms;
-	DA_t logins;
-	DA_t users;
 	DA_t messages;
+	DA_t users;
+	DA_t platforms;
+	DA_t login_hist;
 	DA_t fds;
+
 	SVA_t logs;
 	SVA_t input;
 
@@ -237,13 +154,6 @@ typedef struct {
 	bool flag_exited;
 	bool flag_esc_confirm;
 } Runtimedata_t;
-
-double getnowtime()
-{
-	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
-	return ts.tv_sec + ts.tv_nsec/1e9;
-}
 
 User_t *user_get(Runtimedata_t *rt, SV_t name)
 {
@@ -284,16 +194,31 @@ void user_free(void *ptr)
 	sva_free(&user->note);
 }
 
+Messages_t *message_get(Runtimedata_t *rt, size_t mid)
+{
+	if (!rt) return NULL;
+	Messages_t *msg = NULL;
+	for (size_t i = 0; i < rt->messages.len; i++) {
+		/* 优先从后向前搜索 */
+		msg = da_get(&rt->messages, rt->messages.len-i-1);
+		if (!msg) continue;
+		if (msg->mid == mid) break;
+		msg = NULL;
+	}
+	return msg;
+}
+
 Messages_t *message_create(Runtimedata_t *rt, User_t *user, SV_t content)
 {
 	if (!rt || !user) return NULL;
-	size_t len = rt->messages.len;
+	size_t mid = rt->messages.len;
+	while (message_get(rt, mid)) mid++;
 	da_append(&rt->messages, &(Messages_t){
-		  .mid = len,
+		  .mid = mid,
 		  .owner_uid = user->uid,
 		  .timestamp = getnowtime(),
 		  });
-	Messages_t *new_msg = da_get(&rt->messages, len);
+	Messages_t *new_msg = message_get(rt, mid);
 	if (!new_msg) return NULL;
 	sva_from_sv(&new_msg->content, content);
 	rt->flag_refresh_msgs = true;
@@ -554,6 +479,7 @@ int input_command(Runtimedata_t *rt)
 	int ret = 1;
 	if (strcmp(rt->input.p, "/exit") == 0 ||
 	    strcmp(rt->input.p, "/quit") == 0 ||
+	    strcmp(rt->input.p, "/q") == 0 ||
 	    strcmp(rt->input.p, "/leave") == 0) {
 		ret = -1;
 	} else if (strcmp(rt->input.p, "/enter") == 0) {
@@ -593,9 +519,9 @@ int input_handle(Runtimedata_t *rt, int ret)
 		case 'k': case 'h': rt->win.hide--; break;
 		case 'j': case 'l': rt->win.hide++; break;
 		case 'q':
-			rt->dispaly_mode = DM_NORM;
+			rt->dispaly_mode = DM_SELECT;
 			rt->flag_refresh_msgs = true;
-			rt->msg_select = 0;
+			rt->hint_text = NULL;
 			printf("\e[2J\e[H");
 			break;
 		default: rt->hint_text = "（使用HJKL移动）"; break;
@@ -603,15 +529,24 @@ int input_handle(Runtimedata_t *rt, int ret)
 		return 1;
 	}
 
-	if (rt->dispaly_mode == DM_SELECT) {
-		if (ret == '\e' && kbhit() > 0) {
-			_getch();
-			ret = _getch();
-			switch (ret) {
-			case 'A': case 'C': ret = 0x10; break;
-			case 'B': case 'D': ret = 0x0e; break;
+	if (!rt->input.len && !rt->flag_esc_confirm && ret == '\e' && kbhit() > 0) {
+		_getch();
+		ret = _getch();
+		char table[UINT8_MAX] = {
+			['A'] = 0x10,
+			['D'] = 0x02,
+			['B'] = 0x0e,
+			['C'] = 0x06,
+		};
+		if (ret > 0 && table[ret%countof(table)]) {
+			ret = table[ret];
+			if (rt->dispaly_mode == DM_NORM) {
+				rt->dispaly_mode = DM_SELECT;
+				rt->flag_refresh_msgs = true;
 			}
 		}
+	}
+	if (rt->dispaly_mode == DM_SELECT) {
 		switch (ret) {
 		case 0x10:    /* ^P */
 		case 0x02:    /* ^B */
@@ -622,7 +557,8 @@ int input_handle(Runtimedata_t *rt, int ret)
 			break;
 		case 0x0e:    /* ^N */
 		case 0x06:    /* ^F */
-			if (rt->msg_select < rt->messages.len) rt->msg_select++;
+			if (rt->msg_select && rt->msg_select < rt->messages.len)
+				rt->msg_select++;
 			else rt->msg_select = 1;
 			rt->flag_refresh_msgs = true;
 			return 1;
@@ -634,6 +570,11 @@ int input_handle(Runtimedata_t *rt, int ret)
 				break;
 			if (ret == '\n') {
 				sva_sprintf(&rt->input, "/show");
+				break;
+			} else if (ret == 'q') {
+				rt->dispaly_mode = DM_NORM;
+				rt->msg_select = 0;
+				rt->flag_refresh_msgs = true;
 				break;
 			}
 			return 1;
@@ -693,7 +634,7 @@ int main(int argc, const char *argv[])
 
 	Runtimedata_t rt = {
 		.platforms.size = sizeof(Platform_t),
-		.logins.size = sizeof(UserLogin_t),
+		.login_hist.size = sizeof(UserLogin_t),
 		.users.size = sizeof(User_t),
 		.messages.size = sizeof(Messages_t),
 		.fds.size = sizeof(struct pollfd),
@@ -719,8 +660,6 @@ int main(int argc, const char *argv[])
 		if ((ret = input_handle(&rt, ret)) > 0) {
 			if (rt.input.len >= rt.input.capacity) sva_double(&rt.input);
 		} else if (ret < 0) {
-			rt.flag_exited = 1;
-			printf("\e[%d;0H\n正在退出。。。\n", get_winsize_row());
 			break;
 		} else {
 			message_create(&rt, user_get(&rt, sv_from_lstr("Administor")), sv_from_sva(&rt.input));
@@ -729,6 +668,8 @@ int main(int argc, const char *argv[])
 			sva_free(&rt.input);
 		}
 	}
+	rt.flag_exited = 1;
+	printf("\e[%d;0H\n正在退出。。。\n", get_winsize_row());
 	pthread_join(pid, NULL);
 
 	if (rt.fd >= 0) close(rt.fd);
@@ -736,7 +677,7 @@ int main(int argc, const char *argv[])
 	sva_free(&rt.logs);
 	da_free(&rt.fds, close_fds);
 	da_free(&rt.platforms, NULL);
-	da_free(&rt.logins, NULL);
+	da_free(&rt.login_hist, NULL);
 	da_free(&rt.users, user_free);
 	da_free(&rt.messages, message_free);
 	return 0;
