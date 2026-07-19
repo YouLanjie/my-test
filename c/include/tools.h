@@ -76,9 +76,10 @@ typedef struct {
 	int width;    /* 窗口宽度(<0自动拓展) */
 	int heigh;    /* 窗口高度(<0自动拓展) */
 	int hide;     /* 隐藏的行数(从1开算) */
-	int focus;    /* 焦点行（反色行）行号(从0开算) */
+	int focus;    /* 焦点行（反色行）行号(从1开算) */
 	const char *color_code;    /* 背景颜色 */
 	bool follow_end;    /* 自动滚动到文本结束处 */
+	bool no_auto_fflush;
 } str_window_t;
 /* 在指定范围内打印 */
 int print_in_box(str_window_t win, const char *str);

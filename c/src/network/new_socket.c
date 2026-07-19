@@ -9,6 +9,7 @@
 #include "../../include/dynamic_array.h"
 #include "../../include/tools.h"
 #include <arpa/inet.h>
+#include <errno.h>
 #include <locale.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -33,6 +34,31 @@ double getnowtime()
 	struct timespec ts;
 	clock_gettime(CLOCK_REALTIME, &ts);
 	return ts.tv_sec + ts.tv_nsec/1e9;
+}
+
+SVA_t *get_ip_addr(SVA_t *dest, struct sockaddr_storage *remoteaddr, bool add_port)
+{
+	if (!dest || !remoteaddr) return NULL;
+	char addr_str[INET6_ADDRSTRLEN] = {};
+	void *addr;
+	uint16_t port;
+	if (remoteaddr->ss_family == AF_INET6) {
+		struct sockaddr_in6 *ipv6_addr = (void*)remoteaddr;
+		addr = &ipv6_addr->sin6_addr;
+		port = ipv6_addr->sin6_port;
+	} else {
+		struct sockaddr_in *ipv4_addr = (void*)remoteaddr;
+		addr = &ipv4_addr->sin_addr;
+		port = ipv4_addr->sin_port;
+	}
+	inet_ntop(remoteaddr->ss_family, addr, addr_str, INET6_ADDRSTRLEN);
+	port = ntohs(port);
+	if (remoteaddr->ss_family == AF_INET6)
+		sva_sprintf(dest, "[%s]", addr_str);
+	else
+		sva_sprintf(dest, "%s", addr_str);
+	if (add_port) sva_sprintfcat(dest, ":%u", port);
+	return dest;
 }
 
 /**
@@ -106,17 +132,6 @@ int get_socket_fd(const char *node, int port, int mode)
 	return fd;
 }
 
-typedef struct {
-	uint64_t pid;
-	SVA_t name;
-} Platform_t;
-
-typedef struct {
-	double timestamp;
-	uint64_t uid;
-	uint64_t pid;
-} UserLogin_t;
-
 typedef struct Users_t {
 	uint64_t uid;
 	SVA_t name;
@@ -135,10 +150,31 @@ typedef struct {
 } Messages_t;
 
 typedef struct {
+	uint64_t pid;
+	SVA_t name;
+} Platform_t;
+
+typedef struct {
+	double timestamp;
+	uint64_t uid;
+	uint64_t pid;
+} Loginhist_t;
+
+typedef struct {
+	uint64_t uid;
+	uint64_t fd_id;
+	SVA_t ipaddr;
+	SVA_t ua;
+	bool is_web_session;    /* 如果为true，则仅使用ip地址和ua判断 */
+	bool is_logined;
+} Session_t;
+
+typedef struct {
 	DA_t messages;
 	DA_t users;
 	DA_t platforms;
 	DA_t login_hist;
+	DA_t sessions;
 	DA_t fds;
 
 	SVA_t logs;
@@ -154,6 +190,90 @@ typedef struct {
 	bool flag_exited;
 	bool flag_esc_confirm;
 } Runtimedata_t;
+
+Session_t *session_get_by_fd_id(Runtimedata_t *rt, size_t fd_id)
+{
+	if (!rt || fd_id == (size_t)-1) return NULL;
+	Session_t *session = NULL;
+	for (size_t i = 0; i < rt->sessions.len; i++) {
+		session = da_get(&rt->sessions, i);
+		if (!session) continue;
+		if (session->fd_id == fd_id) break;
+		session = NULL;
+	}
+	return session;
+}
+
+/* 比对逻辑 fd_id || (ipaddr&&ua) */
+Session_t *session_get(Runtimedata_t *rt, SV_t ipaddr, SV_t ua)
+{
+	if (!rt) return NULL;
+	Session_t *session = NULL;
+	for (size_t i = 0; i < rt->sessions.len; i++) {
+		session = da_get(&rt->sessions, i);
+		if (!session) continue;
+		if (sv_cmp(sv_from_sva(&session->ipaddr), ipaddr) &&
+		    sv_cmp(sv_from_sva(&session->ua), ua)) break;
+		session = NULL;
+	}
+	return session;
+}
+
+Session_t *session_attach(Runtimedata_t *rt, size_t fd_id, SV_t ipaddr, SV_t ua)
+{
+	if (!rt || fd_id == (size_t)-1) return NULL;
+	Session_t *session = session_get(rt, ipaddr, ua);
+	if (!session) session = session_get_by_fd_id(rt, fd_id);
+	if (session) return session;
+
+	size_t len = rt->sessions.len;
+	da_append(&rt->sessions, &(Session_t){
+		  .uid = -1,
+		  .fd_id = fd_id,
+		  });
+	session = da_get(&rt->sessions, len);
+	if (!session) return NULL;
+	sva_from_sv(&session->ipaddr, ipaddr);
+	sva_from_sv(&session->ua, ua);
+	return session;
+}
+
+Session_t *session_disattach(Runtimedata_t *rt, size_t fd_id)
+{
+	if (!rt || fd_id == (size_t)-1) return NULL;
+	Session_t *session = session_get_by_fd_id(rt, fd_id);
+	if (!session) return NULL;
+	struct pollfd* fds = da_get(&rt->fds, fd_id);
+	if (!fds) return NULL;
+	int fd = fds->fd;
+	if (fd >= 0 && session->fd_id == fd_id) {
+		close(fd);
+		fds->fd = -1;
+	}
+	session->fd_id = -1;
+	return session;
+}
+
+void session_free(void *ptr)
+{
+	if (!ptr) return;
+	Session_t *session = ptr;
+	sva_free(&session->ipaddr);
+	sva_free(&session->ua);
+}
+
+User_t *user_get_by_uid(Runtimedata_t *rt, size_t uid)
+{
+	if (!rt) return NULL;
+	User_t *user = NULL;
+	for (size_t i = 0; i < rt->users.len; i++) {
+		user = da_get(&rt->users, i);
+		if (!user) continue;
+		if (user->uid == uid) break;
+		user = NULL;
+	}
+	return user;
+}
 
 User_t *user_get(Runtimedata_t *rt, SV_t name)
 {
@@ -208,9 +328,13 @@ Messages_t *message_get(Runtimedata_t *rt, size_t mid)
 	return msg;
 }
 
-Messages_t *message_create(Runtimedata_t *rt, User_t *user, SV_t content)
+Messages_t *message_create(Runtimedata_t *rt, Session_t *session, SV_t content)
 {
-	if (!rt || !user) return NULL;
+	if (!rt || !session) return NULL;
+	if (!session->is_logined) return NULL;
+	User_t *user = user_get_by_uid(rt, session->uid);
+	if (!user) return NULL;
+
 	size_t mid = rt->messages.len;
 	while (message_get(rt, mid)) mid++;
 	da_append(&rt->messages, &(Messages_t){
@@ -232,6 +356,21 @@ void message_free(void *ptr)
 	sva_free(&p->content);
 }
 
+size_t get_fd_id(Runtimedata_t *rt, int fd)
+{
+	if (!rt) return -1;
+	struct pollfd *p = NULL;
+	size_t i = 0;
+	for (; i < rt->fds.len; i++) {
+		p = da_get(&rt->fds, i);
+		if (!p) continue;
+		if (p->fd == fd) break;
+		p = NULL;
+	}
+	if (p) return i;
+	return -1;
+}
+
 void close_fds(void *ptr)
 {
 	if (!ptr) return;
@@ -239,15 +378,8 @@ void close_fds(void *ptr)
 	if (p->fd >= 0) close(p->fd);
 }
 
-// 获取 sockaddr，IPv4 或 IPv6：
-void *get_in_addr(struct sockaddr *sa)
-{
-	if (sa->sa_family == AF_INET)
-		return &(((struct sockaddr_in *)sa)->sin_addr);
-	return &(((struct sockaddr_in6 *)sa)->sin6_addr);
-}
-
 // 将 buf 发送给所有连接的客户端
+// TODO: REMOVE IT
 void send_to_all(int sender_fd, char *buf, int nbytes,
 		 struct pollfd *pfds, int fd_count)
 {
@@ -282,74 +414,76 @@ bool redraw(Runtimedata_t *rt)
 	int col = 0, row = 0;
 	col = get_winsize_col();
 	row = get_winsize_row();
-	print_in_box((str_window_t){
-		     .x = col - logwidth - 3,
-		     .y = 1,
-		     .width = 3,
-		     .heigh = col-msgheigh,
-		     .focus = -1,
-		     .color_code = NULL,
-		     }, "");
-	str_window_t win = {
+
+	if (rt->flag_refresh_msgs) {
+		/* 刷新消息区背景 */
+		print_in_box((str_window_t){
+			     .x = 1,
+			     .y = 1,
+			     .width = col-logwidth,
+			     .heigh = col-msgheigh,
+			     .color_code = NULL,
+			     .no_auto_fflush = true,
+			     }, "");
+	}
+
+	str_window_t win_msg = {
 		.x = timewidth+userwidth,
 		.width = col-timewidth-userwidth-logwidth-dotwidth,
 		.heigh = 1,
-		.focus = -1,
-	}, winuser = {
+		.no_auto_fflush = true,
+	}, win_user = {
 		.x = timewidth,
 		.width = userwidth-1,
 		.heigh = 1,
+		.no_auto_fflush = true,
+	}, win_focus = {
+		.x = (col-logwidth)/5,
+		.y = (row-msgheigh)/5,
+		.width = (col-logwidth)*3/5,
+		.heigh = (row-msgheigh)*3/5,
 		.focus = -1,
+		.follow_end = false,
+		.color_code = "\e[0;37;44m",
+		.no_auto_fflush = true,
 	};
 	if (rt->messages.len == 0) {
-		win.y = 1;
-		win.color_code = colors[1];
-		print_in_box(win, "局域网聊天室（暂无消息）");
+		win_focus.focus = 1;
+		print_in_box(win_focus, "局域网聊天室（暂无消息）");
 	}
 	char buf[124];
 	size_t idx = (int)rt->messages.len>=(row-msgheigh)?rt->messages.len-(row-msgheigh):0;
 	if (rt->dispaly_mode == DM_SELECT) {
 		idx = rt->msg_select > (size_t)row/2 ? rt->msg_select - row/2 : 0;
 	}
-	for (size_t j = 0; rt->flag_refresh_msgs && (int)j < row-msgheigh; idx++, j++) {
-		if (idx >= rt->messages.len) {
-			win.x = 1;
-			win.y = j+1;
-			win.width = col-logwidth;
-			win.color_code = NULL;
-			print_in_box(win, "");
-			continue;
-		}
-
-		if ((size_t)rt->msg_select == idx+1) win.focus = 0;
-		else win.focus = -1;
-
+	size_t j = rt->flag_refresh_msgs ? 0 : row;
+	for (; (int)j < row-msgheigh && idx < rt->messages.len; idx++, j++) {
 		Messages_t *msg = da_get(&rt->messages, idx);
 		if (!msg) continue;
 		User_t *user = da_get(&rt->users, msg->owner_uid);
 		if (!user) continue;
-		winuser.y = win.y = j+1;
-		winuser.color_code = win.color_code = colors[(user->uid)%countof(colors)];
+
+		win_msg.focus = ((size_t)rt->msg_select == idx+1);
+		win_user.y = win_msg.y = j+1;
+		win_user.color_code = win_msg.color_code = colors[(user->uid)%countof(colors)];
+
 		time_t p = msg->timestamp;
 		struct tm tm_info;
 		localtime_r(&p, &tm_info);
 		strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_info);
-		printf("\e[0m\e[%zu;0H[%s]", idx+1, buf);
-		print_in_box(winuser, user->name.p);
-		if (print_in_box(win, msg->content.p)) printf("...");
+		printf("\e[0m\e[%zu;0H[%s]", j+1, buf);
+
+		print_in_box(win_user, user->name.p);
+		if (print_in_box(win_msg, msg->content.p)) printf("\e[0m...");
 	}
 	if (rt->dispaly_mode == DM_FOCUS) {
-		rt->win.x = (col-msgheigh)/5;
-		rt->win.y = timewidth/2;
-		rt->win.width = col-timewidth-userwidth-logwidth-dotwidth;
-		rt->win.heigh = (row-msgheigh)*3/5;
-		rt->win.focus = -1;
-		rt->win.follow_end = false;
-		rt->win.color_code = "\e[0;37;44m";
+		/* 居中大消息 */
+		win_focus.hide = rt->win.hide;
 		Messages_t *msg = da_get(&rt->messages, rt->msg_select-1);
-		print_in_box(rt->win, msg ? msg->content.p : "（未找到对应消息）");
+		print_in_box(win_focus, msg ? msg->content.p : "（未找到对应消息）");
 	}
 	rt->flag_refresh_msgs = false;
+	/* 日志 */
 	print_in_box((str_window_t){
 		     .x = col - logwidth+1,
 		     .y = 1,
@@ -358,7 +492,9 @@ bool redraw(Runtimedata_t *rt)
 		     .focus = -1,
 		     .color_code = "\e[0;30;44m",
 		     .follow_end = true,
+		     .no_auto_fflush = true,
 		     }, rt->logs.p);
+	/* 状态栏 */
 	sprintf(buf, "|现在线数:%zu\n|ESC发消息:%s\n|M:%d, SEL:%zu",
 		rt->fds.len, rt->flag_esc_confirm?"true":"false",
 		rt->dispaly_mode, rt->msg_select);
@@ -369,7 +505,9 @@ bool redraw(Runtimedata_t *rt)
 		     .heigh = msgheigh,
 		     .focus = -1,
 		     .color_code = "\e[0;37;44m",
+		     .no_auto_fflush = true,
 		     }, buf);
+	/* 输入框 */
 	print_in_box((str_window_t){
 		     .x = 1,
 		     .y = row - msgheigh+1,
@@ -378,12 +516,76 @@ bool redraw(Runtimedata_t *rt)
 		     .focus = -1,
 		     .color_code = "\e[0;30;47m",
 		     .follow_end = true,
+		     .no_auto_fflush = true,
 		     }, rt->hint_text?rt->hint_text:\
 		     (rt->input.p&&rt->input.len?rt->input.p:"请输入消息："));
+	fflush(stdout);
 	running = false;
 	return false;
 }
 
+/* 服务器响应可读fd处理 */
+int handle_fd(Runtimedata_t *rt, size_t i)
+{
+	struct pollfd* fds = rt->fds.ptr;
+	if (!fds || !(fds[i].revents & POLLIN)) return i;
+	if (fds[i].fd == rt->fd) {
+		struct sockaddr_storage remoteaddr;
+		socklen_t addrlen = sizeof(remoteaddr);
+		int newfd = accept(rt->fd, (void*)&remoteaddr, &addrlen);
+		if (newfd == -1) {
+			sva_sprintfcat(&rt->logs, "ERR/accept:%s\n", strerror(errno));
+			// perror("accept");
+			return i;
+		}
+		da_append(&rt->fds, &(struct pollfd){.fd = newfd, .events = POLLIN});
+		SVA_t addr_str = {};
+		get_ip_addr(&addr_str, &remoteaddr, false);
+		session_attach(rt, i, sv_from_sva(&addr_str), (SV_t){});
+		get_ip_addr(&addr_str, &remoteaddr, true);
+		sva_sprintfcat(&rt->logs, "新连接: (%d) FROM\n'%s'\n",
+			       newfd, addr_str.p);
+		sva_free(&addr_str);
+		redraw(rt);
+		return i;
+	}
+	// 如果不是 listener，那就是客户端
+	SVA_t content = {};
+	sva_adjust_minimun(&content, 24);
+	ssize_t ret;
+	do {
+		if (content.len >= content.capacity-1)
+			sva_double(&content);
+		ret = recv(fds[i].fd, content.p+content.len,
+			   content.capacity-content.len-1, 0);
+		if (ret > 0) content.len+=ret;
+	} while (ret > 0 && content.len == content.capacity-1);
+	content.p[content.len] = '\0';
+
+	if (ret > 0) {
+		message_create(rt, session_get_by_fd_id(rt, i), sv_from_sva(&content));
+		send_to_all(fds[i].fd, content.p, content.len, fds, rt->fds.len);
+		sva_free(&content);
+		redraw(rt);
+		return i;
+	}
+	sva_free(&content);
+	// 连接关闭或出错
+	if (ret == 0) {
+		sva_sprintfcat(&rt->logs, "断连: (%d)\n", fds[i].fd);
+	} else {
+		sva_sprintfcat(&rt->logs, "ERR/recv:%s\n", strerror(errno));
+		// perror("recv");
+	}
+	// close(fds[i].fd);
+	session_disattach(rt, i);
+	da_pop(&rt->fds, i, NULL);
+	i--;
+	redraw(rt);
+	return i;
+}
+
+/* 服务区住循环 */
 void *server(void *data)
 {
 	if (!data) return NULL;
@@ -395,66 +597,17 @@ void *server(void *data)
 		return NULL;
 	}
 
-	da_append(&rt->fds, &(struct pollfd){.fd = rt->fd, .events = POLLIN});
-
 	sva_sprintfcat(&rt->logs, "等待连接中...\n");
 	while (!rt->flag_exited) {
 		if (poll(rt->fds.ptr, rt->fds.len, 1e3) == -1) {
-			perror("poll");
+			sva_sprintfcat(&rt->logs, "ERR/poll:%s\n", strerror(errno));
+			// perror("poll");
 			rt->flag_exited = 1;
 			return NULL;
 		}
-		struct pollfd* fds = rt->fds.ptr;
-		for (size_t i = 0; i < rt->fds.len; i++) {
-			if (!(fds[i].revents & POLLIN)) continue;
-			if (fds[i].fd == rt->fd) {
-				struct sockaddr_storage remoteaddr;
-				socklen_t addrlen = sizeof(remoteaddr);
-				int newfd = accept(rt->fd, (void*)&remoteaddr, &addrlen);
-				if (newfd == -1) {
-					perror("accept");
-					continue;
-				}
-				da_append(&rt->fds, &(struct pollfd){
-					  .fd = newfd, .events = POLLIN});
-				fds = rt->fds.ptr;
-				char remoteIP[INET6_ADDRSTRLEN] = {};
-				const void *tmp = get_in_addr((struct sockaddr *)&remoteaddr);
-				const char *p = inet_ntop(remoteaddr.ss_family, tmp, remoteIP, INET6_ADDRSTRLEN);
-				sva_sprintfcat(&rt->logs, "新连接: (%d) FROM\n'%s'\n", newfd, p);
-				redraw(rt);
-				continue;
-			}
-			// 如果不是 listener，那就是客户端
-			SVA_t content = {};
-			sva_adjust_minimun(&content, 10);
-			ssize_t ret;
-			do {
-				if (content.len >= content.capacity-1)
-					sva_double(&content);
-				ret = recv(fds[i].fd, content.p+content.len,
-					   content.capacity-content.len-1, 0);
-				if (ret > 0) content.len+=ret;
-			} while (ret > 0 && content.len == content.capacity-1);
-			content.p[content.len] = '\0';
-
-			if (ret > 0) {
-				message_create(rt, user_get(rt, sv_from_lstr("Visitor")), sv_from_sva(&content));
-				send_to_all(fds[i].fd, content.p, content.len, fds, rt->fds.len);
-				sva_free(&content);
-				redraw(rt);
-				continue;
-			}
-			sva_free(&content);
-			// 连接关闭或出错
-			if (ret == 0) {
-				sva_sprintfcat(&rt->logs, "断连: (%d)\n", fds[i].fd);
-			} else perror("recv");
-			close(fds[i].fd);
-			da_pop(&rt->fds, i, NULL);
-			i--;
-			redraw(rt);
-		}
+		/* 遍历处理所有fd */
+		for (size_t i = 0; i < rt->fds.len; i++)
+			i = handle_fd(rt, i);
 	}
 
 	da_free(&rt->fds, close_fds);
@@ -476,7 +629,7 @@ int input_handle(Runtimedata_t *rt, int ret);
 int input_command(Runtimedata_t *rt)
 {
 	if (!rt || !rt->input.p || !rt->input.len) return -1;
-	int ret = 1;
+	int ret = 0;
 	if (strcmp(rt->input.p, "/exit") == 0 ||
 	    strcmp(rt->input.p, "/quit") == 0 ||
 	    strcmp(rt->input.p, "/q") == 0 ||
@@ -491,12 +644,15 @@ int input_command(Runtimedata_t *rt)
 		rt->flag_refresh_msgs = true;
 		if (!flag) rt->hint_text = "（选择模式：使用C-pnfb或命令移动选中项）";
 	} else if (strcmp(rt->input.p, "/show") == 0) {
-		if (rt->dispaly_mode == DM_SELECT && rt->msg_select > 0)
+		if (rt->dispaly_mode == DM_SELECT && rt->msg_select > 0) {
+			rt->win.hide = 0;
 			rt->dispaly_mode = DM_FOCUS;
+		}
 		rt->flag_refresh_msgs = true;
 	} else if (strcmp(rt->input.p, "/clear") == 0) {
 		rt->flag_refresh_msgs = true;
 		printf("\e[2J\e[H");
+	} else if (strcmp(rt->input.p, "/login") == 0) {
 	} else if (rt->dispaly_mode == DM_SELECT &&
 		   (strcmp(rt->input.p, "/s-h") == 0 || strcmp(rt->input.p, "/s-k") == 0)) {
 		input_handle(rt, 0x10);
@@ -506,7 +662,7 @@ int input_command(Runtimedata_t *rt)
 	} else {
 		rt->hint_text = "（非法的命令）请输入消息：";
 	}
-	if (ret > 0) sva_clear(&rt->input);
+	sva_clear(&rt->input);
 	return ret;
 }
 
@@ -526,7 +682,7 @@ int input_handle(Runtimedata_t *rt, int ret)
 			break;
 		default: rt->hint_text = "（使用HJKL移动）"; break;
 		}
-		return 1;
+		return 0;
 	}
 
 	if (!rt->input.len && !rt->flag_esc_confirm && ret == '\e' && kbhit() > 0) {
@@ -553,7 +709,7 @@ int input_handle(Runtimedata_t *rt, int ret)
 			if (rt->msg_select > 1) rt->msg_select--;
 			else rt->msg_select = rt->messages.len;
 			rt->flag_refresh_msgs = true;
-			return 1;
+			return 0;
 			break;
 		case 0x0e:    /* ^N */
 		case 0x06:    /* ^F */
@@ -561,7 +717,7 @@ int input_handle(Runtimedata_t *rt, int ret)
 				rt->msg_select++;
 			else rt->msg_select = 1;
 			rt->flag_refresh_msgs = true;
-			return 1;
+			return 0;
 			break;
 		case '/':
 			break;
@@ -572,26 +728,28 @@ int input_handle(Runtimedata_t *rt, int ret)
 				sva_sprintf(&rt->input, "/show");
 				break;
 			} else if (ret == 'q') {
+				rt->hint_text = NULL;
 				rt->dispaly_mode = DM_NORM;
 				rt->msg_select = 0;
 				rt->flag_refresh_msgs = true;
-				break;
+				return 0;
 			}
-			return 1;
+			rt->hint_text = "（选择模式：使用C-pnfb或命令移动选中项）";
+			return 0;
 			break;
 		}
 	}
 
 	if (rt->flag_esc_confirm?ret=='\e':ret == '\n') {
-		if (!rt->input.p || !rt->input.len) return 1;
-		ret = 0;
+		if (!rt->input.p || !rt->input.len) return 0;
+		ret = 1;
 		if (rt->input.p[0] == '/' && (ret = input_command(rt)) < 0) {
 			return ret;
-		} else if (ret > 0) return ret;
-		return 0;
+		}
+		return ret;
 	}
 	if (ret == 127) {
-		if (!rt->input.p || !rt->input.len) return 1;
+		if (!rt->input.p || !rt->input.len) return 0;
 		/* 计算最后一个宽字符字节数 */
 		mbstate_t state = (mbstate_t){};
 		wchar_t wc = L'\0';
@@ -603,15 +761,15 @@ int input_handle(Runtimedata_t *rt, int ret)
 			len = 1;
 		}
 		sva_chop_right(&rt->input, len);
-		return 1;
+		return 0;
 	}
 	if (ret >= 0) {
 		if (rt->hint_text) rt->hint_text = NULL;
 		sva_sprintfcat(&rt->input, "%c", ret);
 		while (kbhit()) sva_sprintfcat(&rt->input, "%c", _getch());
-		return 1;
+		return 0;
 	}
-	return 2;
+	return 0;
 }
 
 int main(int argc, const char *argv[])
@@ -633,17 +791,25 @@ int main(int argc, const char *argv[])
 	}
 
 	Runtimedata_t rt = {
-		.platforms.size = sizeof(Platform_t),
-		.login_hist.size = sizeof(UserLogin_t),
-		.users.size = sizeof(User_t),
 		.messages.size = sizeof(Messages_t),
+		.users.size = sizeof(User_t),
+		.platforms.size = sizeof(Platform_t),
+		.login_hist.size = sizeof(Loginhist_t),
+		.sessions.size = sizeof(Session_t),
 		.fds.size = sizeof(struct pollfd),
 		.fd = fd
 	};
 	sva_sprintfcat(&rt.logs, "这里是日志区\n");
+	Session_t *main_session = NULL;
 	do {
 		User_t *u = user_create(&rt, sv_from_lstr("Administor"));
 		if (u) u->type = UT_ADMIN;
+		da_append(&rt.fds, &(struct pollfd){.fd = rt.fd, .events = POLLIN});
+		main_session = session_attach(&rt, get_fd_id(&rt, fd), sv_from_lstr("USERINPUT"), (SV_t){});
+		if (main_session && u) {
+			main_session->uid = u->uid;
+			main_session->is_logined = true;
+		}
 		u = user_create(&rt, sv_from_lstr("Visitor"));
 		if (u) u->type = UT_VISIT;
 	} while(0);
@@ -657,16 +823,15 @@ int main(int argc, const char *argv[])
 	while (!rt.flag_exited) {
 		redraw(&rt);
 		int ret = _getch();
-		if ((ret = input_handle(&rt, ret)) > 0) {
-			if (rt.input.len >= rt.input.capacity) sva_double(&rt.input);
-		} else if (ret < 0) {
+		if ((ret = input_handle(&rt, ret)) < 0) {
 			break;
-		} else {
-			message_create(&rt, user_get(&rt, sv_from_lstr("Administor")), sv_from_sva(&rt.input));
+		} else if (ret == 1) {
+			message_create(&rt, main_session, sv_from_sva(&rt.input));
 			send_to_all(rt.fd, rt.input.p, rt.input.len,
 				    rt.fds.ptr, rt.fds.len);
 			sva_free(&rt.input);
 		}
+		if (rt.input.len && rt.input.len >= rt.input.capacity) sva_double(&rt.input);
 	}
 	rt.flag_exited = 1;
 	printf("\e[%d;0H\n正在退出。。。\n", get_winsize_row());
@@ -678,6 +843,7 @@ int main(int argc, const char *argv[])
 	da_free(&rt.fds, close_fds);
 	da_free(&rt.platforms, NULL);
 	da_free(&rt.login_hist, NULL);
+	da_free(&rt.sessions, session_free);
 	da_free(&rt.users, user_free);
 	da_free(&rt.messages, message_free);
 	return 0;

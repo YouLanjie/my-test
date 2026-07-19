@@ -80,7 +80,7 @@ int main(int argc, char *argv[])
 			.y = 5,
 			.width = 51,
 			.heigh = 15,
-			.focus = 1,
+			.focus = 2,
 		},
 		/* 信息提示窗口 */
 		(str_window_t){
@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
 			.y=1,
 			.width = 53,
 			.heigh = 3,
-			.focus = 0,
+			.focus = 1,
 		},
 		/* 数值显示窗口 */
 		(str_window_t){
@@ -96,7 +96,7 @@ int main(int argc, char *argv[])
 			.y=5,
 			.width = 19,
 			.heigh = window_num+2,
-			.focus = 0,
+			.focus = 1,
 		},
 	};
 	int flag_color[window_num] = {1, 1, 1};

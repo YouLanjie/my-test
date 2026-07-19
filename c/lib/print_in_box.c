@@ -106,20 +106,21 @@ int print_in_box(str_window_t win, const char *str)
 			column = width >= 0 ? width : 0;
 		}
 		if (cond_print) {
-			if (line == win.focus) printf("\033[7m");
+			if (line+1 == win.focus) printf("\033[7m");
 			if (fallback) {
 				printf("%s", fallback);
 				fallback = NULL;
 			} else printf("%lc", wc);
-			if (line == win.focus) printf("%s", win.color_code);
+			if (line+1 == win.focus) printf("%s", win.color_code);
 		}
 		position += len;
 	}
 	if (!win.follow_end) {
 		printf("\033[0m");
-		fflush(stdout);
+		if (!win.no_auto_fflush) fflush(stdout);
 	} else {
 		/* 通过两次计算测得最后长度 */
+		if (line && !column) line--;    /* 避免让最后一行显示为空行 */
 		if (line+1 > win.heigh && win.hide < line+1-win.heigh) win.hide = line+1-win.heigh;
 		win.follow_end = false;
 		print_in_box(win, str);
