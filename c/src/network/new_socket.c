@@ -180,8 +180,11 @@ typedef struct {
 	SVA_t logs;
 	SVA_t input;
 
-	const char *hint_text;
 	enum {DM_NORM, DM_SELECT, DM_FOCUS} dispaly_mode;
+	enum {IM_MSG, IM_REQUIRE} input_mode;
+
+	Session_t *main_session;
+	const char *hint_text;
 	size_t msg_select;
 	str_window_t win;
 
@@ -666,15 +669,56 @@ int input_command(Runtimedata_t *rt)
 	return ret;
 }
 
+/* 输入处理（兼界面处理） */
 int input_handle(Runtimedata_t *rt, int ret)
 {
 	if (!rt) return -1;
+
+	/* 处理流程：
+	 * 1. 控制流？
+	 *   a. C-pnfb/方向键(进入选择、切换选择、移动位置)
+	 *   b. wasd/hjkl 类同方向键（选择模式且无/命令、聚焦模式）
+	 *   c. q 退出选择、聚焦模式
+	 *   d. \n (选择模式且为/命令)||普通消息 -> 发信息
+	 * */
+	enum {K_NONE, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_EXIT} key_event = K_NONE;
+
+	/* 转义处理WASD */
+	if (!rt->input.len && !rt->flag_esc_confirm && ret == '\e' && kbhit() > 0) {
+		_getch();
+		ret = _getch();
+		static const char table[UINT8_MAX] = {
+			['A'] = K_UP,
+			['B'] = K_DOWN,
+			['D'] = K_LEFT,
+			['C'] = K_RIGHT,
+		};
+		if (ret > 0 && table[ret%countof(table)]) {
+			key_event = table[ret%countof(table)];
+		}
+	}
+
+	if (rt->dispaly_mode) {
+		if (key_event) {
+			rt->dispaly_mode = DM_SELECT;
+			rt->flag_refresh_msgs = true;
+		}
+	} else if (rt->input.len == 0 && ret != '/') {
+		static const char table[UINT8_MAX] = {
+			['W'] = K_UP,    ['w'] = K_UP,    ['K'] = K_UP,    ['k'] = K_UP,
+			['S'] = K_DOWN,  ['s'] = K_DOWN,  ['J'] = K_DOWN,  ['j'] = K_DOWN,
+			['A'] = K_LEFT,  ['a'] = K_LEFT,  ['H'] = K_LEFT,  ['h'] = K_LEFT,
+			['D'] = K_RIGHT, ['d'] = K_RIGHT, ['L'] = K_RIGHT, ['l'] = K_RIGHT,
+			['Q'] = K_EXIT,  ['q'] = K_EXIT,
+		};
+		if (table[ret%sizeof(table)]) key_event = table[ret%sizeof(table)];
+	}
+
 	if (rt->dispaly_mode == DM_FOCUS) {
-		if (rt->msg_select <= 0 || rt->msg_select > rt->messages.len) ret = 'q';
-		switch (ret) {
-		case 'k': case 'h': rt->win.hide--; break;
-		case 'j': case 'l': rt->win.hide++; break;
-		case 'q':
+		switch (key_event) {
+		case K_UP: case K_LEFT: rt->win.hide--; break;
+		case K_DOWN: case K_RIGHT: rt->win.hide++; break;
+		case K_EXIT:
 			rt->dispaly_mode = DM_SELECT;
 			rt->flag_refresh_msgs = true;
 			rt->hint_text = NULL;
@@ -683,26 +727,7 @@ int input_handle(Runtimedata_t *rt, int ret)
 		default: rt->hint_text = "（使用HJKL移动）"; break;
 		}
 		return 0;
-	}
-
-	if (!rt->input.len && !rt->flag_esc_confirm && ret == '\e' && kbhit() > 0) {
-		_getch();
-		ret = _getch();
-		char table[UINT8_MAX] = {
-			['A'] = 0x10,
-			['D'] = 0x02,
-			['B'] = 0x0e,
-			['C'] = 0x06,
-		};
-		if (ret > 0 && table[ret%countof(table)]) {
-			ret = table[ret];
-			if (rt->dispaly_mode == DM_NORM) {
-				rt->dispaly_mode = DM_SELECT;
-				rt->flag_refresh_msgs = true;
-			}
-		}
-	}
-	if (rt->dispaly_mode == DM_SELECT) {
+	} else if (rt->dispaly_mode == DM_SELECT) {
 		switch (ret) {
 		case 0x10:    /* ^P */
 		case 0x02:    /* ^B */
@@ -800,15 +825,14 @@ int main(int argc, const char *argv[])
 		.fd = fd
 	};
 	sva_sprintfcat(&rt.logs, "这里是日志区\n");
-	Session_t *main_session = NULL;
 	do {
 		User_t *u = user_create(&rt, sv_from_lstr("Administor"));
 		if (u) u->type = UT_ADMIN;
 		da_append(&rt.fds, &(struct pollfd){.fd = rt.fd, .events = POLLIN});
-		main_session = session_attach(&rt, get_fd_id(&rt, fd), sv_from_lstr("USERINPUT"), (SV_t){});
-		if (main_session && u) {
-			main_session->uid = u->uid;
-			main_session->is_logined = true;
+		rt.main_session = session_attach(&rt, get_fd_id(&rt, fd), sv_from_lstr("USERINPUT"), (SV_t){});
+		if (rt.main_session && u) {
+			rt.main_session->uid = u->uid;
+			rt.main_session->is_logined = true;
 		}
 		u = user_create(&rt, sv_from_lstr("Visitor"));
 		if (u) u->type = UT_VISIT;
@@ -826,9 +850,11 @@ int main(int argc, const char *argv[])
 		if ((ret = input_handle(&rt, ret)) < 0) {
 			break;
 		} else if (ret == 1) {
-			message_create(&rt, main_session, sv_from_sva(&rt.input));
-			send_to_all(rt.fd, rt.input.p, rt.input.len,
-				    rt.fds.ptr, rt.fds.len);
+			if (rt.input_mode == IM_MSG) {
+				message_create(&rt, rt.main_session, sv_from_sva(&rt.input));
+				send_to_all(rt.fd, rt.input.p, rt.input.len,
+					    rt.fds.ptr, rt.fds.len);
+			} else if (rt.input_mode == IM_REQUIRE)
 			sva_free(&rt.input);
 		}
 		if (rt.input.len && rt.input.len >= rt.input.capacity) sva_double(&rt.input);
