@@ -56,12 +56,13 @@ int print_in_box(str_window_t win, const char *str)
 	size_t size = strlen(str);
 	size_t position = 0;
 	const char *fallback = NULL;
+	size_t ret_position = 0;
 	wchar_t wc = L'\0';
 	mbstate_t state = (mbstate_t){};
 	size_t len = 0;
 	int width = 0;
 	int column = 0, line = 0;
-	while (position < size && (line - win.hide < win.heigh || win.follow_end)) {
+	for (;position < size && (line - win.hide < win.heigh || win.follow_end); position += len) {
 		len = mbrtowc(&wc, str+position, size-position, &state);
 		if (len == (size_t)-1 || len == (size_t)-2 || len == 0) {
 			// -1 无效的多字节序列：按一个字节处理，视觉宽度视为1
@@ -79,7 +80,10 @@ int print_in_box(str_window_t win, const char *str)
 			width = strlen(fallback);
 		} else if (wc == L'\t') {
 			width = TAB_WIDTH - (win.x-1+column) % TAB_WIDTH;
-		} else if (wc == L'\r' || wc == L'\n') {
+		} else if (wc == L'\r') {
+			ret_position = position;
+			width = -column;
+		} else if (wc == L'\n') {
 			width = -column;
 		} else {
 			width = wcwidth(wc);
@@ -93,6 +97,9 @@ int print_in_box(str_window_t win, const char *str)
 
 #define cond_print (!win.follow_end && line >= win.hide && line - win.hide < win.heigh)
 		if (column > win.width || wc == L'\r' || wc == L'\n') {
+			if (wc == L'\n' && ret_position < len &&
+			    ret_position+1==position && str[ret_position] == '\r')
+				continue;
 			line++;
 			if (cond_print)
 				printf("\033[%d;%dH",
@@ -100,7 +107,6 @@ int print_in_box(str_window_t win, const char *str)
 				       win.x);
 			if (column <= win.width) {
 				column = 0;
-				position += len;
 				continue;
 			}
 			column = width >= 0 ? width : 0;
@@ -113,7 +119,6 @@ int print_in_box(str_window_t win, const char *str)
 			} else printf("%lc", wc);
 			if (line+1 == win.focus) printf("%s", win.color_code);
 		}
-		position += len;
 	}
 	if (!win.follow_end) {
 		printf("\033[0m");

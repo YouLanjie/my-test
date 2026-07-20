@@ -29,6 +29,9 @@
 #include <unistd.h>
 #include <wchar.h>
 
+#define SELF_SESSION_NAME sv_from_lstr("USERINPUT")
+#define SELF_USER_NAME sv_from_lstr("Administor")
+
 double getnowtime()
 {
 	struct timespec ts;
@@ -169,7 +172,7 @@ typedef struct {
 	bool is_logined;
 } Session_t;
 
-typedef struct {
+typedef struct Runtimedata_t {
 	DA_t messages;
 	DA_t users;
 	DA_t platforms;
@@ -181,7 +184,7 @@ typedef struct {
 	SVA_t input;
 
 	enum {DM_NORM, DM_SELECT, DM_FOCUS} dispaly_mode;
-	enum {IM_MSG, IM_REQUIRE} input_mode;
+	void (*msg_handle_callback)(struct Runtimedata_t*);
 
 	Session_t *main_session;
 	const char *hint_text;
@@ -193,6 +196,58 @@ typedef struct {
 	bool flag_exited;
 	bool flag_esc_confirm;
 } Runtimedata_t;
+
+User_t *user_get_by_uid(Runtimedata_t *rt, size_t uid)
+{
+	if (!rt) return NULL;
+	User_t *user = NULL;
+	for (size_t i = 0; i < rt->users.len; i++) {
+		user = da_get(&rt->users, i);
+		if (!user) continue;
+		if (user->uid == uid) break;
+		user = NULL;
+	}
+	return user;
+}
+
+User_t *user_get(Runtimedata_t *rt, SV_t name)
+{
+	if (!rt) return NULL;
+	User_t *user = NULL;
+	for (size_t i = 0; i < rt->users.len; i++) {
+		user = da_get(&rt->users, i);
+		if (!user) continue;
+		if (sv_cmp(sv_from_sva(&user->name), name)) break;
+		user = NULL;
+	}
+	return user;
+}
+
+User_t *user_create(Runtimedata_t *rt, SV_t name)
+{
+	if (!rt) return NULL;
+	if (user_get(rt, name)) return NULL;
+	User_t *user = NULL;
+	size_t len = rt->users.len;
+	da_append(&rt->users, &(User_t){
+		  .uid = len,
+		  .reg_time = getnowtime(),
+		  .type = UT_NORM,
+		  });
+	user = da_get(&rt->users, len);
+	if (!user) return NULL;
+	sva_from_sv(&user->name, name);
+	return user;
+}
+
+void user_free(void *ptr)
+{
+	if (!ptr) return;
+	User_t *user = ptr;
+	sva_free(&user->name);
+	sva_free(&user->passwd);
+	sva_free(&user->note);
+}
 
 Session_t *session_get_by_fd_id(Runtimedata_t *rt, size_t fd_id)
 {
@@ -265,56 +320,35 @@ void session_free(void *ptr)
 	sva_free(&session->ua);
 }
 
-User_t *user_get_by_uid(Runtimedata_t *rt, size_t uid)
+Session_t *session_login(Runtimedata_t *rt, Session_t *session, SV_t username, SV_t passwd)
 {
-	if (!rt) return NULL;
-	User_t *user = NULL;
-	for (size_t i = 0; i < rt->users.len; i++) {
-		user = da_get(&rt->users, i);
-		if (!user) continue;
-		if (user->uid == uid) break;
-		user = NULL;
-	}
-	return user;
+	if (!rt || !session) return NULL;
+	size_t session_id = (session-(Session_t*)rt->sessions.ptr);
+	do {
+		if (session->is_logined) break;
+		session->is_logined = -1;
+		User_t *u = user_get(rt, username);
+		if (!u) break;
+		if (!sv_cmp(sv_from_sva(&u->passwd), passwd)) break;
+		session->is_logined = true;
+		session->uid = u->uid;
+		sva_sprintfcat(&rt->logs, "[会话%zu]登录到:\n'%.*s'\n",
+			       session_id, (int)username.len, username.p);
+		return session;
+	}while (0);
+	sva_sprintfcat(&rt->logs, "[会话%zu]登录失败\n", session_id);
+	return NULL;
 }
 
-User_t *user_get(Runtimedata_t *rt, SV_t name)
+void session_logout(Runtimedata_t *rt, Session_t *session)
 {
-	if (!rt) return NULL;
-	User_t *user = NULL;
-	for (size_t i = 0; i < rt->users.len; i++) {
-		user = da_get(&rt->users, i);
-		if (!user) continue;
-		if (sv_cmp(sv_from_sva(&user->name), name)) break;
-		user = NULL;
-	}
-	return user;
-}
-
-User_t *user_create(Runtimedata_t *rt, SV_t name)
-{
-	if (!rt) return NULL;
-	if (user_get(rt, name)) return NULL;
-	User_t *user = NULL;
-	size_t len = rt->users.len;
-	da_append(&rt->users, &(User_t){
-		  .uid = len,
-		  .reg_time = getnowtime(),
-		  .type = UT_NORM,
-		  });
-	user = da_get(&rt->users, len);
-	if (!user) return NULL;
-	sva_from_sv(&user->name, name);
-	return user;
-}
-
-void user_free(void *ptr)
-{
-	if (!ptr) return;
-	User_t *user = ptr;
-	sva_free(&user->name);
-	sva_free(&user->passwd);
-	sva_free(&user->note);
+	if (!session) return;
+	const size_t session_id = (session-(Session_t*)rt->sessions.ptr);
+	if (session->is_logined)
+		sva_sprintfcat(&rt->logs, "[会话%zu]登出\n", session_id);
+	session->uid = -1;
+	session->is_logined = false;
+	return;
 }
 
 Messages_t *message_get(Runtimedata_t *rt, size_t mid)
@@ -333,7 +367,7 @@ Messages_t *message_get(Runtimedata_t *rt, size_t mid)
 
 Messages_t *message_create(Runtimedata_t *rt, Session_t *session, SV_t content)
 {
-	if (!rt || !session) return NULL;
+	if (!rt || !session || !content.p || !content.len) return NULL;
 	if (!session->is_logined) return NULL;
 	User_t *user = user_get_by_uid(rt, session->uid);
 	if (!user) return NULL;
@@ -349,6 +383,10 @@ Messages_t *message_create(Runtimedata_t *rt, Session_t *session, SV_t content)
 	if (!new_msg) return NULL;
 	sva_from_sv(&new_msg->content, content);
 	rt->flag_refresh_msgs = true;
+
+	// TODO: 实现多端的消息协议同步
+	// send_to_all(rt.fd, rt.input.p, rt.input.len,
+	// 	    rt.fds.ptr, rt.fds.len);
 	return new_msg;
 }
 
@@ -409,11 +447,12 @@ bool redraw(Runtimedata_t *rt)
 		"\e[0;30;43m",
 	};
 	// [2026-07-18 04:03:00] -> len() == 21
-	const int timewidth = 23;
-	const int userwidth = 9;
-	const int logwidth = 18;
-	const int dotwidth = 3;
-	const int msgheigh = 3;
+	const int timewidth = 23;   /* 消息栏左侧消息长度 */
+	const int userwidth = 9;    /* 显示用户名宽度 */
+	const int dotwidth = 3;     /* 分隔空白宽度 */
+	const int logwidth = 18;    /* 日志区宽度 */
+	const int msgheigh = 3;     /* 消息框高度 */
+	const int userheigh = 4;    /* 日志区信息量上方用户信息高度 */
 	int col = 0, row = 0;
 	col = get_winsize_col();
 	row = get_winsize_row();
@@ -445,7 +484,6 @@ bool redraw(Runtimedata_t *rt)
 		.y = (row-msgheigh)/5,
 		.width = (col-logwidth)*3/5,
 		.heigh = (row-msgheigh)*3/5,
-		.focus = -1,
 		.follow_end = false,
 		.color_code = "\e[0;37;44m",
 		.no_auto_fflush = true,
@@ -454,7 +492,8 @@ bool redraw(Runtimedata_t *rt)
 		win_focus.focus = 1;
 		print_in_box(win_focus, "局域网聊天室（暂无消息）");
 	}
-	char buf[124];
+	SVA_t buf = {};
+	sva_adjust_minimun(&buf, 124);
 	size_t idx = (int)rt->messages.len>=(row-msgheigh)?rt->messages.len-(row-msgheigh):0;
 	if (rt->dispaly_mode == DM_SELECT) {
 		idx = rt->msg_select > (size_t)row/2 ? rt->msg_select - row/2 : 0;
@@ -473,8 +512,8 @@ bool redraw(Runtimedata_t *rt)
 		time_t p = msg->timestamp;
 		struct tm tm_info;
 		localtime_r(&p, &tm_info);
-		strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_info);
-		printf("\e[0m\e[%zu;0H[%s]", j+1, buf);
+		strftime(buf.p, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_info);
+		printf("\e[0m\e[%zu;0H[%s]", j+1, buf.p);
 
 		print_in_box(win_user, user->name.p);
 		if (print_in_box(win_msg, msg->content.p)) printf("\e[0m...");
@@ -491,26 +530,57 @@ bool redraw(Runtimedata_t *rt)
 		     .x = col - logwidth+1,
 		     .y = 1,
 		     .width = logwidth,
-		     .heigh = row-msgheigh,
-		     .focus = -1,
+		     .heigh = row-userheigh-msgheigh,
 		     .color_code = "\e[0;30;44m",
 		     .follow_end = true,
 		     .no_auto_fflush = true,
 		     }, rt->logs.p);
+	/* 用户状态栏 */
+	User_t *u = NULL;
+	if (rt->main_session->is_logined && (u = user_get_by_uid(rt, rt->main_session->uid))) {
+		char buf_strtime[124] = "";
+		time_t p = u->reg_time;
+		struct tm tm_info;
+		localtime_r(&p, &tm_info);
+		strftime(buf_strtime, sizeof(buf), "%Y-%m-%d", &tm_info);
+		static const char *status[] = {
+			"UT_BAN", "UT_VISIT", "UT_NORM", "UT_ADMIN",
+		};
+		sva_sprintf(&buf, "|[%.*s]\n|(%s)\n|ST:%s",
+			    (int)u->name.len, u->name.p, buf_strtime,
+			    status[u->type%countof(status)]);
+	} else {
+		sva_sprintf(&buf, "|{尚未登录}");
+	}
+	print_in_box((str_window_t){
+		     .x = col - logwidth+1,
+		     .y = row-userheigh-msgheigh+1,
+		     .width = logwidth,
+		     .heigh = userheigh,
+		     .focus = 1,
+		     .color_code = "\e[0;30;44m",
+		     .follow_end = true,
+		     .no_auto_fflush = true,
+		     }, buf.p);
 	/* 状态栏 */
-	sprintf(buf, "|现在线数:%zu\n|ESC发消息:%s\n|M:%d, SEL:%zu",
-		rt->fds.len, rt->flag_esc_confirm?"true":"false",
-		rt->dispaly_mode, rt->msg_select);
+	sva_sprintf(&buf, "|现在线数:%zu\n|ESC发消息:%s\n|M:%d, SEL:%zu",
+		    rt->fds.len, rt->flag_esc_confirm?"true":"false",
+		    rt->dispaly_mode, rt->msg_select);
 	print_in_box((str_window_t){
 		     .x = col-logwidth+1,
 		     .y = row-msgheigh+1,
 		     .width = logwidth,
 		     .heigh = msgheigh,
-		     .focus = -1,
 		     .color_code = "\e[0;37;44m",
 		     .no_auto_fflush = true,
-		     }, buf);
+		     }, buf.p);
+	sva_free(&buf);
 	/* 输入框 */
+	static const char *hint_texts[] = {
+		[DM_NORM] = "请输入消息：",
+		[DM_SELECT] = "（选择模式,`/`以输入命令,`q`退出）",
+		[DM_FOCUS] = "（具体信息查看,`q`退出）",
+	};
 	print_in_box((str_window_t){
 		     .x = 1,
 		     .y = row - msgheigh+1,
@@ -520,8 +590,9 @@ bool redraw(Runtimedata_t *rt)
 		     .color_code = "\e[0;30;47m",
 		     .follow_end = true,
 		     .no_auto_fflush = true,
-		     }, rt->hint_text?rt->hint_text:\
-		     (rt->input.p&&rt->input.len?rt->input.p:"请输入消息："));
+		     }, rt->input.p&&rt->input.len?rt->input.p:\
+		     (rt->hint_text?rt->hint_text:\
+		      hint_texts[rt->dispaly_mode%countof(hint_texts)]));
 	fflush(stdout);
 	running = false;
 	return false;
@@ -567,7 +638,6 @@ int handle_fd(Runtimedata_t *rt, size_t i)
 
 	if (ret > 0) {
 		message_create(rt, session_get_by_fd_id(rt, i), sv_from_sva(&content));
-		send_to_all(fds[i].fd, content.p, content.len, fds, rt->fds.len);
 		sva_free(&content);
 		redraw(rt);
 		return i;
@@ -626,6 +696,36 @@ void *client(void *data)
 	return NULL;
 }
 
+/* 主系统登录 */
+void handle_login(Runtimedata_t *rt)
+{
+	if (!rt) return;
+	static enum { ST_NAME, ST_PASSWD } state;
+	if (rt->msg_handle_callback != handle_login) {
+		rt->hint_text = "（请输入要登录的账号名）";
+		rt->msg_handle_callback = handle_login;
+		state = ST_NAME;
+		return;
+	}
+	static User_t *u = NULL;
+	if (state == ST_NAME) {
+		u = user_get(rt, sv_from_sva(&rt->input));
+		state = ST_PASSWD;
+		rt->hint_text = "（请输入要登录的账号密码）";
+		return;
+	}
+	// if (state == ST_PASSWD)
+	if (u) {
+		rt->main_session = session_get(rt, SELF_SESSION_NAME, (SV_t){});
+		session_login(rt, rt->main_session, sv_from_sva(&u->name),
+			      sv_from_sva(&rt->input));
+	}
+	rt->hint_text = NULL;
+	rt->msg_handle_callback = NULL;
+	u = NULL;
+	state = ST_PASSWD;
+}
+
 int input_handle(Runtimedata_t *rt, int ret);
 
 /* 返回值大于0应continue,小于0应break,等于0发消息 */
@@ -645,7 +745,6 @@ int input_command(Runtimedata_t *rt)
 		rt->dispaly_mode = flag ? DM_NORM : DM_SELECT;
 		rt->msg_select = flag ? 0 : 1;
 		rt->flag_refresh_msgs = true;
-		if (!flag) rt->hint_text = "（选择模式：使用C-pnfb或命令移动选中项）";
 	} else if (strcmp(rt->input.p, "/show") == 0) {
 		if (rt->dispaly_mode == DM_SELECT && rt->msg_select > 0) {
 			rt->win.hide = 0;
@@ -656,6 +755,9 @@ int input_command(Runtimedata_t *rt)
 		rt->flag_refresh_msgs = true;
 		printf("\e[2J\e[H");
 	} else if (strcmp(rt->input.p, "/login") == 0) {
+		handle_login(rt);
+	} else if (strcmp(rt->input.p, "/logout") == 0) {
+		session_logout(rt, rt->main_session);
 	} else if (rt->dispaly_mode == DM_SELECT &&
 		   (strcmp(rt->input.p, "/s-h") == 0 || strcmp(rt->input.p, "/s-k") == 0)) {
 		input_handle(rt, 0x10);
@@ -681,7 +783,7 @@ int input_handle(Runtimedata_t *rt, int ret)
 	 *   c. q 退出选择、聚焦模式
 	 *   d. \n (选择模式且为/命令)||普通消息 -> 发信息
 	 * */
-	enum {K_NONE, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_EXIT} key_event = K_NONE;
+	enum {K_NONE, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_ENTER, K_EXIT, K_TYPE} key_event = K_NONE;
 
 	/* 转义处理WASD */
 	if (!rt->input.len && !rt->flag_esc_confirm && ret == '\e' && kbhit() > 0) {
@@ -693,85 +795,77 @@ int input_handle(Runtimedata_t *rt, int ret)
 			['D'] = K_LEFT,
 			['C'] = K_RIGHT,
 		};
-		if (ret > 0 && table[ret%countof(table)]) {
-			key_event = table[ret%countof(table)];
-		}
+		if (ret > 0) key_event = table[ret%countof(table)];
 	}
 
-	if (rt->dispaly_mode) {
+	if (rt->dispaly_mode == DM_NORM) {
 		if (key_event) {
 			rt->dispaly_mode = DM_SELECT;
 			rt->flag_refresh_msgs = true;
 		}
 	} else if (rt->input.len == 0 && ret != '/') {
 		static const char table[UINT8_MAX] = {
-			['W'] = K_UP,    ['w'] = K_UP,    ['K'] = K_UP,    ['k'] = K_UP,
-			['S'] = K_DOWN,  ['s'] = K_DOWN,  ['J'] = K_DOWN,  ['j'] = K_DOWN,
-			['A'] = K_LEFT,  ['a'] = K_LEFT,  ['H'] = K_LEFT,  ['h'] = K_LEFT,
-			['D'] = K_RIGHT, ['d'] = K_RIGHT, ['L'] = K_RIGHT, ['l'] = K_RIGHT,
+			['W'] = K_UP,    ['w'] = K_UP,    ['K'] = K_UP,    ['k'] = K_UP,    [0x10] = K_UP,
+			['S'] = K_DOWN,  ['s'] = K_DOWN,  ['J'] = K_DOWN,  ['j'] = K_DOWN,  [0x0e] = K_DOWN,
+			['A'] = K_LEFT,  ['a'] = K_LEFT,  ['H'] = K_LEFT,  ['h'] = K_LEFT,  [0x02] = K_LEFT,
+			['D'] = K_RIGHT, ['d'] = K_RIGHT, ['L'] = K_RIGHT, ['l'] = K_RIGHT, [0x06] = K_RIGHT,
 			['Q'] = K_EXIT,  ['q'] = K_EXIT,
+			['\n'] = K_ENTER,
 		};
 		if (table[ret%sizeof(table)]) key_event = table[ret%sizeof(table)];
+	} else {
+		key_event = K_TYPE;
 	}
 
 	if (rt->dispaly_mode == DM_FOCUS) {
 		switch (key_event) {
-		case K_UP: case K_LEFT: rt->win.hide--; break;
+		case K_UP:   case K_LEFT:  rt->win.hide--; break;
 		case K_DOWN: case K_RIGHT: rt->win.hide++; break;
 		case K_EXIT:
 			rt->dispaly_mode = DM_SELECT;
 			rt->flag_refresh_msgs = true;
-			rt->hint_text = NULL;
 			printf("\e[2J\e[H");
 			break;
-		default: rt->hint_text = "（使用HJKL移动）"; break;
+		default: break;
 		}
 		return 0;
 	} else if (rt->dispaly_mode == DM_SELECT) {
-		switch (ret) {
-		case 0x10:    /* ^P */
-		case 0x02:    /* ^B */
+		switch (key_event) {
+		case K_UP: case K_LEFT:
 			if (rt->msg_select > 1) rt->msg_select--;
 			else rt->msg_select = rt->messages.len;
 			rt->flag_refresh_msgs = true;
 			return 0;
 			break;
-		case 0x0e:    /* ^N */
-		case 0x06:    /* ^F */
+		case K_DOWN: case K_RIGHT:
 			if (rt->msg_select && rt->msg_select < rt->messages.len)
 				rt->msg_select++;
 			else rt->msg_select = 1;
 			rt->flag_refresh_msgs = true;
 			return 0;
 			break;
-		case '/':
+		case K_EXIT:
+			rt->dispaly_mode = DM_NORM;
+			rt->msg_select = 0;
+			rt->flag_refresh_msgs = true;
+			return 0;
+			break;
+		case K_ENTER:
+			sva_sprintf(&rt->input, "/show");
+			break;
+		case K_TYPE:
 			break;
 		default:
-			if (rt->input.p && rt->input.len && rt->input.p[0] == '/')
-				break;
-			if (ret == '\n') {
-				sva_sprintf(&rt->input, "/show");
-				break;
-			} else if (ret == 'q') {
-				rt->hint_text = NULL;
-				rt->dispaly_mode = DM_NORM;
-				rt->msg_select = 0;
-				rt->flag_refresh_msgs = true;
-				return 0;
-			}
-			rt->hint_text = "（选择模式：使用C-pnfb或命令移动选中项）";
 			return 0;
 			break;
 		}
 	}
 
 	if (rt->flag_esc_confirm?ret=='\e':ret == '\n') {
-		if (!rt->input.p || !rt->input.len) return 0;
-		ret = 1;
-		if (rt->input.p[0] == '/' && (ret = input_command(rt)) < 0) {
-			return ret;
+		if (rt->input.p && rt->input.len && rt->input.p[0] == '/') {
+			return input_command(rt);
 		}
-		return ret;
+		return 1;
 	}
 	if (ret == 127) {
 		if (!rt->input.p || !rt->input.len) return 0;
@@ -789,7 +883,6 @@ int input_handle(Runtimedata_t *rt, int ret)
 		return 0;
 	}
 	if (ret >= 0) {
-		if (rt->hint_text) rt->hint_text = NULL;
 		sva_sprintfcat(&rt->input, "%c", ret);
 		while (kbhit()) sva_sprintfcat(&rt->input, "%c", _getch());
 		return 0;
@@ -826,13 +919,12 @@ int main(int argc, const char *argv[])
 	};
 	sva_sprintfcat(&rt.logs, "这里是日志区\n");
 	do {
-		User_t *u = user_create(&rt, sv_from_lstr("Administor"));
+		User_t *u = user_create(&rt, SELF_USER_NAME);
 		if (u) u->type = UT_ADMIN;
 		da_append(&rt.fds, &(struct pollfd){.fd = rt.fd, .events = POLLIN});
-		rt.main_session = session_attach(&rt, get_fd_id(&rt, fd), sv_from_lstr("USERINPUT"), (SV_t){});
+		rt.main_session = session_attach(&rt, get_fd_id(&rt, fd), SELF_SESSION_NAME, (SV_t){});
 		if (rt.main_session && u) {
-			rt.main_session->uid = u->uid;
-			rt.main_session->is_logined = true;
+			session_login(&rt, rt.main_session, sv_from_sva(&u->name), sv_from_sva(&u->passwd));
 		}
 		u = user_create(&rt, sv_from_lstr("Visitor"));
 		if (u) u->type = UT_VISIT;
@@ -845,19 +937,18 @@ int main(int argc, const char *argv[])
 	setlocale(LC_ALL, "");
 	printf(/* "\033[?25l" */ "\e[2J");
 	while (!rt.flag_exited) {
+		if (rt.input.len && rt.input.len >= rt.input.capacity)
+			sva_double(&rt.input);
 		redraw(&rt);
 		int ret = _getch();
-		if ((ret = input_handle(&rt, ret)) < 0) {
-			break;
-		} else if (ret == 1) {
-			if (rt.input_mode == IM_MSG) {
-				message_create(&rt, rt.main_session, sv_from_sva(&rt.input));
-				send_to_all(rt.fd, rt.input.p, rt.input.len,
-					    rt.fds.ptr, rt.fds.len);
-			} else if (rt.input_mode == IM_REQUIRE)
-			sva_free(&rt.input);
-		}
-		if (rt.input.len && rt.input.len >= rt.input.capacity) sva_double(&rt.input);
+		if ((ret = input_handle(&rt, ret)) < 0) break;
+		else if (ret == 0) continue;
+
+		if (rt.hint_text) rt.hint_text = NULL;
+		if (rt.msg_handle_callback)
+			rt.msg_handle_callback(&rt);
+		else message_create(&rt, rt.main_session, sv_from_sva(&rt.input));
+		sva_free(&rt.input);
 	}
 	rt.flag_exited = 1;
 	printf("\e[%d;0H\n正在退出。。。\n", get_winsize_row());

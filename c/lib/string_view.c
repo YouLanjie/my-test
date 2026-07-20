@@ -65,6 +65,8 @@ void sv_trim_left_by_type(SV_t *s, int (*istype)(int c))
 
 bool sv_cmp(SV_t s1, SV_t s2)
 {
+	if (memcmp(&s1, &s2, sizeof(s1)) == 0) return true;
+	if (!s1.len && !s2.len) return true;
 	if (!s1.p || !s2.p) return false;
 	if (s1.len != s2.len) return false;
 	if (s1.p == s2.p) return true;
