@@ -9,49 +9,98 @@
  */
 
 
-#include <stdio.h>
-#include <stddef.h>
+#include <ctype.h>
 #include <limits.h>
+#include <stdbool.h>
+#include <stdcountof.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
-char *i2b(unsigned long data, int bytes, char *buf, size_t buf_size)
+static bool flag_isatty = false;
+static const char *colors[] = {
+	"\e[0m",
+	"\e[1;31m",
+	"\e[1;32m",
+	"\e[1;33m",
+};
+
+static char *u8tbits(uint8_t data, char *buf, size_t buf_size)
 {
 	if (!buf || buf_size == 0) return NULL;
-	if (bytes <= 0 || bytes > (int)sizeof(data)) bytes = sizeof(data);
 
-	size_t bits = bytes * 8;
+	size_t bits = sizeof(data)*8;
 	if (bits >= buf_size) bits = buf_size - 1;  // 留1字节给'\0'
 
-	for (int i = 0; i < bits; ++i) {
-		unsigned long mask = 1UL << (bits - 1 - i);  // 1UL 保证至少 32/64 位
+	for (size_t i = 0; i < bits; ++i) {
+		unsigned long mask = 1 << (bits - i - 1);
 		buf[i] = (data & mask) ? '1' : '0';
 	}
 	buf[bits] = '\0';
 	return buf;
 }
 
-int print_bits(int ind, long data, int len)
+int print_bits(int ind, uint8_t ch)
 {
+	static int len_need = 0, len = 0;
+	static char wchar[10] = "";
 	char buf[65] = "";
-	printf("ch[\033[1;33m%3d\033[0m]: "
-	       "\033[1;32m0x\033[1;33m%02lx\033[0m: "
-	       "\033[1;32m0b\033[1;33m%s\033[0m",
-	       ind, data, i2b(data, len, buf, 65));
-	if (data >= '!' && data < CHAR_MAX)
-		printf("\t%c\n", (char)data);
-	else printf("\n");
+	printf("ch[%s%3d%s]: "
+	       "%s0x%s%02x%s: "
+	       "%s0b%s%s%s",
+	       colors[3], ind, colors[0],
+	       colors[2], colors[3], ch, colors[0],
+	       colors[2], colors[3], u8tbits(ch, buf, sizeof(buf)), colors[0]);
+
+	/* TODO: fix the clang-tidy report (in normal way):
+	 *   - `Access of the region with a tainted index that may be too large`
+	 * true solution unknow, but it disapper after adding this `for` loop */
+	for (int i = 0; i < INT8_MAX; i++);
+
+	if (ch < INT8_MAX && isprint(ch)) {
+		printf("\t%s%c%s", isspace(ch)?"<SPACE>'":"", ch,
+		       isspace(ch)?"'":"");
+	} else if (ch & 0b10000000) {
+		wchar[len] = ch;
+		len++;
+		if (!len_need) {
+			for (int i = 0; ch & (0b10000000>>i); i++) len_need = i+1;
+			printf("\t<UTF8-CHAR-LEN=%d>", len_need);
+		}
+		if (len_need>1 && len == len_need) {
+			printf("\t%s", wchar);
+			memset(wchar, 0, sizeof(wchar));
+		}
+		if (len >= len_need) {
+			len_need = 0;
+			len = 0;
+		}
+	} else {
+		if (len_need) printf("\t<UTF8-DECODE-ERROR>");
+		len_need = 0;
+		len = 0;
+	}
+	printf("\n");
 	return 0;
 }
 
 int main(void)
 {
-	int len = 256;
-	char ch[len];
+	char ch[2048];
 	printf("请输入:\n");
-	fgets(ch, len, stdin);
-	for (int i = 0; i < len && ch[i] != 0; ++i) {
-		print_bits(i, ch[i], 1);
+	flag_isatty = isatty(STDIN_FILENO);
+	if (!flag_isatty) {
+		for (size_t i = 0; i < countof(colors); i++) colors[i] = "";
 	}
+	do  {
+		if (!fgets(ch, sizeof(ch), stdin)) break;
+		for (size_t i = 0; i < sizeof(ch) && ch[i] != 0; ++i) {
+			print_bits(i, ch[i]);
+		}
+	} while (!flag_isatty);
 	return 0;
 }
-
 
