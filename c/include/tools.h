@@ -31,7 +31,6 @@
 #ifdef __linux__
 #include <sys/ioctl.h>
 #include <wait.h>
-#include <ncurses.h>
 #endif
 
 #ifdef _WIN32

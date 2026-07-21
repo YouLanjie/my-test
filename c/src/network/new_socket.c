@@ -39,6 +39,16 @@ double getnowtime()
 	return ts.tv_sec + ts.tv_nsec/1e9;
 }
 
+char *timestamp2str(double timestamp, char *buf, size_t bufsize, const char *fmt)
+{
+	if (!buf || !bufsize) return NULL;
+	time_t p = timestamp;
+	struct tm tm_info;
+	localtime_r(&p, &tm_info);
+	strftime(buf, bufsize, fmt?fmt:"%Y-%m-%d %H:%M:%S", &tm_info);
+	return buf;
+}
+
 SVA_t *get_ip_addr(SVA_t *dest, struct sockaddr_storage *remoteaddr, bool add_port)
 {
 	if (!dest || !remoteaddr) return NULL;
@@ -182,6 +192,7 @@ typedef struct Runtimedata_t {
 
 	SVA_t logs;
 	SVA_t input;
+	SVA_t share_buffer;
 
 	enum {DM_NORM, DM_SELECT, DM_FOCUS} dispaly_mode;
 	void (*msg_handle_callback)(struct Runtimedata_t*);
@@ -232,7 +243,7 @@ User_t *user_create(Runtimedata_t *rt, SV_t name)
 	da_append(&rt->users, &(User_t){
 		  .uid = len,
 		  .reg_time = getnowtime(),
-		  .type = UT_NORM,
+		  .type = UT_BAN,
 		  });
 	user = da_get(&rt->users, len);
 	if (!user) return NULL;
@@ -443,8 +454,8 @@ bool redraw(Runtimedata_t *rt)
 	running = true;
 
 	const char *colors[] = {
-		"\e[0;30;42m",
-		"\e[0;30;43m",
+		"\e[0;30;42m", "\e[0;30;43m", "\e[0;30;44m", "\e[0;30;46m", "\e[0;30;47m", "\e[0;30;41m", "\e[0;30;45m",
+		"\e[0;37;42m", "\e[0;37;43m", "\e[0;37;44m", "\e[0;37;45m", "\e[0;37;46m", "\e[0;37;41m",
 	};
 	// [2026-07-18 04:03:00] -> len() == 21
 	const int timewidth = 23;   /* 消息栏左侧消息长度 */
@@ -509,11 +520,7 @@ bool redraw(Runtimedata_t *rt)
 		win_user.y = win_msg.y = j+1;
 		win_user.color_code = win_msg.color_code = colors[(user->uid)%countof(colors)];
 
-		time_t p = msg->timestamp;
-		struct tm tm_info;
-		localtime_r(&p, &tm_info);
-		strftime(buf.p, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_info);
-		printf("\e[0m\e[%zu;0H[%s]", j+1, buf.p);
+		printf("\e[0m\e[%zu;0H[%s]", j+1, timestamp2str(msg->timestamp, buf.p, buf.capacity,NULL));
 
 		print_in_box(win_user, user->name.p);
 		if (print_in_box(win_msg, msg->content.p)) printf("\e[0m...");
@@ -521,8 +528,14 @@ bool redraw(Runtimedata_t *rt)
 	if (rt->dispaly_mode == DM_FOCUS) {
 		/* 居中大消息 */
 		win_focus.hide = rt->win.hide;
-		Messages_t *msg = da_get(&rt->messages, rt->msg_select-1);
-		print_in_box(win_focus, msg ? msg->content.p : "（未找到对应消息）");
+		const char *p = NULL;
+		if (rt->share_buffer.p && rt->share_buffer.len)
+			p = rt->share_buffer.p;
+		else if (rt->msg_select) {
+			Messages_t *msg = da_get(&rt->messages, rt->msg_select-1);
+			p = msg ? msg->content.p : "（未找到对应消息）";
+		} else p = "（这是什么？）";
+		print_in_box(win_focus, p);
 	}
 	rt->flag_refresh_msgs = false;
 	/* 日志 */
@@ -539,15 +552,12 @@ bool redraw(Runtimedata_t *rt)
 	User_t *u = NULL;
 	if (rt->main_session->is_logined && (u = user_get_by_uid(rt, rt->main_session->uid))) {
 		char buf_strtime[124] = "";
-		time_t p = u->reg_time;
-		struct tm tm_info;
-		localtime_r(&p, &tm_info);
-		strftime(buf_strtime, sizeof(buf), "%Y-%m-%d", &tm_info);
 		static const char *status[] = {
 			"UT_BAN", "UT_VISIT", "UT_NORM", "UT_ADMIN",
 		};
 		sva_sprintf(&buf, "|[%.*s]\n|(%s)\n|ST:%s",
-			    (int)u->name.len, u->name.p, buf_strtime,
+			    (int)u->name.len, u->name.p,
+			    timestamp2str(u->reg_time, buf_strtime, sizeof(buf_strtime), "%Y-%m-%d"),
 			    status[u->type%countof(status)]);
 	} else {
 		sva_sprintf(&buf, "|{尚未登录}");
@@ -696,10 +706,53 @@ void *client(void *data)
 	return NULL;
 }
 
+/* 主系统注册 */
+void handle_register(Runtimedata_t *rt)
+{
+	if (!rt) return;
+	if (rt->main_session && rt->main_session->is_logined) {
+		rt->hint_text = "（不能在登录状态注册账号）";
+		rt->msg_handle_callback = NULL;
+		return;
+	}
+
+	static enum { ST_NAME, ST_PASSWD } state;
+	if (rt->msg_handle_callback != handle_register) {
+		rt->hint_text = "（请输入要注册的账号名）";
+		rt->msg_handle_callback = handle_register;
+		state = ST_NAME;
+		return;
+	}
+	static User_t *u = NULL;
+	if (state == ST_NAME) {
+		if (!user_get(rt, sv_from_sva(&rt->input))) {
+			u = user_create(rt, sv_from_sva(&rt->input));
+			state = ST_PASSWD;
+			rt->hint_text = "（请输入要注册的账号密码）";
+			return;
+		}
+		sva_sprintfcat(&rt->logs, "注册失败，用户已存在\n");
+		u = NULL;
+	}
+	// if (state == ST_PASSWD)
+	if (u) {
+		sva_from_sv(&u->passwd, sv_from_sva(&rt->input));
+		rt->main_session = session_get(rt, SELF_SESSION_NAME, (SV_t){});
+		session_login(rt, rt->main_session, sv_from_sva(&u->name),
+			      sv_from_sva(&rt->input));
+	}
+	rt->hint_text = NULL;
+	rt->msg_handle_callback = NULL;
+	u = NULL;
+	state = ST_PASSWD;
+}
+
 /* 主系统登录 */
 void handle_login(Runtimedata_t *rt)
 {
 	if (!rt) return;
+	if (rt->main_session && rt->main_session->is_logined) return;
+
 	static enum { ST_NAME, ST_PASSWD } state;
 	if (rt->msg_handle_callback != handle_login) {
 		rt->hint_text = "（请输入要登录的账号名）";
@@ -726,49 +779,105 @@ void handle_login(Runtimedata_t *rt)
 	state = ST_PASSWD;
 }
 
-int input_handle(Runtimedata_t *rt, int ret);
-
 /* 返回值大于0应continue,小于0应break,等于0发消息 */
 int input_command(Runtimedata_t *rt)
 {
-	if (!rt || !rt->input.p || !rt->input.len) return -1;
+	if (!rt || !rt->input.p || rt->input.len < 2 || rt->input.p[0] != '/')
+		return -1;
 	int ret = 0;
-	if (strcmp(rt->input.p, "/exit") == 0 ||
-	    strcmp(rt->input.p, "/quit") == 0 ||
-	    strcmp(rt->input.p, "/q") == 0 ||
-	    strcmp(rt->input.p, "/leave") == 0) {
+
+#define CMD_LIST                                  \
+	CMD(exit,     "退出")                     \
+	CMD(quit,     "退出")                     \
+	CMD(q,        "退出")                     \
+	CMD(leave,    "退出")                     \
+	CMD(enter,    "切换是否使用回车确认消息") \
+	CMD(select,   "切换到选择模式")           \
+	CMD(show,     "(选择模式下)显示选中消息") \
+	CMD(help,     "显示此帮助")               \
+	CMD(clear,    "清屏")                     \
+	CMD(ls,       "列出用户列表")             \
+	CMD(reg,      "注册")                     \
+	CMD(login,    "登录")                     \
+	CMD(logout,   "登出")
+#define CMD(cmd, desc) #cmd,
+	static const char *cmd_str[] = {CMD_LIST};
+#undef CMD
+#define CMD(cmd, desc) "/"#cmd"\t - "desc"\n"
+	static const char *cmd_help =
+		"#########################\n"
+		"#       命令列表        #\n"
+		"#########################\n\n"
+		CMD_LIST;
+#undef CMD
+#define CMD(cmd, desc) CMD_##cmd,
+	enum {CMD_UNSET = -1, CMD_LIST} cmd_choice = CMD_UNSET;
+#undef CMD
+
+	for (size_t i = 0; i < countof(cmd_str); i++) {
+		if (strcmp(rt->input.p+1, cmd_str[i]) != 0) continue;
+		cmd_choice = i;
+		break;
+	}
+
+	switch (cmd_choice) {
+	case CMD_exit: case CMD_quit: case CMD_q: case CMD_leave:
 		ret = -1;
-	} else if (strcmp(rt->input.p, "/enter") == 0) {
+		break;
+	case CMD_enter:
 		rt->flag_esc_confirm = !rt->flag_esc_confirm;
-	} else if (strcmp(rt->input.p, "/select") == 0) {
+		break;
+	case CMD_clear:
+		rt->flag_refresh_msgs = true;
+		printf("\e[2J\e[H");
+		break;
+	case CMD_ls:
+		sva_sprintf(&rt->share_buffer, "#### 用户列表 ####\n\n共计%zu位用户\n\n", rt->users.len);
+		User_t *users = rt->users.ptr;
+		char buf[124] = "";
+		for (size_t i = 0; users && i < rt->users.len; i++) {
+			sva_sprintfcat(&rt->share_buffer, "- [%.*s] (%s)\n  -> \"%s\"\n\n",
+				       (int)users[i].name.len,
+				       users[i].name.p,
+				       timestamp2str(users[i].reg_time, buf, sizeof(buf), NULL),
+				       users[i].note.p&&users[i].note.len ? users[i].note.p : "「暂无备注」"
+				       );
+		}
+		rt->dispaly_mode = DM_FOCUS;
+		break;
+	case CMD_reg:
+		handle_register(rt);
+		break;
+	case CMD_login:
+		handle_login(rt);
+		break;
+	case CMD_logout:
+		session_logout(rt, rt->main_session);
+		break;
+	case CMD_UNSET:
+		rt->hint_text = "（非法的命令）请输入消息：";
+		break;
+	case CMD_help:
+		sva_from_cstr(&rt->share_buffer, cmd_help);
+		rt->dispaly_mode = DM_FOCUS;
+		break;
+	case CMD_select:
 		bool flag = rt->dispaly_mode == DM_SELECT;
 		rt->dispaly_mode = flag ? DM_NORM : DM_SELECT;
 		rt->msg_select = flag ? 0 : 1;
 		rt->flag_refresh_msgs = true;
-	} else if (strcmp(rt->input.p, "/show") == 0) {
+		break;
+	case CMD_show:
 		if (rt->dispaly_mode == DM_SELECT && rt->msg_select > 0) {
 			rt->win.hide = 0;
 			rt->dispaly_mode = DM_FOCUS;
 		}
 		rt->flag_refresh_msgs = true;
-	} else if (strcmp(rt->input.p, "/clear") == 0) {
-		rt->flag_refresh_msgs = true;
-		printf("\e[2J\e[H");
-	} else if (strcmp(rt->input.p, "/login") == 0) {
-		handle_login(rt);
-	} else if (strcmp(rt->input.p, "/logout") == 0) {
-		session_logout(rt, rt->main_session);
-	} else if (rt->dispaly_mode == DM_SELECT &&
-		   (strcmp(rt->input.p, "/s-h") == 0 || strcmp(rt->input.p, "/s-k") == 0)) {
-		input_handle(rt, 0x10);
-	} else if (rt->dispaly_mode == DM_SELECT &&
-		   (strcmp(rt->input.p, "/s-l") == 0 || strcmp(rt->input.p, "/s-j") == 0)) {
-		input_handle(rt, 0x0e);
-	} else {
-		rt->hint_text = "（非法的命令）请输入消息：";
+		break;
 	}
 	sva_clear(&rt->input);
 	return ret;
+#undef CMD_LIST
 }
 
 /* 输入处理（兼界面处理） */
@@ -822,8 +931,10 @@ int input_handle(Runtimedata_t *rt, int ret)
 		case K_UP:   case K_LEFT:  rt->win.hide--; break;
 		case K_DOWN: case K_RIGHT: rt->win.hide++; break;
 		case K_EXIT:
-			rt->dispaly_mode = DM_SELECT;
+			if (rt->msg_select) rt->dispaly_mode = DM_SELECT;
+			else rt->dispaly_mode = DM_NORM;
 			rt->flag_refresh_msgs = true;
+			sva_clear(&rt->share_buffer);
 			printf("\e[2J\e[H");
 			break;
 		default: break;
@@ -957,6 +1068,7 @@ int main(int argc, const char *argv[])
 	if (rt.fd >= 0) close(rt.fd);
 	sva_free(&rt.input);
 	sva_free(&rt.logs);
+	sva_free(&rt.share_buffer);
 	da_free(&rt.fds, close_fds);
 	da_free(&rt.platforms, NULL);
 	da_free(&rt.login_hist, NULL);

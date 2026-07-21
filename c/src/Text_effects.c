@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -44,7 +45,7 @@ int print()
 int color256()
 {
         int color_code = 0;
-	printf("color(256)(\\033[48;5;%%d):\n");
+	printf("color(256)(\\033[48;5;%%dm):\n");
 	for (color_code = 0; color_code < 256; color_code++) {
 		if (color_code >= 16 && (color_code - 16) % 6 == 0)
 			printf("\n");
@@ -54,15 +55,36 @@ int color256()
         return 0;
 }
 
+int color_rgb()
+{
+        int r = 0, g = 0, b = 0;
+	printf("color(rgb)(\\033[48;2;<R>;<G>;<B>m):\n");
+	for (r = 0; r < UINT8_MAX; r++) {
+		for (g = 0; g < UINT8_MAX; g++) {
+			printf("R%03d,G%03d:", r, g);
+			for (b = 0; b < UINT8_MAX; b++) {
+				printf("\033[48;2;%d;%d;%dm ",
+				       r, g, b);
+			}
+			printf("\033[0m\n");
+		}
+	}
+	printf("\n");
+        return 0;
+}
+
 int main(int argc, char *argv[])
 {
 	int ch = 0;
-	int flag_256 = 0;
-	while ((ch = getopt(argc, argv, "tch")) != -1) {	/* 获取参数 */
+	int flag_256 = 0, flag_rgb = 0;
+	while ((ch = getopt(argc, argv, "tcrh")) != -1) {	/* 获取参数 */
 		switch (ch) {
 		case '?':
 		case 'h':
-			printf("Usage: Text_effects [-t text+color] [-c 256color]\n");
+			printf("Usage: Text_effects [-tcr]\n"
+			       "    -t print text&color\n"
+			       "    -c 256 color\n"
+			       "    -r rgb color\n");
 			return 0;
 			break;
 		case 't':
@@ -71,12 +93,16 @@ int main(int argc, char *argv[])
 		case 'c':
 			flag_256 = 9;
 			break;
+		case 'r':
+			flag_rgb = 1;
+			break;
 		default:
 			break;
 		}
 	}
 	print();
 	if (flag_256) color256();
+	if (flag_rgb) color_rgb();
 	return 0;
 }
 
