@@ -87,7 +87,7 @@ int get_socket_fd(const char *node, int port, int mode)
 	const struct addrinfo hint = (struct addrinfo){
 		.ai_family = AF_UNSPEC,
 		.ai_socktype = SOCK_STREAM,
-		.ai_flags = (mode == 1 ? AI_PASSIVE : 0),
+		.ai_flags = (mode == 1 ? AI_PASSIVE : AI_PASSIVE),
 	};
 	struct addrinfo *res;
 
@@ -335,19 +335,25 @@ Session_t *session_login(Runtimedata_t *rt, Session_t *session, SV_t username, S
 {
 	if (!rt || !session) return NULL;
 	size_t session_id = (session-(Session_t*)rt->sessions.ptr);
+	int code = 0;
 	do {
 		if (session->is_logined) break;
-		session->is_logined = -1;
+		code++;
+		session->is_logined = false;
+		session->uid = -1;
 		User_t *u = user_get(rt, username);
 		if (!u) break;
+		code++;
 		if (!sv_cmp(sv_from_sva(&u->passwd), passwd)) break;
+		code++;
+		if (u->type == UT_BAN) break;
 		session->is_logined = true;
 		session->uid = u->uid;
 		sva_sprintfcat(&rt->logs, "[会话%zu]登录到:\n'%.*s'\n",
 			       session_id, (int)username.len, username.p);
 		return session;
 	}while (0);
-	sva_sprintfcat(&rt->logs, "[会话%zu]登录失败\n", session_id);
+	sva_sprintfcat(&rt->logs, "[会话%zu]登录失败(%d)\n", session_id, code);
 	return NULL;
 }
 
@@ -382,6 +388,10 @@ Messages_t *message_create(Runtimedata_t *rt, Session_t *session, SV_t content)
 	if (!session->is_logined) return NULL;
 	User_t *user = user_get_by_uid(rt, session->uid);
 	if (!user) return NULL;
+	if (user->type == UT_BAN || user->type == UT_VISIT) {
+		sva_sprintfcat(&rt->logs, "uid%zu无权限发消息\n", user->uid);
+		return NULL;
+	}
 
 	size_t mid = rt->messages.len;
 	while (message_get(rt, mid)) mid++;
@@ -553,9 +563,9 @@ bool redraw(Runtimedata_t *rt)
 	if (rt->main_session->is_logined && (u = user_get_by_uid(rt, rt->main_session->uid))) {
 		char buf_strtime[124] = "";
 		static const char *status[] = {
-			"UT_BAN", "UT_VISIT", "UT_NORM", "UT_ADMIN",
+			"BAN", "VISIT", "NORM", "ADMIN",
 		};
-		sva_sprintf(&buf, "|[%.*s]\n|(%s)\n|ST:%s",
+		sva_sprintf(&buf, "|[%.*s]\n|(%s)\n|ST:(%s)",
 			    (int)u->name.len, u->name.p,
 			    timestamp2str(u->reg_time, buf_strtime, sizeof(buf_strtime), "%Y-%m-%d"),
 			    status[u->type%countof(status)]);
@@ -573,8 +583,8 @@ bool redraw(Runtimedata_t *rt)
 		     .no_auto_fflush = true,
 		     }, buf.p);
 	/* 状态栏 */
-	sva_sprintf(&buf, "|现在线数:%zu\n|ESC发消息:%s\n|M:%d, SEL:%zu",
-		    rt->fds.len, rt->flag_esc_confirm?"true":"false",
+	sva_sprintf(&buf, "|在线:(%zu/%zu)\n|ESC发消息:%s\n|M:%d, SEL:%zu",
+		    rt->fds.len, rt->sessions.len, rt->flag_esc_confirm?"true":"false",
 		    rt->dispaly_mode, rt->msg_select);
 	print_in_box((str_window_t){
 		     .x = col-logwidth+1,
@@ -625,7 +635,7 @@ int handle_fd(Runtimedata_t *rt, size_t i)
 		da_append(&rt->fds, &(struct pollfd){.fd = newfd, .events = POLLIN});
 		SVA_t addr_str = {};
 		get_ip_addr(&addr_str, &remoteaddr, false);
-		session_attach(rt, i, sv_from_sva(&addr_str), (SV_t){});
+		session_attach(rt, rt->fds.len-1, sv_from_sva(&addr_str), (SV_t){});
 		get_ip_addr(&addr_str, &remoteaddr, true);
 		sva_sprintfcat(&rt->logs, "新连接: (%d) FROM\n'%s'\n",
 			       newfd, addr_str.p);
@@ -732,10 +742,10 @@ void handle_register(Runtimedata_t *rt)
 			return;
 		}
 		sva_sprintfcat(&rt->logs, "注册失败，用户已存在\n");
-		u = NULL;
 	}
 	// if (state == ST_PASSWD)
 	if (u) {
+		u->type = UT_NORM;
 		sva_from_sv(&u->passwd, sv_from_sva(&rt->input));
 		rt->main_session = session_get(rt, SELF_SESSION_NAME, (SV_t){});
 		session_login(rt, rt->main_session, sv_from_sva(&u->name),
@@ -751,7 +761,8 @@ void handle_register(Runtimedata_t *rt)
 void handle_login(Runtimedata_t *rt)
 {
 	if (!rt) return;
-	if (rt->main_session && rt->main_session->is_logined) return;
+	if (!rt->main_session) return;
+	if (rt->main_session->is_logined) return;
 
 	static enum { ST_NAME, ST_PASSWD } state;
 	if (rt->msg_handle_callback != handle_login) {
@@ -769,14 +780,13 @@ void handle_login(Runtimedata_t *rt)
 	}
 	// if (state == ST_PASSWD)
 	if (u) {
-		rt->main_session = session_get(rt, SELF_SESSION_NAME, (SV_t){});
 		session_login(rt, rt->main_session, sv_from_sva(&u->name),
 			      sv_from_sva(&rt->input));
 	}
 	rt->hint_text = NULL;
 	rt->msg_handle_callback = NULL;
+	state = ST_NAME;
 	u = NULL;
-	state = ST_PASSWD;
 }
 
 /* 返回值大于0应continue,小于0应break,等于0发消息 */
@@ -835,11 +845,13 @@ int input_command(Runtimedata_t *rt)
 		sva_sprintf(&rt->share_buffer, "#### 用户列表 ####\n\n共计%zu位用户\n\n", rt->users.len);
 		User_t *users = rt->users.ptr;
 		char buf[124] = "";
+		static const char *status[] = { "BAN", "VISIT", "NORM", "ADMIN", };
 		for (size_t i = 0; users && i < rt->users.len; i++) {
-			sva_sprintfcat(&rt->share_buffer, "- [%.*s] (%s)\n  -> \"%s\"\n\n",
+			sva_sprintfcat(&rt->share_buffer, "- [%.*s] (%s)\n  -> UID:%-3zu   TYPE:%s\n  -> \"%s\"\n\n",
 				       (int)users[i].name.len,
 				       users[i].name.p,
 				       timestamp2str(users[i].reg_time, buf, sizeof(buf), NULL),
+				       users[i].uid, status[users[i].type%countof(status)],
 				       users[i].note.p&&users[i].note.len ? users[i].note.p : "「暂无备注」"
 				       );
 		}
@@ -1008,7 +1020,8 @@ int main(int argc, const char *argv[])
 	int port = 9999;
 	int fd = -1;
 	int mode = 0;
-	if (argv[0][0] == 'c' || argv[0][0] == 'C') {
+	(void)argv;
+	if (argc > 1 && strcmp(argv[1], "-c") == 0) {
 		mode = 2;
 	} else {
 		mode = 1;
@@ -1034,9 +1047,6 @@ int main(int argc, const char *argv[])
 		if (u) u->type = UT_ADMIN;
 		da_append(&rt.fds, &(struct pollfd){.fd = rt.fd, .events = POLLIN});
 		rt.main_session = session_attach(&rt, get_fd_id(&rt, fd), SELF_SESSION_NAME, (SV_t){});
-		if (rt.main_session && u) {
-			session_login(&rt, rt.main_session, sv_from_sva(&u->name), sv_from_sva(&u->passwd));
-		}
 		u = user_create(&rt, sv_from_lstr("Visitor"));
 		if (u) u->type = UT_VISIT;
 	} while(0);
@@ -1063,7 +1073,7 @@ int main(int argc, const char *argv[])
 	}
 	rt.flag_exited = 1;
 	printf("\e[%d;0H\n正在退出。。。\n", get_winsize_row());
-	pthread_join(pid, NULL);
+	if (pid) pthread_join(pid, NULL);
 
 	if (rt.fd >= 0) close(rt.fd);
 	sva_free(&rt.input);
