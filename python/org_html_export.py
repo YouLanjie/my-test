@@ -3,10 +3,7 @@
 import argparse
 from pathlib import Path
 from pathlib import PurePosixPath
-import os
 import re
-import multiprocessing
-import time
 import orgreader2
 import pytools
 
@@ -125,11 +122,8 @@ class Sites:
         self.title = title
         self.args = args
         self.formatter = orgreader2.HtmlExportVisitor()
-    def process_sigal_page(self, index:int, running, finish_count, lock):
-        lock.acquire()
-        running.value += 1
-        lock.release()
-
+        self.finish_count = 0
+    def process_sigal_page(self, index:int):
         lastdir = Path(f"{self.dir_list[index-1]}.html") if index > 0 else None
         dirs = self.dir_list[index]
         nextdir = Path(f"{self.dir_list[index+1]}.html") if index+1 < len(self.dir_list) else None
@@ -149,17 +143,12 @@ class Sites:
             doc = orgreader2.Document(output.splitlines(),
                                       setting={"pygments_css":False,"mathjax_script":False})
             doc.setting["css_in_html"] = ""
-            lock.acquire()
-            finish_count.value += 1
-            lock.release()
+            self.finish_count += 1
             save_file(Path(f"{self.output_d}/{objname}.html"),
                       str(doc.accept(self.formatter)).\
                               replace("<img ", '<img data-fancybox="gallery" '),
-                      f"({finish_count.value}/{len(self.dir_list)})")
+                      f"({self.finish_count}/{len(self.dir_list)})")
         # print(output)
-        lock.acquire()
-        running.value -= 1
-        lock.release()
         return
 
 def main():
@@ -182,7 +171,7 @@ def main():
 
     if len(dir_list) > 1:
         print("INFO 创建首页")
-        output = get_output([calculate_relative(Path(f"{i}.html"), output_d)
+        output = get_output([pytools.calculate_relative(Path(f"{i}.html"), output_d)
                              for i in dir_list],
                             f"INDEX:{title}", title, None, args)
         if args.save_org or args.no_export:
@@ -199,16 +188,10 @@ def main():
         pytools.print_err("WARN 好像没有找到识别范围内文件呢喵")
     sites = Sites(dir_list, output_d, title, args)
     index = 0
-    running = multiprocessing.Value('i', 0)
-    finish_count = multiprocessing.Value('i', 0)
-    lock = multiprocessing.Lock()
-    max_pth = (os.cpu_count() or 4) / 2
+
     for index,_ in enumerate(dir_list):
-        multiprocessing.Process(target=sites.process_sigal_page,
-                                args=(index, running,finish_count,lock)).start()
+        sites.process_sigal_page(index)
         index+=1
-        while running.value > max_pth:
-            time.sleep(0.01)
 
 def parse_arguments() -> argparse.Namespace:
     """解释参数"""
