@@ -68,6 +68,7 @@ CFLAGS_t CFILEFLAGS[] = {
 
 	FLG("tests/libav_test.c", "avformat avcodec avutil swresample m"),
 	FLG("tests/try_iconv.c",  "iconv"),
+	FLG("tests/try_pcre.c",  "pcre2-8"),
 	FLG("tests/social.c",     "m"),
 	FLG("tests/input.c",      "m"),
 	FLG("tests/sin.c",        "m"),

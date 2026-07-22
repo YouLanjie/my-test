@@ -55,11 +55,6 @@ int print_bits(int ind, uint8_t ch)
 	       colors[2], colors[3], ch, colors[0],
 	       colors[2], colors[3], u8tbits(ch, buf, sizeof(buf)), colors[0]);
 
-	/* TODO: fix the clang-tidy report (in normal way):
-	 *   - `Access of the region with a tainted index that may be too large`
-	 * true solution unknow, but it disapper after adding this `for` loop */
-	for (int i = 0; i < INT8_MAX; i++);
-
 	if (ch < INT8_MAX && isprint(ch)) {
 		printf("\t%s%c%s", isspace(ch)?"<SPACE>'":"", ch,
 		       isspace(ch)?"'":"");
@@ -68,7 +63,10 @@ int print_bits(int ind, uint8_t ch)
 		len++;
 		if (!len_need) {
 			for (int i = 0; ch & (0b10000000>>i); i++) len_need = i+1;
+			if (len_need > 4) len_need = 1;
 			printf("\t<UTF8-CHAR-LEN=%d>", len_need);
+		} else if ((ch & 0b11000000) != 0b10000000) {
+			len_need = 1;
 		}
 		if (len_need>1 && len == len_need) {
 			printf("\t%s", wchar);
@@ -91,10 +89,10 @@ int main(void)
 {
 	char ch[2048];
 	printf("请输入:\n");
-	flag_isatty = isatty(STDIN_FILENO);
-	if (!flag_isatty) {
+	if (!isatty(STDOUT_FILENO)) {
 		for (size_t i = 0; i < countof(colors); i++) colors[i] = "";
 	}
+	flag_isatty = isatty(STDIN_FILENO);
 	do  {
 		if (!fgets(ch, sizeof(ch), stdin)) break;
 		for (size_t i = 0; i < sizeof(ch) && ch[i] != 0; ++i) {
