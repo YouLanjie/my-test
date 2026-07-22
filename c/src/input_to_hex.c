@@ -108,21 +108,24 @@ int main(int argc, char *argv[])
 	// for $(cat "$FILE"|input_to_hex -q|grep -E '^.{8,}$')
 	if (argc >= 2 && strcmp(argv[1], "-q") == 0) quiet = true;
 
-	char ch[2048];
-	printf("请输入:\n");
 	if (!isatty(STDOUT_FILENO)) {
 		for (size_t i = 0; i < countof(colors); i++) colors[i] = "";
 	}
+
+	char ch[2048];
+	size_t size = sizeof(ch);
 	flag_isatty = isatty(STDIN_FILENO);
+	if (flag_isatty) printf("请输入:\n");
 	do  {
 		if (flag_isatty) {
 			if (!fgets(ch, sizeof(ch), stdin)) break;
 		} else {
-			if (fread(ch, 1, sizeof(ch), stdin) <= 0) break;
+			if ((size = fread(ch, 1, sizeof(ch), stdin)) <= 0) break;
 		}
-		for (size_t i = 0; i < sizeof(ch) && (!flag_isatty||ch[i] != 0); ++i) {
+		for (size_t i = 0; i < size && (!flag_isatty||ch[i] != 0); ++i) {
 			print_bits(i, ch[i]);
 		}
+		if (size < sizeof(ch)) break;
 	} while (!flag_isatty);
 	if (quiet) printf("\n");
 	return 0;

@@ -93,6 +93,8 @@ int update(Process_t *proc_summary, Process_t *proc_list, int proc_len)
 	struct dirent *dp_item = NULL;
 	char path[PATH_MAX] = "";
 	Process_t proc = {0};
+	size_t minid;
+	int count = 0;
 	int idx = 0;
 	while ((dp_item = readdir(dp)) != NULL) {
 		if (dp_item->d_type != DT_DIR) continue;
@@ -112,17 +114,22 @@ int update(Process_t *proc_summary, Process_t *proc_list, int proc_len)
 		if (idx < proc_len) {
 			proc_list[idx] = proc;
 			idx++;
+			count++;    /* 统计有效数字 */
 			continue;
 		}
-		for (idx = 0; idx < proc_len; idx++) {
-			if (proc_list[idx].total >= proc.total) continue;
-			proc_list[idx] = proc;
-			break;
+
+		/* 找出最小值 */
+		for (idx = 0, minid = 0; idx < proc_len; idx++) {
+			if (proc_list[idx].total < proc_list[minid].total)
+				minid = idx;
 		}
+		/* 取代最小值 */
+		if (proc_list[minid].total < proc.total)
+			proc_list[minid] = proc;
 		idx = proc_len;
 	}
 	closedir(dp);
-	return 0;
+	return count;
 }
 
 int proc_cmp(const void *p1, const void *p2)
@@ -219,9 +226,10 @@ int monitor()
 
 int main(int argc, char *argv[])
 {
+	size_t len = 20;
 	int ch = 0;
 	bool flg_once = false;
-	while ((ch = getopt(argc, argv, "hp")) != -1) {
+	while ((ch = getopt(argc, argv, "hpt:")) != -1) {
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -231,17 +239,20 @@ int main(int argc, char *argv[])
 		case 'p':
 			flg_once = true;
 			break;
+		case 't':
+			sscanf(optarg, "%zu", &len);
+			break;
 		}
 	}
 	if (!flg_once) return monitor();
 
-	const size_t len = 20;
+	if (len == 0 || len > 2000) len = 2000;
 	Process_t proc_summary = {0};
 	Process_t proc_list[len];
 	struct sysinfo info;
 	sysinfo(&info);
 	const double total_mem = (info.totalram+info.totalswap)/1024.;
-	update(&proc_summary, proc_list, countof(proc_list));
+	len = update(&proc_summary, proc_list, countof(proc_list));
 	qsort(proc_list, countof(proc_list), sizeof(proc_list[0]), proc_cmp);
 
 	printf("Top %ld:\n", len);
