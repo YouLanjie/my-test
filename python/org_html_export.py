@@ -127,7 +127,7 @@ class Sites:
         lastdir = Path(f"{self.dir_list[index-1]}.html") if index > 0 else None
         dirs = self.dir_list[index]
         nextdir = Path(f"{self.dir_list[index+1]}.html") if index+1 < len(self.dir_list) else None
-        file_list = [pytools.calculate_relative3(i, self.output_d)
+        file_list = [pytools.calculate_relative2(i, self.output_d)
                 for i in dirs.iterdir()
                 if i.is_file() and self.pattern.match(i.name)]
         file_list = natsort.natsorted(file_list, key=lambda x:get_sort_key(x.name))
@@ -171,7 +171,7 @@ def main():
 
     if len(dir_list) > 1:
         print("INFO 创建首页")
-        output = get_output([pytools.calculate_relative(Path(f"{i}.html"), output_d)
+        output = get_output([pytools.calculate_relative2(Path(f"{i}.html"), output_d)
                              for i in dir_list],
                             f"INDEX:{title}", title, None, args)
         if args.save_org or args.no_export:
