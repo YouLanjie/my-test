@@ -60,7 +60,10 @@ def get_str_in_width(text:str, width:int, fill:str=' ', align:str="<c>"):
     return ret_text
 
 def calculate_relative(path_to:Path, path_from:Path) -> Path:
-    """计算path_to相对于path_from的相对路径"""
+    """
+    计算path_to相对于path_from的相对路径
+    TODO: 考虑使用os.path.relpath(target, start)作为替代
+    """
     p1 = path_to
     p2 = path_from
     p1p = [p1.resolve()] + list(p1.resolve().parents)
