@@ -51,7 +51,7 @@ ${fancybox}
 
 ${nav_h}
 ${tree}
-* ${subtitle}
+${subtitle_heading}
 ${filelist}
 ${nav_t}
 """)
@@ -95,11 +95,17 @@ ${nav_t}
     def len(self) -> int:
         """计算子节点总数"""
         l = 0
-        if len(self.filelist) > 0:
+        if len(self.filelist)+len(self.tree) > 0:
             l = 1
         for i in self.tree:
             l += i.len()
         return l
+    def count(self) -> int:
+        """计算子节点拥有的文件总数"""
+        c = len(self.filelist)
+        for i in self.tree:
+            c += i.count()
+        return c
     def save_file(self, f:Path, s:str, num:int=0, total:int=0):
         """保存文件"""
         progress = ""
@@ -107,14 +113,14 @@ ${nav_t}
             progress = f"({num}/{total})"
         name = f.name
         if len(name) > 15:
-            name = name[:5]+"..."+name[-6:]
+            name = name[:5]+"..."+name[-7:]
         action = "保存"
         if f.exists():
             if not f.is_file():
                 pytools.print_err(f"ERROR 目标输出是已存在文件夹 - {f}")
                 return
             action = "覆盖"
-        print(f"INFO {action}文件{progress} - {name}({self.name})")
+        print(f"INFO {action}文件{progress} - {name} ({self.name})")
         f.write_text(s, encoding="utf8")
     def get_tree_text(self, is_top=False) -> list[str]:
         """生成目录树文本"""
@@ -123,9 +129,10 @@ ${nav_t}
             tree = i.get_tree_text()
             if tree:
                 s += tree
-        s = ["  "+i for i in s]
-        if len(self.filelist) > 0 and not is_top:
-            s = [f"- [[{self._proc_name(self.output_f)}][{safety_name(self.name.name)}]]"]+s
+        if len(self.filelist)+len(self.tree) > 0 and not is_top:
+            s = ["  "+i for i in s]
+            url = self._proc_name(self.output_f)
+            s = [f"- [[{url}][{safety_name(self.name.name)}]] ({self.count()})"]+s
         return s
     def get_navigation_text(self, prevp:Node|None, nextp:Node|None) -> str:
         """生成导航栏文本"""
@@ -150,10 +157,11 @@ ${nav_t}
         li = []
         for i in self.filelist:
             pattern = r".*\.(?:"+ "|".join(VID_EXTS) +r")"
-            if not re.match(pattern, i.name):
+            if not re.match(pattern, i.name, re.I):
                 li.append(f"- [[{self._proc_name(i)}]]")
                 continue
             prefix = "./" if not self._proc_name(i).startswith("/") else "file://"
+            i = pytools.calculate_relative3(i, self.output_d)
             i = PurePosixPath(i)
             li.append("-\n  #+begin_export html\n"
                       f"<video controls src={repr(prefix+str(i))} data-fancybox=\"gallery\">"
@@ -180,6 +188,7 @@ ${nav_t}
                 "up":"../", "home":"./", "css_file":"",
                 "navigation":"", "nav_h":"", "nav_t":"",
                 "tree":"", "filelist":"",
+                "subtitle_heading":"",
                 "fancybox":""}
         for k,v in args.items():
             data[k] = v
@@ -195,6 +204,8 @@ ${nav_t}
             data["nav_h"] = "* Header\n" + data["navigation"]
             data["nav_t"] = "* Tail\n" + data["navigation"]
         data["filelist"] = self.get_filelist_text(data.get("split"))
+        if data["filelist"]:
+            data["subtitle_heading"] = f"* {data["subtitle"]}"
         return self.template.safe_substitute(data)
     def dump2html(self, args:dict,
                   done=0, total=0):
