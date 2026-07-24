@@ -36,6 +36,22 @@ def safety_name(s:str)->str:
     """对中括号加上转义"""
     return re.sub(r"([][])", r"\\\1", s)
 
+def cut_name(s:str)->str:
+    """将长名字限制在15字符内"""
+    if len(s) > 15:
+        s = s[:5]+"..."+s[-7:]
+    return s
+
+def any2int(var):
+    """确定类型为int"""
+    if isinstance(var, int):
+        return var
+    try:
+        var = int(str(var))
+    except ValueError:
+        var = 0
+    return var
+
 class Node:
     """节点"""
     template = Template(
@@ -111,9 +127,7 @@ ${nav_t}
         progress = ""
         if num > 0 and total > 0:
             progress = f"({num}/{total})"
-        name = f.name
-        if len(name) > 15:
-            name = name[:5]+"..."+name[-7:]
+        name = cut_name(f.name)
         action = "保存"
         if f.exists():
             if not f.is_file():
@@ -122,18 +136,24 @@ ${nav_t}
             action = "覆盖"
         print(f"INFO {action}文件{progress} - {name} ({self.name})")
         f.write_text(s, encoding="utf8")
-    def get_tree_text(self, is_top=False) -> list[str]:
-        """生成目录树文本"""
-        s = []
+    def get_tree_text(self, split:int|str|None = 0) -> list[str]:
+        """生成子目录文本"""
+        li = []
         for i in self.tree:
-            tree = i.get_tree_text()
-            if tree:
-                s += tree
-        if len(self.filelist)+len(self.tree) > 0 and not is_top:
-            s = ["  "+i for i in s]
-            url = self._proc_name(self.output_f)
-            s = [f"- [[{url}][{safety_name(self.name.name)}]] ({self.count()})"]+s
-        return s
+            if len(i.filelist)+len(i.tree) <= 0:
+                continue
+            url = self._proc_name(i.output_f)
+            li += [f"- [[{url}][{safety_name(i.name.name)}]] ({i.count()})"]
+
+        split = any2int(split)
+        if split > 0:
+            nl = []
+            for index,item in enumerate(li):
+                if index % split == 0:
+                    nl.append(f"** {index+1}-{index+10}")
+                nl.append(item)
+            li = nl
+        return li
     def get_navigation_text(self, prevp:Node|None, nextp:Node|None) -> str:
         """生成导航栏文本"""
         if not (prevp or nextp or len(self.filelist)!=0):
@@ -169,11 +189,7 @@ ${nav_t}
                       f"<a href={repr(prefix+str(i))}>原文件</a>\n"
                       "#+end_export")
 
-        if not isinstance(split, int):
-            try:
-                split = int(str(split))
-            except ValueError:
-                split = 0
+        split = any2int(split)
         if split > 0:
             nl = []
             for index,item in enumerate(li):
@@ -196,9 +212,9 @@ ${nav_t}
         if self.father:
             data["up"] = self._proc_name(self.father.output_f)
         data["home"] = self._proc_name(self.root.output_f)
-        data["tree"] = "\n".join(self.get_tree_text(True))
+        data["tree"] = "\n".join(self.get_tree_text(data.get("split")))
         if data["tree"]:
-            data["tree"] = f"* Tree of {data["subtitle"]}\n"+data["tree"]
+            data["tree"] = f"* Pages in '{data["subtitle"]}'\n"+data["tree"]
         data["navigation"] = self.get_navigation_text(prevp, nextp)
         if data["navigation"]:
             data["nav_h"] = "* Header\n" + data["navigation"]
