@@ -63,7 +63,7 @@ ${fancybox}
 #+HTML_HEAD: <link rel='stylesheet' type='text/css' href='${css_file}'/>
 #+HTML_LINK_UP: ${up}
 #+HTML_LINK_HOME: ${home}
-#+HTML_HEAD: <style>li{margin: 0px}</style>
+#+HTML_HEAD: <style>li{margin: 0px} img{display: block}</style>
 
 ${nav_h}
 ${tree}
@@ -154,8 +154,9 @@ ${nav_t}
                 nl.append(item)
             li = nl
         return li
-    def get_navigation_text(self, prevp:Node|None, nextp:Node|None) -> str:
+    def get_navigation_text(self, prevp:"Node|None", nextp:"Node|None") -> str:
         """生成导航栏文本"""
+        # Py313暂不支持直接用`Node`，这兼容性搞得。。。
         if not (prevp or nextp or len(self.filelist)!=0):
             return ""
         data = {"prev":"", "hint_prev":"上一页",
@@ -198,7 +199,7 @@ ${nav_t}
                 nl.append(item)
             li = nl
         return "\n".join(li)
-    def gen_page(self, args:dict, prevp:Node|None=None, nextp:Node|None=None) -> str:
+    def gen_page(self, args:dict, prevp:"Node|None"=None, nextp:"Node|None"=None) -> str:
         """生成单页的html文本"""
         data = {"title":"", "subtitle":"",
                 "up":"../", "home":"./", "css_file":"",
