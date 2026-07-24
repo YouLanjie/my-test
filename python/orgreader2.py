@@ -173,16 +173,20 @@ class Strings:
                 if not alt:
                     alt = level
             elif not match.group(2).startswith("#"):
+                possible_file = link.startswith(("./", "../", "/"))
                 # 非章节名且非#开头
                 file_path = re.match(r"((?:file:)?)(.*)",link)
                 file_path = file_path.group(2) if file_path else link
                 base_path=Path(self.upward.document.setting["file_name"]).parent if\
                         self.upward.document.setting["file_name"] else Path()
-                if not link.startswith("./") and not Path(file_path).is_file():
+                if not possible_file and not Path(file_path).is_file():
                     self.log(f"无法解决的链接: {link}", "ERROR")
                 elif self.upward.document.setting.get("verbose_msg")\
-                        and link.startswith("./") and not (base_path/file_path).is_file():
+                        and possible_file and not (base_path/file_path).is_file():
                     self.log(f"无法找到链接文件: {link}", "WARN")
+                elif possible_file and Path(file_path).is_file():
+                    # 特别的，对已存在文件路径的`#`转义处理
+                    link = link.replace("#", "%23")
                 # 对于 `%#?` 期望自行转义
                 for j in "[]\"\\ |<>\t":
                     if j not in link:
