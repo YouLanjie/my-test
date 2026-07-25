@@ -6,6 +6,11 @@
  */
 
 #include "music_synth.h"
+#include <stdcountof.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
 /* 打印音符 */
 void print_note(Note_t *note)
@@ -22,6 +27,92 @@ void print_note(Note_t *note)
 		note->line, note->ind, note->ch);
 }
 
+#define EPS 1e-9
+
+/* 将 double 转换为最简分数（用连分数逼近，保证精度）
+ * ai生成代码 */
+static bool double_to_fraction(double x, int64_t *num, int64_t *den)
+{
+	if (!isfinite(x) || x <= 0 || !num || !den)
+		return false;
+
+	// 如果是整数，直接返回
+	if (fabs(x - round(x)) < EPS) {
+		*num = (long long)round(x);
+		*den = 1;
+		return true;
+	}
+	// 连分数展开
+	int64_t h_prev2 = 0, h_prev1 = 1;
+	int64_t k_prev2 = 1, k_prev1 = 0;
+	double rem = x;
+
+	for (int i = 0; i < 100; i++) {
+		int64_t a = (int64_t)floor(rem);
+		if (a == 0 && rem < EPS)
+			break;
+
+		/* 记公式就完了 */
+		int64_t h = a * h_prev1 + h_prev2;    /* 分子部分 */
+		int64_t k = a * k_prev1 + k_prev2;    /* 分母部分 */
+
+		// 防止溢出
+		if (k > 1000000000LL || h > 1000000000LL)
+			break;
+
+		double approx = (double)h / k;
+		if (fabs(x - approx) < EPS) {
+			*num = h;
+			*den = k;
+			return true;
+		}
+
+		double new_rem = rem - a;
+		if (fabs(new_rem) < EPS) {
+			*num = h;
+			*den = k;
+			return true;
+		}
+
+		h_prev2 = h_prev1;
+		h_prev1 = h;
+		k_prev2 = k_prev1;
+		k_prev1 = k;
+		rem = 1.0 / new_rem;
+	}
+	return false;
+}
+
+static void reprint_note(double type_num)
+{
+	int64_t m = 0, n = 0;
+	if (!double_to_fraction(type_num, &m, &n)) {
+		return;
+	}
+	int dot = 0, type = 0;
+	while (n % 3 == 0) {
+		n /= 3;
+		dot++;
+	}
+	while (m % 2 == 0) {
+		m /= 2;
+		type++;
+	}
+	type -= dot+2;
+	while (type < 0) {
+		printf("*");
+		type++;
+	}
+	while (type > 0) {
+		printf("/");
+		type--;
+	}
+	while (dot > 0) {
+		printf(".");
+		dot--;
+	}
+}
+
 /* 自动遍历整个链表检查合拍情况 */
 void check_notes(Note_t *note, bool print)
 {
@@ -34,28 +125,40 @@ void check_notes(Note_t *note, bool print)
 	const int istty = isatty(STDERR_FILENO);
 	const int istty2 = isatty(STDOUT_FILENO);
 #endif
+	size_t counters[INT8_MAX] = {};
 	double counter = 0;
-	int track = 0;
+	uint8_t track = 0;
 #define p (note->pcm_data)
 	for (; note && p ; note = note->next) {
 		if (track!=note->track) {
 			track = note->track;
-			if (print)
-				printf("\n:%strack=%d%s;\n", colors[istty2][0],
-				       track, colors[istty2][1]);
+			if (print) printf("\n:%strack=%d%s;\n", colors[istty2][0],
+					  track, colors[istty2][1]);
 			counter = 0;
 		}
 		if (print) {
 			printf("%c", note->ch);
-			for (double i=p->type; i && i>4; i/=2) printf("/");
-			for (double i=p->type; i && i<4; i*=2) printf("*");
-			for (double i=p->type; (int)i!=floor(i); i*=3) printf(".");
+			reprint_note(p->type);
 			if (note->flg_legato) printf("~");
 			else if (note->pcm_data && note->flg_portamento)
 				printf("s");
 			else printf(" ");
 		}
+		// printf(">>> [%d] %zu | %zu\n", track, counters[track], p->sample_num);
+		counters[track] += p->sample_num;
 		counter += p->notes/p->type;
+		if (!note->next || (note->track == 0 && note->next->track != note->track)) {
+			for (int i = 1; i<INT8_MAX; i++) {
+				/* 允许50采样点的误差 */
+				if (counters[i] <= counters[0]+50) continue;
+				fprintf(stderr, "[%sWARN%s] 比主轨长的副轨(T%d: %.1fs > %.1fs): ",
+					colors[istty][0], colors[istty][1],
+					i, counters[i]*1./SAMPLE_RATE,
+					counters[0]*1./SAMPLE_RATE);
+				print_note(note);
+			}
+			memset(counters, 0, sizeof(counters));
+		}
 		if (counter < p->beates) continue;
 		if (counter > p->beates) {
 			if (print)
@@ -66,7 +169,6 @@ void check_notes(Note_t *note, bool print)
 				counter, p->beates);
 			print_note(note);
 		}
-		/*printf("%s(%f)| %s", colors[istty][0], tempo_counter, colors[istty][1]); */
 		if (print)
 			printf("%s|%s\n", colors[istty2][0], colors[istty2][1]);
 		counter = 0;

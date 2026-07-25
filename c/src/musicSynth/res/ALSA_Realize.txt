@@ -98,7 +98,7 @@
 :track=4; 0 0 f//
 :track=5; 0 0 c//
 :track=6; fL/0/ aL/0/ aL//0//0/ aL/
-:track=0; fLL/fL/ fL/fL/ fL//c//fL// fL/fL/
+:track=0; fLL/fL/ fL/fL/ fL//c//fL/ fL/fL/
 
 :track=1; 0 0 0 0/0//3//
 :track=2; 5/4/ 3/4//3//~ 3/2/ 1/2//1//
@@ -247,8 +247,8 @@
 :track=5; gL/0/ 0 0 0/b/
 :track=0; gLL/gL///bL///d///g/// d///g///b///D///G/ 0 0//d///bL///g/
 
-:track=1; A/B//A// 1//A//A//B// A//A//1//A// 6//6//5//6//
-:track=2; aL/a//0// 0/a//0// 0/a//0// 0/a//0// 0/a//0//
+:track=1; A/B//A//   1//A//A//B//  A//A//1//A//  6//6//5//6//
+:track=2; aL/a//0//  0/a//0//      0/a//0//      0/a//0//
 :track=0; aLL/e//c// aL//c//e//c// aL//c//e//c// aL//c//e//c//
 
 :---(37)---;
@@ -257,8 +257,8 @@
 :track=0; aLL//c//e//c// aL//c//e//c// aL//c//e//c// aL//c//a///e///c///aL///
 
 :居然有重复的地方;
-:track=1; A/B//A// 1//A//A//B// A//A//1//A// 6//6//5//6//
-:track=2; aL/a//0// 0/a//0// 0/a//0// 0/a//0// 0/a//0//
+:track=1; A/B//A//   1//A//A//B//  A//A//1//A//  6//6//5//6//
+:track=2; aL/a//0//  0/a//0//      0/a//0//      0/a//0//
 :track=0; aLL/e//c// aL//c//e//c// aL//c//e//c// aL//c//e//c//
 
 :track=1; A/B//A// 1//A/A//~ A//0/. 0

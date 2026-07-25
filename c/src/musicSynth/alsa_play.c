@@ -10,6 +10,8 @@
 
 
 #include <alsa/asoundlib.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "lib/music_synth.h"
 #include "../../include/tools.h"
 
@@ -88,8 +90,12 @@ int read_play_wave(char *filename)
 	char RIFF[5] = {0}, WAVE[5] = {0}, data[5] = {0};
 	fseek(fp, 0L, SEEK_END);
 	int size = ftell(fp);
+	if (size == -1 || !size) {
+		fclose(fp);
+		return 4;
+	}
 	fseek(fp, 0L, SEEK_SET);
-	content = malloc(sizeof(int)*size);
+	content = malloc(size);
 	fread(content, size, 1, fp);
 	fclose(fp);
 
@@ -100,6 +106,7 @@ int read_play_wave(char *filename)
 	memcpy(data, header.data, 4);
 	if (strcmp(RIFF, "RIFF") || strcmp(WAVE, "WAVE")) {
 		fprintf(stderr, "这看起来不像是一个wav文件[思考]\n");
+		free(content);
 		return 3;
 	}
 	SAMPLE_RATE = header.sample_rate;
@@ -111,6 +118,7 @@ int read_play_wave(char *filename)
 		memcpy(data, p, 4);
 	}
 	memcpy(&header.data_size, p+4, 4);
+	if (header.block_align == 0) header.block_align = 1;
 
 	printf("channels:%d\nsample_rate:%d\nbyte_rate:%d\nblock_align:%d\n"
 	       "bits_per_sample:%d\ndata_size:%d\nfile_size:%d\n",
@@ -118,7 +126,10 @@ int read_play_wave(char *filename)
 	       header.bits_per_sample, header.data_size/header.block_align, header.file_size);
 
 	snd_pcm_t *pcm_handle = init();
-	if (! pcm_handle) return 2;
+	if (! pcm_handle) {
+		free(content);
+		return 2;
+	}
 
 	play_wav(pcm_handle, (int16_t*)(p+8), header.data_size/header.block_align);
 

@@ -62,6 +62,7 @@ CFLAGS_t CFILEFLAGS[] = {
 	FLG("musicSynth/alsa_play.c",   "m asound",),
 	FLG("musicSynth/sdl2_play.c",   "m SDL2",),
 	FLG("musicSynth/music_synth.c", "m",),
+	FLG("musicSynth/txt2midi.c", "m",),
 
 	FLG("render3d/render3d.c",   "m"),
 	FLG("render3d/r3d_rotate.c", "m"),
