@@ -8,12 +8,6 @@
 #include "../../include/string_view.h"
 #include "lib/music_synth.h"
 #include <endian.h>
-#include <math.h>
-#include <stdcountof.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 
 typedef uint16_t u16be_t;
 typedef uint32_t u32be_t;

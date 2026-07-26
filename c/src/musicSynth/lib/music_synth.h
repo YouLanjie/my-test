@@ -17,6 +17,7 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdcountof.h>
 #include <stddef.h>
 #include <math.h>
 

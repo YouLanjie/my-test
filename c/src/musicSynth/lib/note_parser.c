@@ -6,11 +6,6 @@
  */
 
 #include "music_synth.h"
-#include <stdcountof.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 
 /* 打印音符 */
 void print_note(Note_t *note)
