@@ -1,0 +1,120 @@
+:URL: https://www.bilibili.com/opus/1054908053141323793;
+:TITLE: 雑踏、僕らの街;
+
+:inst=piano3;
+:note.speed=171;
+:key_name=G;
+
+:曲头;
+:--Intro 1--;
+:amp=0.1;
+:track=6; 0** bL**~ bL** bL**~ bL**
+:track=7; 0** eL**~ eL** eL**~ eL**
+:amp=0.2;
+:track=0;
+0* 0/             3/5/6/ | 7/.6//~ 6/5/~ 5//3/3// 2/2/
+3/.7//~  7/7/  0/ 3/5/6/ | 7/.6//~ 6/5/~ 5//3/3// 2/2/
+3/.2U//~ 2U/7/ 0/ 3/5/6/
+
+:amp=0.1;
+:track=6; gL**
+:track=7; cL cL cL cL
+:amp=0.2;
+:track=0; 7/6//7//~ 7//6//7/ 6//7/6// 7
+
+:amp=0.1;
+:track=6; aL**
+:track=7; dL dL dL dL
+:amp=0.2;
+:track=0; 7/6//7//~ 7//6//7/ 6//7//6/ 5/2U/
+
+:amp=0.1;
+:track=6; bL**
+:track=7; eL eL eL eL/eL/
+:amp=0.2;
+:track=1; 2 0/3/~3*
+:track=0; 6 6/7/ 6//7/.~ 7
+
+3/2//3//~ 3//2//3/~ 3//2//3//2// 3/7/~ | 7/6/6/5/ 7 3
+
+:--Intro 2--;
+
+:amp=0.1;
+:track=6; gL/.gL//     0/gL/        fL/.fL//      0/fL/        | bL/.bL// 0/bL/ bL  bL
+:track=7; cL/.0//      0/cL/        bLL/.bLL//    0/bLL/       | eL/.0//  0/eL/ eL  eL
+:amp=0.2;
+:track=0; 5//4//2//B// A//2//A//2// 5//4//2//B//  A//2//A//2// | 3//2//3//4// 5//6//4//5// 6//4//5//2U// 1U//7//6//5//
+
+
+:amp=0.1;
+:track=6; gL/.gL// 0/gL/        fL/.fL//       0/fL/         | bL/.bL// 0/bL/~ bL//bL// 0/ bL
+:track=7; cL/.0//  0/cL/        bLL/.bLL//     0/bLL/        | eL/.0//  0/eL/~ eL//eL// 0/ eL
+:amp=0.2;
+:track=0; 3/2/3/4/ 5//4//5//6// 7//6//7//2Ul// 3U//7//6//5// | 3//6//7//3// 6//7//3//2U// 3U//7//2U//3U// 3
+
+
+:4/4拍 转 3/4拍;
+:note.beates=3;
+:amp=0.1;
+:track=6; bL*. bL*. bL*.
+:track=7; eL*. eL*. eL*.
+:amp=0.2;
+:track=0; B/.B//~ B/B/ B/B/ | 2 0 B/1/ | 2/.2//~ 2/1/ B/A/
+
+:amp=0.1;
+:track=6; bL/.e//~ e/e/ e
+:track=7; eL/.
+:amp=0.2;
+:track=0; A/.B//~ B/1/ B
+
+:amp=0.1;
+:track=6; aL*. bL*. bL*.
+:track=7; eL*. eL*. eL*.
+:amp=0.2;
+:track=0; B/.B//~ B/A/ B/2/ | 2 0 B/1/ | 2/.2// 2/5/ 4/2/
+
+:--(21)--;
+:amp=0.1;
+:track=6; bL e bL
+:track=7; eL
+:amp=0.2;
+:track=1; 6/.6//~ 6/7/ 7
+:track=0; 2/.2//~ 2/3/ 3
+
+:amp=0.1;
+:track=6; e  bL/ e. | b*~ bL
+:track=7; eL 0*     | e*
+:amp=0.2;
+:track=1; 7/.7//~ 7/0/ 0    | A
+:track=0; 2/.2//~ 2/6/ 5/6/ | 4 0 2/ 2/
+
+:amp=0.1;
+:track=6; e  bL/ e. | b*~ bL
+:track=7; eL 0*     | e*
+:amp=0.2;
+:track=1; B 0  0    | 2
+:track=0; 3 5/ 5 6/ | 7 0 0/ 2/
+
+:amp=0.1;
+:track=6; e  bL/ e.   | b*~ bL
+:track=7; eL 0*       | e*
+:amp=0.2;
+:track=1; 2 0*        | A
+:track=0; 7 7/6/ 5/6/ | 4 0 2/ 2/
+
+:amp=0.1;
+:track=6; e  bL/ e.
+:track=7; eL
+:amp=0.2;
+:track=1; B
+:track=0; 3 5/ 5 2U/
+
+:--(29)--;
+:note.beates=4;
+:amp=0.1;
+:track=6; b g/b/ a/b/ e
+:track=7; e
+:amp=0.2;
+:track=1; 6* 7*
+:track=0; 2* 3*
+

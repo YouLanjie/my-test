@@ -127,7 +127,7 @@ function! g:LoadALSACfg()
 	inoremap <buffer> 93 <CMD>call <SID>SetMode(3)<CR>
 	inoremap <buffer> 94 <CMD>call <SID>SetMode(4)<CR>
 
-	vnoremap <buffer> <leader>f :!music_synth -p<CR>
+	vnoremap <buffer> <leader>f :!music_synth -P<CR>
 	vnoremap <buffer> <leader>l :!gen_music_synth_str.py<CR>
 	vnoremap <buffer> <leader>r :!gen_music_synth_str.py -r<CR>
 

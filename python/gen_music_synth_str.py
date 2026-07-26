@@ -2,19 +2,21 @@
 # Created:2026.06.07
 # 用来打谱（特别是五线谱）的辅助脚本
 
-import pytools
 from pathlib import Path
 import argparse
 import math
 import re
 import sys
+import pytools
 
 def reverse_process(content: list[str]):
+    """将txt谱转为简谱（统一改为0-9上下加点模式），用于检查"""
     ret : list[str] = []
     hint_up = ""
     hint_down = ""
     is_inconfig = False
-    ktable = {k:(int(typ), ch) for k,typ,ch in zip("cdefgabCDEFGAB1234567", "000000011111112222222", "123456712345671234567")}
+    ktable = zip("cdefgabCDEFGAB1234567", "000000011111112222222", "123456712345671234567")
+    ktable = {k:(int(typ), ch) for k,typ,ch in ktable}
     for line in content:
         nl = []
         for ind,c in enumerate(line):
@@ -43,13 +45,14 @@ def reverse_process(content: list[str]):
     print("\n".join(ret))
 
 def print_template(typ="high"):
+    """打印绘制的五线谱基本模板"""
     note_char = ["cdefgab", "CDEFGAB", "1234567"]
     note_table = [i+"LL" for i in note_char[0]]
     note_table += [i+"L" for i in note_char[0]]
-    note_table += [i for i in note_char[0]]
-    ind_center_C = len(note_table)
-    note_table += [i for i in note_char[1]]
-    note_table += [i for i in note_char[2]]
+    note_table += note_char[0]
+    ind_center_c = len(note_table)
+    note_table += note_char[1]
+    note_table += note_char[2]
     note_table += [i+"U" for i in note_char[2]]
     note_table += [i+"UU" for i in note_char[2]]
 
@@ -57,13 +60,21 @@ def print_template(typ="high"):
         up, down, offset = 4, 16, -10
     else:
         up, down, offset = 16, 4, 2
-    for i in range(ind_center_C+up, ind_center_C-down-1, -1):
+    for i in range(ind_center_c+up, ind_center_c-down-1, -1):
         if i < 0 or i >= len(note_table):
             break
-        line = (("=" if ind_center_C+offset <= i < ind_center_C+offset+5+4 else ".") if not (ind_center_C-i) % 2 else " ")*50
-        print(f"{note_table[i]:3s} | {line} |")
+        # (默认)上下加线字符
+        char = "."
+        if (ind_center_c-i) % 2:
+            # 空白字符
+            char = " "
+        elif ind_center_c+offset <= i < ind_center_c+offset+5+4:
+            # 五线谱行字符
+            char = "="
+        print(f"{note_table[i]:3s} | {char*50} |")
 
 def process(content: list[str]):
+    """将五线谱转txt谱"""
     notes : dict[int,list[str]] = {}
     for line in content:
         if not line or line[0] not in "cdefgabCDEFGAB1234567":
@@ -99,17 +110,18 @@ def process(content: list[str]):
             if len(lines) <= ind:
                 lines += [" "*width]*(ind+1-len(lines))
             lines[ind] += note + " "
-        width = max([len(l) for l in lines])
+        width = max(len(l) for l in lines)
         lines = [l+" "*(width-len(l)) for l in lines]
     lines = [(f":track={ind+1}; " if len(lines) > 1 else "")+("|"+l).strip()[1:] \
             for ind,l in enumerate(lines)]
     print("\n".join(lines))
 
 def main():
+    """主函数"""
     parser = argparse.ArgumentParser(description="用来打谱（特别是五线谱）的辅助脚本")
     parser.add_argument("--print-template", "-p", nargs="?", default="", const="high",
                         choices=("low", "high"), help="打印模板")
-    parser.add_argument("--reverse", "-r", action="store_true", help="将曲谱反转成简谱")
+    parser.add_argument("--reverse", "-r", action="store_true", help="将txt曲谱反转成简谱(纯数字上下加点)")
     parser.add_argument("file", nargs="?", help="输入文件")
     args = parser.parse_args()
     if args.print_template:

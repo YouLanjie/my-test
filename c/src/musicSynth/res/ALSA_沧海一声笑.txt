@@ -1,0 +1,28 @@
+:URL: https://www.jianpu.net/qupu/23053.html;
+:TITLE: 沧海一声笑;
+
+:inst=piano3;
+:note.speed=70;
+:key_name=A;
+
+:track=0;
+:E//G//A//1// |; A* G/0/ A//1//2//3// | 2*. 1/.2// | A*. G/D/ | E* 0 E//1//G//A//~ | A**
+2*. 3/2//1// | A*. G | A*. 1//B//A/
+
+:In Loop;
+A/A//G// E/.D// C* | E/.D// C/a//g// g*
+g/.a// g/.a// C/.D// E/F/ | A/.G// E//D//C/ D*
+
+A/.G// E//D//C/ C* | A/.G// E//D//C/ C*
+A/A//G// E/D/ C* | E/.D// C/a/ g*
+g/.a// g/.a// C/.D// E/.G// | A/.G// E//D//C/ D*
+
+:In Loop;
+A/A//G// E/D/ C* | E/.D// C/a//g// g*
+g/.a// g/.a// C/.D// E/G/ | A/.G// E//D//C/ D*
+
+A/.G// E/D/ C* | E/.D// C/a/ g*
+g/.a// g/.a// C/.D// E/.G// >>>>>>>
+A/.G// E//D//C/ 1*
+
+:循环处理有点难看懂。。。不做处理了;
