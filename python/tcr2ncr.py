@@ -92,7 +92,7 @@ CREATE INDEX IF NOT EXISTS "idx_tid" ON "msgs_tags"(tid);
 
 CREATE VIEW IF NOT EXISTS view_msgs AS
 SELECT 
-	datetime(m.time, 'unixepoch') AS '时间',
+	datetime(m.time, 'unixepoch', 'localtime') AS '时间',
 	COALESCE(u.name, '') AS '发送者',
 	m.content AS '内容'
 FROM messages m
