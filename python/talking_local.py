@@ -1056,30 +1056,26 @@ class System:
         self.send_message(message, self.system)
     def print_in_page(self, content: Union[str, list], limit = 12) -> None:
         """将传入的内容分页显示"""
-        if isinstance(content, list):
-            s = ""
-            count = 1
-            for i in content:
-                if len((s+i+"\n").splitlines()) > count*limit:
-                    while len(s.splitlines()) % limit != 0:
-                        s += "\n"
-                s += i + "\n"
-                count = len(s.splitlines()) // limit + 1
-            content = s
-        content = str(content)
-        pages = content.splitlines()
-        all_pages = len(pages)//limit + (len(pages)%limit!=0)
-        pages = ["\n".join(pages[i*limit:(i+1)*limit]) for i in range(all_pages)]
-        no_print = False
+        if isinstance(content, str):
+            content = content.splitlines()
+        lines = []
+        all_pages = 1
+        for i in content:
+            i = i.splitlines()
+            if len(lines)+len(i)+1 > all_pages*limit and len(lines) % limit != 0:
+                lines += [""]*(limit-len(lines)%limit-1)
+            lines += [""]
+            lines += i
+            all_pages = (len(lines)-1)//limit+1
+        pages = ["\n".join(lines[i*limit:(i+1)*limit]) for i in range(all_pages)]
+        hint = ""
         try:
             ind = 0
             while ind < len(pages):
-                seperator = "-"*15+f" {ind+1}/{len(pages)} "+"-"*15
+                seperator = f"{'-'*15} {ind+1}/{len(pages)} {'-'*15}"
+                print(hint or seperator+"\n"+pages[ind])
                 print(seperator)
-                if not no_print:
-                    print(pages[ind])
-                    print(seperator)
-                no_print = False
+                hint = ""
                 number = input("[INPUT] 翻页器(h获取帮助):")
                 try:
                     number = int(number)
@@ -1093,15 +1089,16 @@ class System:
                     elif str(number) == "G":
                         ind = len(pages)-2
                     elif str(number).lower().startswith("h"):
-                        print("[INFO] g回到第一页, G跳到最后一页")
-                        print("[INFO] 输入数字页码跳转到对应页面")
-                        print("[INFO] h开头字符命令打印此信息")
-                        print("[INFO] q退出程序(均需要回车确认)")
+                        hint = "\n".join([
+                            "[INFO] g回到第一页, G跳到最后一页",
+                            "[INFO] 输入数字页码跳转到对应页面",
+                            "[INFO] h开头字符命令打印此信息",
+                            "[INFO] q退出程序(均需要回车确认)",
+                            ])
                         ind -= 1
-                        no_print = True
                     ind += 1
         except (KeyboardInterrupt, EOFError):
-            print("[INFO] 取消操作")
+            print("[INFO] 退出分页器")
             return
         return
     def show_message(self, pager = False) -> None:

@@ -97,8 +97,9 @@ class System:
         self.conn = sqlite3.connect(self.db_path)
         self.conn.create_function("regexp", 2, regexp)
         self.conn.create_function("iregexp", 2, iregexp)
-        self.init_db()
         if not exists:
+            # 减少重复初始化
+            self.init_db()
             self.syslog("[INFO] 聊天室建立")
     def init_db(self):
         """初始化数据库"""
@@ -180,7 +181,7 @@ LEFT JOIN users u ON u.uuid = m.owner;
         self.conn.execute("INSERT OR REPLACE INTO users (uuid,name,passwd,note,time,type)"
                           " VALUES(?,?,?,?,?,?)",
                           (self._admi_uuid, self._admi_name,self._admi_psswd, "系统内置服务用用户",
-                           1753027641.0, Usertype.ADMI.value))
+                           1753027641.486, Usertype.ADMI.value))
         self.conn.commit()
     def close(self):
         """关闭SQL连接"""
@@ -188,12 +189,13 @@ LEFT JOIN users u ON u.uuid = m.owner;
     def get_userlist(self, uid:str|None=None) -> list[User]:
         """获取用户列表(或指定uid查询)"""
         cur = self.conn.cursor()
-        base_sql = "SELECT uuid,name,note,time,type FROM users ORDER BY time ASC"
-        if uid is None:
-            cur.execute(base_sql)
-        else:
-            cur.execute(base_sql+" WHERE uuid = ?",
-                        (uid,))
+        base_sql = "SELECT uuid,name,note,time,type FROM users"
+        args = ()
+        if not uid is None:
+            base_sql += " WHERE uuid = ?"
+            args = (uid,)
+        base_sql += " ORDER BY time ASC"
+        cur.execute(base_sql, args)
         li = []
         for u_uid,name,note,ctime,typ in cur.fetchall():
             li.append(User(u_uid,name,note,ctime,Usertype(typ)))
@@ -301,7 +303,7 @@ LEFT JOIN users u ON u.uuid = m.owner;
     def logevent(self, uid:str, ev:Activetype):
         """向内部event表记录事件，需要手动commit()以减少commit数量"""
         self.conn.execute("INSERT INTO event (uid,time,type) VALUES(?,?,?)",
-                          (uid,int(time.time()),ev.value))
+                          (uid,time.time(),ev.value))
     def set_usernote(self, sid:str, new_note:str) -> tuple[bool, str]:
         """修改设置用户备注"""
         uid = self.get_uid_by_sid(sid)
@@ -417,7 +419,7 @@ class InterfaceCLI:
         print(f"UUID: '{u.uuid}'")
         # print(f"密码md5值: '{u.passwd}'")
         acti = [j for j,k in stat.get("activities") or [] if k == Activetype.LOGIN]
-        login_record = "\n".join("> "+f"在 {pytools.get_strtime(i)} 登录过" for i in acti[-5:])
+        login_record = "\n".join("> "+f"在 {pytools.get_strtime(i)} 登录过" for i in acti[:5])
         print(f"登录记录:(共{len(acti)}条{'，只显示最近5条' if len(acti)>5 else ''})\n{login_record}")
     def note_user(self) -> None:
         """修改用户自身的备注"""
@@ -441,22 +443,20 @@ class InterfaceCLI:
             print("[INFO] 取消操作")
             return
         self.system.set_usernote(self.sid, note)
-    def print_in_page(self, content: str|list, limit = 12) -> None:
+    def print_in_page(self, content: str|list[str], limit = 12) -> None:
         """将传入的内容分页显示"""
-        if isinstance(content, list):
-            s = ""
-            count = 1
-            for i in content:
-                while len((s+i+"\n").splitlines()) > count*limit and \
-                        len(s.splitlines()) % limit != 0:
-                    s += "\n"
-                s += i + "\n"
-                count = len(s.splitlines()) // limit + 1
-            content = s
-        content = str(content)
-        pages = content.splitlines()
-        all_pages = len(pages)//limit + (len(pages)%limit!=0)
-        pages = ["\n".join(pages[i*limit:(i+1)*limit]) for i in range(all_pages)]
+        if isinstance(content, str):
+            content = content.splitlines()
+        lines = []
+        all_pages = 1
+        for i in content:
+            i = i.splitlines()
+            if len(lines)+len(i)+1 > all_pages*limit and len(lines) % limit != 0:
+                lines += [""]*(limit-len(lines)%limit-1)
+            lines += [""]
+            lines += i
+            all_pages = (len(lines)-1)//limit+1
+        pages = ["\n".join(lines[i*limit:(i+1)*limit]) for i in range(all_pages)]
         hint = ""
         try:
             ind = 0
@@ -490,14 +490,10 @@ class InterfaceCLI:
             print("[INFO] 退出分页器")
             return
         return
-    def print_recent_msg(self, print_all=False):
-        """打印消息"""
-        limit = 20
-        if print_all:
-            limit = -1
-        messages,stat = self.system.get_messages(limit=limit)
+    def msg_fommater(self, messages:list[Message]):
+        """格式化消息"""
+        li :list[str] = []
         colors = ("\x1b[34m", "\x1b[0m", "\x1b[2m")
-        li = []
         for m in messages:
             s = f"{colors[0]}[{m.owner}]在({pytools.get_strtime(m.time)})说:{colors[1]}\n"
             content = m.content
@@ -513,12 +509,22 @@ class InterfaceCLI:
                         f"【使用show命令查看全部内容】\n【消息ID:'{m.uuid}'】"
             s += "\n".join(colors[2]+"> "+colors[1]+i for i in  content.splitlines()) + "\n"
             li.append(s)
-        if print_all and len(("\n".join(li)).splitlines()) > 12:
-            self.print_in_page(li, limit=18)
+        return li
+    def print_recent_msg(self):
+        """打印最新消息"""
+        messages,stat = self.system.get_messages(limit=20)
+        li = self.msg_fommater(messages)
+        print("\n".join(li), end="")
+        if stat["total_page"] > 1:
+            print(f"\n[NOTE] 只打印了最新{len(li)}条消息")
+    def print_pager_msg(self):
+        """打印经过分页的全部消息"""
+        messages,_ = self.system.get_messages(limit=-1)
+        li = self.msg_fommater(messages)
+        if len(("\n".join(li)).splitlines()) > 12:
+            self.print_in_page(li, limit=24)
         else:
-            print("\n".join(li), end="")
-            if stat["total_page"] > 1:
-                print(f"\n[NOTE] 只打印了最新{len(li)}条消息")
+            print("\n".join(li))
     def select_message(self) -> Message|None:
         """过滤选择消息"""
         msg_list :dict[str,Message] = {}
@@ -596,7 +602,7 @@ class InterfaceCLI:
                 "info":("显示登录后用户的详细信息",self.info),
                 "renote":("修改用户自身的备注",self.note_user),
                 "p":("打印历史消息",self.print_recent_msg),
-                "p2":("打印历史消息(分页)", lambda: self.print_recent_msg(True)),
+                "p2":("打印历史消息(分页)", self.print_pager_msg),
                 "show":("打印选择的特定历史消息",self.show_sigal_message),
                 "send":("发送消息",self.send_message),
                 }
@@ -627,7 +633,12 @@ def main():
     args = parser.parse_args()
     # 指定数据库文件
     System.db_path = Path(args.input)
-    cli = InterfaceCLI()
+    try:
+        cli = InterfaceCLI()
+    except sqlite3.DatabaseError as e:
+        print(f"[ERROR] sqlite3错误：{e}")
+        print("[ERROR] 程序将直接退出")
+        return
     cli.main()
     cli.close()
 
