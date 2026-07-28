@@ -1,0 +1,233 @@
+<!-- template: index -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+${meta}
+  <title>${title}</title>
+  <link rel="stylesheet" type="text/css" href="/main.css">
+  <script>
+  (function() {
+    theme = localStorage.getItem('theme') || "light"
+    if (theme == "dark") {
+      document.head.insertAdjacentHTML("beforeend", '<link id="dark-theme-css" rel="stylesheet" type="text/css" href="/dark.css"/>')
+    }
+  })();
+  </script>
+</head>
+<body>
+  <div class="header">
+    <ul>
+      <li><a href="/?p=last_msg#last_msg">消息列表</a></li>
+      <li><a href="/userlist">用户列表</a></li>
+      <li><a href="/search?cap=on">搜索</a></li>
+      <li><a href="/about">关于或帮助</a></li>
+      ${loginstatus}
+    </ul>
+  </div>
+  <div class="header-padding"></div>
+${content}
+</body>
+</html>
+<!-- template: msg_list -->
+<div class="container">
+  <h1>Python聊天室(Web UI)</h1>
+${pages}
+${messages}
+${pages}
+${send_window}
+</div>
+<!-- template: search -->
+<div class="container">
+  <h1>搜索页面</h1>
+  <form method="GET" action="/search">
+    <div class="form-group">
+      <label for="msg">搜索内容(均支持<a href="/about#re">正则表达式</a>):</label><input type="text" name="msg" value="${msg}"><br/>
+      <label for="user">搜索用户:</label><input type="text" name="user" value="${user}"><br/>
+      <label for="page_limit">每页展示的消息数:</label><input type="number" name="page_limit" value="${page_limit}"><br/>
+      <label for="sort_type">排序方式:</label><br/>
+      <select name="sort_type">
+        ${sort_type_options}
+      </select>
+      <label for="cap">不区分大小写:</label><input style="width:auto;" type="checkbox" name="cap"${cap}><br/>
+    </div>
+    <button type="submit">更新搜索</button>
+  </form>
+${pages}
+${messages}
+${pages}
+</div>
+<!-- template: msg_data -->
+<div class='messages'${id}>
+<p><a href='/userlist#uid_${owner}' class='msg_name'>${name}</a>
+<a href='/search?id=${msgid}'><span class='msg_time'>${timestamp} | #${ind}</span></a></p>
+<div class='msgcont'>${msg}
+</div>
+</div>
+<!-- template: send_window -->
+<form method="POST" action="/send_message">
+<div class="form-group">
+<label for="message">填写要发送的消息:</label><textarea name="message" rows="4" required></textarea>
+</div><br/>
+<button type="submit">发送</button></form>
+<!-- template: send_window2 -->
+<p>您尚未登陆，请登陆或注册后再留言</p>
+<!-- template: userlist -->
+<div class="container">
+  <h1>用户列表</h1>
+  <p>Tips: 可点击对应用户名称实现快速登陆</p>
+${users}
+</div>
+<!-- template: user-data -->
+<div class='users' id="uid_${id}">
+  <p><a href="/login?id=${id}" class="user_name">${name}</a>
+  <span class='user_time'>注册时间: ${timestamp}</span></p>
+  <p>${note}</p>
+</div>
+<!-- template: dashboard -->
+<div class="container">
+  <h1>个人仪表板</h1>
+  ${userdata}
+</div>
+<!-- template: dashboard-data -->
+${usercard}
+<div class='container'>
+  <p>UUID: '${id}'</p>
+  <p>密码md5值: '${passwd}'</p>
+  <details>
+    <summary>登录记录</summary>
+    <p>${login_record}</p>
+  </details>
+</div>
+
+<div class='container'>
+  <form method="POST" action="/renote">
+    <div class="form-group">
+      <label for="note">修改备注:</label>
+      <textarea name="note" rows="4" required>${note}</textarea>
+    </div><br/>
+    <button type="submit">提交修改</button>
+  </form>
+</div>
+
+<form method="POST" action="/logout">
+  <button type="submit" style="background-color:red;">退出登录</button>
+</form>
+<!-- template: edit -->
+<div class="container">
+  <h1>消息重编辑页面</h1>
+  <form method="POST" action="/edit">
+    <div class="form-group">
+    <input type="text" name="keyid" value="${keyid}" style="display:none;">
+    <label for="message">在下面修改消息:</label>
+    <textarea name="message" rows="10" placeholder="${placeholder}" required>${content}</textarea>
+    </div>
+    <button type="submit">提交修改</button>
+  </form>
+</div>
+<!-- template: login -->
+<div class="container">
+  <h1>登录</h1>
+  <form method="POST" action="/login">
+     <div class="form-group">
+      <label for="name">用户名:</label><input type="text" name="username"${value} required><br/>
+      <label for="passwd">密码:</label><input type="password" name="passwd" required><br/>
+    </div>
+    <button type="submit">登录</button>
+  </form>
+</div>
+<!-- template: register -->
+<div class="container">
+  <h1>注册</h1>
+  <form method="POST" action="/register">
+    <div class="form-group">
+      <label for="name">用户名（暂不支持修改）:</label><input type="text" name="username" required><br/>
+      <label for="passwd">密码（暂不支持注册后修改或找回）:</label><input type="password" name="passwd" required><br/>
+      <label for="passwd2">再次输入相同的密码确认:</label><input type="password" name="passwd2" required><br/>
+    </div>
+    <button type="submit">注册</button>
+  </form>
+</div>
+<!-- template: 404 -->
+<div class="container">
+  <h1>404 Page Not Found</h1>
+  <p>页面将在3秒钟后自动跳转到<a href="/">主页</a></p>
+</div>
+<!-- template: response -->
+<div class="container">
+  <div class="container">
+${content}
+  </div>
+  <a href="${url}" class="back-button">
+  <button type="submit">返回主页(部分页面会自动跳转)</button>
+  </a>
+</div>
+<!-- template: about -->
+<script>
+function toggleTheme() {
+  theme = localStorage.getItem('theme')
+  theme = theme === "dark" ? "light" : "dark"
+  localStorage.setItem('theme', theme);
+  document.getElementById("theme-toggle-button").innerText = theme+"（点击切换）"
+  if (theme == "dark") {
+    document.head.insertAdjacentHTML("beforeend", '<link id="dark-theme-css" rel="stylesheet" type="text/css" href="/dark.css"/>')
+  } else {
+    document.getElementById("dark-theme-css").remove()
+  }
+}
+window.onload = function() {
+  theme = localStorage.getItem('theme') || "light";
+  document.getElementById("dark-theme-css").innerText = theme+"（点击切换）"
+}
+</script>
+<div class="container">
+  <h1>About 关于</h1>
+  <h2>Web ui使用</h2>
+  <p>右上角注册用户或者登录已注册用户，图省事可以去用户列表点击对应的用户名进入预先填写好用户名的登录界面，密码不支持找回所以请自己记好。</p>
+  <p>在每一页的消息列表下方有消息发送栏，默认没有字数限制但请不要做坏事。暂时不支持任何标记性语言如markdown或者是html</p>
+  <p>在登录后右上角可以点进自己的用户状态，可以在里面修改类似于用户签名之类的东西（虽然平时用户列表看不见就是了），勇者可以尝试实名上网</p>
+  <p>搜索页面选择每页只显示一则消息的话消息就会完全展开。阅读体验可能会好点</p>
+  <p>最下面会列一些相关链接，那个【自动更新按钮】点击后会让后台启动一个线程更新程序，如果要应用修改需要关掉后台（cmd）在文件管理器里重新启动程序（我有点担心会被搞乱，但是既然能访问这个聊天室那素质应该还是有的吧？）</p>
+  <h2 id="re">正则表达式使用</h2>
+  <p>使用'.*'匹配任意字符：'.'意思是匹配任意字符,'*'意思是匹配任意次数前面的字符</p>
+  <p>使用'[0-9]'或者'\\d'匹配数字，结合上述'\\d*'就是匹配任意位数数字的意思</p>
+  <p>算了，写起来好累，自己去<a href="https://www.runoob.com/regexp/regexp-syntax.html">这个链接</a>里看教程如果感兴趣的话</p>
+  <h2>相关链接:</h2>
+  <ul>
+    <li><a href="/more_info">【统计信息】</a></li>
+    <li><a href="/self_update">【自动更新按钮】(请勿滥用)</a></li>
+    <li><a href="http://${url_self_1}">本程序链接(github)</a></li>
+    <li><a href="${url_self_2}">本程序链接(github.io)</a></li>
+    <li><a href="http://${url_anti_jiyu}">反极域程序链接(github)</a></li>
+    <li><a href="http://ghfast.top/${url_anti_jiyu}">反极域程序链接(github代理加速链接)</a></li>
+  </ul>
+  <h2>主题设置</h2>
+  <p>当前主题为：<a id="theme-toggle-button" onclick="toggleTheme()">light（点击切换）</a></p>
+</div>
+<!-- template: more_info -->
+<div class="container">
+  <h1>统计信息</h1>
+  <h2>总体统计</h2>
+  <p>总消息数: ${total_msgs}</p>
+  <p>总消息字符数: ${total_chars}</p>
+  <p>总编辑次数: ${total_edits}</p>
+  <h2>用户统计</h2>
+  <table border="1" style="width:100%; border-collapse: collapse;">
+    <thead>
+      <tr>
+        <th>用户名</th>
+        <th>消息数</th>
+        <th>总字符数</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${user_stats_rows}
+    </tbody>
+  </table>
+
+  <h2>消息详情</h2>
+  <ol>
+      ${message_rows}
+  </ol>
+</div>

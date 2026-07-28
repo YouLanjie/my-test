@@ -6,14 +6,26 @@ import re
 import time
 import uuid
 import sqlite3
-import argparse
 import hashlib
+import argparse
+import threading
 from pathlib import Path
 from getpass import getpass
 from dataclasses import dataclass
 from importlib import import_module
+from functools import lru_cache
 from typing import Callable
 from enum import Enum, unique
+
+# web ui
+import http.server
+import socketserver
+import urllib.parse
+import urllib.request
+import urllib.error
+from html import escape
+from string import Template
+
 import pytools
 
 # Better Input In Linux
@@ -80,6 +92,7 @@ class Message:
     """消息类"""
     uuid : str
     owner : str   # 用户名(非uid)
+    owner_id: str
     time : float
     content : str
     typ : Messagetype
@@ -223,10 +236,14 @@ LEFT JOIN users u ON u.uuid = m.owner;
                     "FROM messages WHERE uuid = ?", (uid,))
         ret["summary"] = cur.fetchone()
         return (True, ret)
+    def get_messages_len(self) -> int:
+        """获取消息的数量"""
+        msg_num = self.conn.execute("SELECT COUNT(uuid) FROM messages").fetchone()[0]
+        return msg_num
     def get_messages(self, pagenum = -1, limit = 12) -> tuple[list[Message],dict[str,int]]:
         """获取分页的消息"""
+        msg_num = self.get_messages_len()
         cur = self.conn.cursor()
-        msg_num = cur.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
         if limit < 1:
             limit = msg_num or 1
         total_page = int(msg_num/limit)+(1 if msg_num%limit else 0)
@@ -236,14 +253,14 @@ LEFT JOIN users u ON u.uuid = m.owner;
             pagenum = total_page
         # 包含情况：(offset, offset+limit]
         offset = (pagenum-1)*limit
-        cur.execute("SELECT m.uuid,u.name,m.time,content,m.type "
+        cur.execute("SELECT m.uuid,u.name,m.owner,m.time,content,m.type "
                     "FROM messages m "
                     "LEFT JOIN users u ON m.owner = u.uuid "
                     "ORDER BY m.time ASC "
                     "LIMIT ? OFFSET ?", (limit,offset))
         li = []
-        for mid,owner,ctime,content,typ in cur.fetchall():
-            li.append(Message(mid,owner,ctime,content,typ))
+        for mid,owner,uid,ctime,content,typ in cur.fetchall():
+            li.append(Message(mid,owner,uid,ctime,content,typ))
         return (li, {"msg_num":msg_num, "total_page":total_page,
                      "now_page":pagenum,"limit":limit})
     def get_message_by_mid(self, mid) -> Message|None:
@@ -338,10 +355,250 @@ LEFT JOIN users u ON u.uuid = m.owner;
         """使用系统账户记录通知日志(发送消息)"""
         return self.send_message(self._admi_sid, msg)
 
+class Rescourses:
+    """资源类"""
+    def __init__(self) -> None:
+        self.tf_css = Path(__file__).parent/"ncr_res/main.css"
+        self.tf_dcss = Path(__file__).parent/"ncr_res/dark.css"
+        self.tf_html = Path(__file__).parent/"ncr_res/template.html"
+        self.css = ""
+        self.darkcss = ""
+        # 键：meta, title, loginstatus, content
+        self.index = Template("<html><head>${meta}</head><body>${content}</body></html>")
+        self.template :dict[str,Template] = {}
+        self.load_template()
+    def _is_newer(self, f1:Path, f2:Path) -> bool:
+        if not f1.exists() or not f2.exists():
+            return False
+        return f1.stat().st_mtime > f2.stat().st_mtime
+    def check_update(self):
+        """检查模板文件更新"""
+        f = Path(__file__)
+        if self._is_newer(self.tf_css, f) or self._is_newer(self.tf_dcss, f)\
+                or self._is_newer(self.tf_html, f):
+            self.load_template()
+    def load_template(self):
+        """加载模板文件"""
+        if self.tf_css.is_file():
+            self.css = self.tf_css.read_text()
+        if self.tf_dcss.is_file():
+            self.darkcss = self.tf_dcss.read_text()
+        if not self.tf_html.is_file():
+            return
+        ret = re.split(r"<!-- template:\s*([A-Za-z0-9_]+) -->\n", self.tf_html.read_text())[1:]
+        if len(ret) % 2:
+            ret = ret[:-1]
+        for i in range(int(len(ret)/2)):
+            self.template[ret[i*2]] = Template(ret[i*2+1])
+        if t:=self.template.get("index"):
+            self.index = t
+    def get(self, name:str, data:dict) -> str:
+        """自动根据数据应用模板"""
+        if name not in self.template:
+            return ""
+        return self.template[name].safe_substitute(data)
+
+class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
+    """Web交互 && 自定义请求处理器"""
+    system : None|System = None
+    httpd : None|socketserver.TCPServer = None
+    rescourses = Rescourses()
+    @classmethod
+    def _start_server(cls, port):
+        if cls.httpd:
+            return
+        cls.rescourses.check_update()
+        # if os.name != "nt":
+        socketserver.TCPServer.allow_reuse_address = True
+        for i in range(port, port+100):
+            try:
+                with socketserver.TCPServer(("", i), cls) as httpd:
+                    print(f"[INFO] 服务器(WebUI)运行在 http://localhost:{i}/")
+                    cls.httpd = httpd
+                    # print("按 Ctrl+C 停止服务器")
+                    try:
+                        httpd.serve_forever()
+                    except KeyboardInterrupt:
+                        print("\n[INFO] 服务器已停止")
+            except OSError:
+                continue
+            break
+        cls.httpd = None
+    @classmethod
+    def start_server(cls, port=8000):
+        """开启服务器"""
+        threading.Thread(target=cls._start_server, args=(port,)).start()
+    def get_sid(self):
+        """获得cookie的SID"""
+        cookies = (self.headers.get("Cookie", "") or "").split(";")
+        sid = ""
+        for i in cookies:
+            i = i.strip()
+            if not i.startswith("sid="):
+                continue
+            sid = i[4:]
+        return sid
+    def get_querys(self) -> dict[str,str]:
+        """获取url?xxx=yyy参数"""
+        query = urllib.parse.urlparse(self.path).query
+        querys = {i.split("=",1)[0]:i.split("=",1)[1] for i in query.split("&") if "=" in i}
+        return querys
+    def get_base_html(self, content:str, title:str="新·聊天室(WebUI)", meta:str="") -> str:
+        """套上基础html模板"""
+        sid = self.get_sid()
+        s = []
+        if self.system and (sid := self.get_sid()) and (uid:=self.system.get_uid_by_sid(sid)[1]) \
+                and (u:=self.system.get_userlist(uid)[0]):
+            s.append(f"""<a href="/dashboard">{escape(u.name)}</a>""")
+        else:
+            s.append("""<a href="/register">注册</a></li>""")
+            s.append("""<a href="/login">登录</a>""")
+        loginstatus = "\n".join([f"""<li style="float:right;">{i}</li>""" for i in s])
+        # 键：meta, title, loginstatus, content
+        return self.rescourses.index.safe_substitute({
+            "meta":meta,
+            "title":title,
+            "loginstatus":loginstatus,
+            "content":content,
+            })
+    @lru_cache
+    def get_msg_content_html(self, content:str, msgid:str) -> str:
+        """生成消息渲染后的html"""
+        # try:
+        #     if not self.orgreader:
+        #         raise ModuleNotFoundError
+        #     if not content.startswith("# USE ORG"):
+        #         raise ValueError
+        #     doc = self.orgreader.Document(content,
+        #                                   file_name=msgid+".org",
+        #                                   setting={"id_prefix":"org_"+msgid+"_"})
+        #     doc.root.line.s = ""
+        #     visitor = self.orgreader.HtmlExportVisitor()
+        #     msg = visitor.toc_to_html(doc) + doc.root.accept(visitor)
+        #     if doc.status["footnotes"]:
+        #         msg += visitor.fns_to_html(doc)
+        #     return msg
+        # except (ModuleNotFoundError, ValueError, OSError, FileNotFoundError):
+        return "<br/>".join(escape(content).splitlines())
+    def gen_pager(self, now_page:int, all_pages:int, lst=True) -> str:
+        """生成翻页器"""
+        if all_pages == 0:
+            return ""
+        req = "&".join(f"{k}={v}" for k,v in self.get_querys().items() if k != "p")
+        if req:
+            req += "&"
+
+        pages = []
+        fmt = '<a href="?%sp=%d">%s</a>'
+        start,current,end = 1, now_page, all_pages
+        vals = sorted({start, end} | set(range(max(start, current-2), min(end, current+2)+1)))
+        for i, x in enumerate(vals):
+            if i == 0 and start < current:
+                pages.append(fmt%("",current-1,"上一页"))
+            if i == len(vals)-1 and current < end:
+                pages.append(fmt%("",current+1,"下一页"))
+            if i > 0 and x - vals[i-1] > 1:
+                pages.append(fmt%(req,vals[i-1]+1,vals[i-1]+1) if x-vals[i-1] == 2 else "...")
+            pages.append(f"<b>{fmt%(req,x,x)}</b>" if x == current else fmt%(req,x,x))
+        pages = '<p class="pager">Pages: '+" | ".join(pages)
+        if lst:
+            pages += f'&nbsp;<a href="?{req}p={all_pages}#last_msg" style="float:right;">'
+            pages += '点击查看最新消息</a>'
+        pages += '</p>'
+        return pages
+    def gen_message_list(self, messages:list[Message]) -> str:
+        """生成消息列表(html)"""
+        if not self.system:
+            return ""
+        s = ""
+        last_msg_id = msg_list[0].uuid if (msg_list:=self.system.get_messages(limit=1)[0]) else ""
+        now_uid = ret[1] if (ret:=self.system.get_uid_by_sid(self.get_sid())) else ""
+        # now_utype = ret[0].typ if now_uid and (ret:=self.system.get_userlist(now_uid))
+        # else Usertype.BAN
+        for m in messages:
+            msg_id = ' id="last_msg"' if m.uuid == last_msg_id else ''
+            msg = self.get_msg_content_html(m.content, m.uuid)
+            if len(messages) == 1:
+                msg_id += ' style="max-height:100%;"'
+                if (time.time() - m.time < 60*10 and m.owner == now_uid):
+                    msg += "<br/><a href='/edit?id="+m.uuid+"'><button>编辑留言</button></a>"
+            s += self.rescourses.get("msg_data", {
+                "id":msg_id,
+                "msgid":m.uuid,
+                "name":escape(m.owner),
+                "owner":escape(m.owner_id),
+                "timestamp":escape(pytools.get_strtime(m.time)),
+                "ind":messages.index(m)+1,
+                "msg":msg,
+                })
+        return s
+    def get_msglist(self) -> str:
+        """返回消息列表"""
+        if not self.system:
+            return ""
+        querys = self.get_querys()
+        try:
+            limit = int(str(querys.get("page_limit")))
+        except ValueError:
+            limit = 12
+        now_page = str(querys.get("p") or "1")
+        try:
+            now_page = int(now_page)
+        except ValueError:
+            if now_page == "last_msg":
+                now_page = -1
+            else:
+                now_page = 1
+        is_login = self.system.get_uid_by_sid(self.get_sid())[0]
+        msgs,stat = self.system.get_messages(pagenum=now_page,limit=limit)
+        s = self.gen_message_list(msgs)
+        total_page = stat["total_page"]
+        now_page = stat["now_page"]
+        limit = stat["limit"]
+        pager = self.gen_pager(now_page, total_page)
+        return self.get_base_html(self.rescourses.get("msg_list", {
+            "messages": s,
+            "send_window" : self.rescourses.get("send_window" if is_login else "send_window2",{}),
+            "pages": pager,
+            }))
+    def ret_404(self):
+        """响应404界面"""
+        t = self.rescourses.template.get("404")
+        t = t.safe_substitute() if t else "404 NOT FOUND"
+        t = self.get_base_html(t)
+        self.send_response(404)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        self.wfile.write(t.encode())
+    def do_GET(self):
+        """解析URL路径"""
+        parsed_path = urllib.parse.urlparse(self.path)
+        path = parsed_path.path
+        handler :dict[str,Callable] = {
+                "/":self.get_msglist,
+                }
+        css_list = {"/main.css":self.rescourses.css,
+                    "/dark.css":self.rescourses.darkcss}
+        if path not in handler and path not in css_list:
+            self.ret_404()
+            return
+        html_content = ""
+        if path in handler:
+            html_content = handler[path]()
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+        if path in css_list:
+            html_content = css_list[path]
+            self.send_response(200)
+            self.send_header('Content-type', 'text/css')
+            self.end_headers()
+        self.wfile.write(html_content.encode())
+
 class InterfaceCLI:
     """CLI交互"""
-    def __init__(self) -> None:
-        self.system = System()
+    def __init__(self, system:System|None=None) -> None:
+        self.system = system or System()
         self.sid = self.system.cli_sid
     def close(self):
         """关闭数据库连接"""
@@ -639,7 +896,11 @@ def main():
         print(f"[ERROR] sqlite3错误：{e}")
         print("[ERROR] 程序将直接退出")
         return
+    InterfaceWeb.system = cli.system
+    InterfaceWeb.start_server()
     cli.main()
+    if InterfaceWeb.httpd:
+        InterfaceWeb.httpd.shutdown()
     cli.close()
 
 if __name__ == "__main__":
