@@ -87,14 +87,19 @@ class Message:
 class System:
     """操作类"""
     db_path = Path("SAVEDATA.db")
-    admi_uuid = "7d87fb06-64c9-45bc-8b24-397c60d6001b"
-    admi_psswd = "db10fa5fb2467f50c7242356ee42ca86"
+    _admi_name = "SYSTEM"
+    _admi_uuid = "7d87fb06-64c9-45bc-8b24-397c60d6001b"
+    _admi_psswd = "db10fa5fb2467f50c7242356ee42ca86"
+    _admi_sid = "SYSTEM-LOG-SERVER"
     cli_sid = "CLI-SESSION-UUID"
     def __init__(self) -> None:
+        exists = self.db_path.is_file()
         self.conn = sqlite3.connect(self.db_path)
         self.conn.create_function("regexp", 2, regexp)
         self.conn.create_function("iregexp", 2, iregexp)
         self.init_db()
+        if not exists:
+            self.syslog("[INFO] 聊天室建立")
     def init_db(self):
         """初始化数据库"""
         self.conn.executescript("""\
@@ -174,7 +179,7 @@ LEFT JOIN users u ON u.uuid = m.owner;
         # 设置系统用户
         self.conn.execute("INSERT OR REPLACE INTO users (uuid,name,passwd,note,time,type)"
                           " VALUES(?,?,?,?,?,?)",
-                          (self.admi_uuid, "SYSTEM",self.admi_psswd, "系统内置服务用用户",
+                          (self._admi_uuid, self._admi_name,self._admi_psswd, "系统内置服务用用户",
                            1753027641.0, Usertype.ADMI.value))
         self.conn.commit()
     def close(self):
@@ -183,10 +188,11 @@ LEFT JOIN users u ON u.uuid = m.owner;
     def get_userlist(self, uid:str|None=None) -> list[User]:
         """获取用户列表(或指定uid查询)"""
         cur = self.conn.cursor()
+        base_sql = "SELECT uuid,name,note,time,type FROM users ORDER BY time ASC"
         if uid is None:
-            cur.execute("SELECT uuid,name,note,time,type FROM users")
+            cur.execute(base_sql)
         else:
-            cur.execute("SELECT uuid,name,note,time,type FROM users WHERE uid = ?",
+            cur.execute(base_sql+" WHERE uuid = ?",
                         (uid,))
         li = []
         for u_uid,name,note,ctime,typ in cur.fetchall():
@@ -206,13 +212,13 @@ LEFT JOIN users u ON u.uuid = m.owner;
         user = self.get_userlist(uid)
         if not user:
             return (False, {"msg":"获取用户信息失败"})
-        ret = {"user":user, "activities":[]}
+        ret = {"user":user[0], "activities":[]}
         cur = self.conn.cursor()
         # 获取活动记录，时间降序
         cur.execute("SELECT time,type FROM event WHERE uid = ? ORDER BY time DESC", (uid,))
         ret["activities"] = [(j,Activetype(k)) for j,k in cur.fetchall()]
         cur.execute("SELECT COUNT(uuid),COALESCE(SUM(LENGTH(content)), 0) "
-                    "FROM event WHERE uid = ?", (uid,))
+                    "FROM messages WHERE uuid = ?", (uid,))
         ret["summary"] = cur.fetchone()
         return (True, ret)
     def get_messages(self, pagenum = -1, limit = 12) -> tuple[list[Message],dict[str,int]]:
@@ -258,8 +264,8 @@ LEFT JOIN users u ON u.uuid = m.owner;
             return (False, "用户已存在")
         passwd = hashlib.md5(str(passwd).encode("utf8")).hexdigest()
         uid = str(uuid.uuid4())
-        cur.execute("INSERT INTO users (uuid,name,passwd,time,type) VALUES(?,?,?)",
-                    (uid,name,passwd,time.time(),Usertype.NORM,))
+        cur.execute("INSERT INTO users (uuid,name,passwd,time,type) VALUES(?,?,?,?,?)",
+                    (uid,name,passwd,time.time(),Usertype.NORM.value,))
         cur.close()
         self.conn.commit()
         return (True, uid)
@@ -293,8 +299,8 @@ LEFT JOIN users u ON u.uuid = m.owner;
         self.conn.commit()
         return (True, "已登出")
     def logevent(self, uid:str, ev:Activetype):
-        """需要手动commit()以减少commit数量"""
-        self.conn.execute("INSERT event INTO uid,time,type VALUES(?,?,?)",
+        """向内部event表记录事件，需要手动commit()以减少commit数量"""
+        self.conn.execute("INSERT INTO event (uid,time,type) VALUES(?,?,?)",
                           (uid,int(time.time()),ev.value))
     def set_usernote(self, sid:str, new_note:str) -> tuple[bool, str]:
         """修改设置用户备注"""
@@ -312,17 +318,23 @@ LEFT JOIN users u ON u.uuid = m.owner;
         """发送文本消息"""
         if isinstance(msg,bytes) or msg_type == Messagetype.BLOB:
             return (False, "发送消息失败：不应该发送二进制消息")
-        uid = self.get_uid_by_sid(sid)
-        if not uid[0]:
-            return (False, f"发送消息失败：{uid[1]}")
-        uid = uid[1]
+        if sid == self._admi_sid:
+            uid = self._admi_uuid
+        else:
+            uid = self.get_uid_by_sid(sid)
+            if not uid[0]:
+                return (False, f"发送消息失败：{uid[1]}")
+            uid = uid[1]
         mid = str(uuid.uuid4())
-        self.conn.execute("INSERT messages INTO "
-                          "uuid,owner,time,content,type "
+        self.conn.execute("INSERT INTO messages "
+                          "(uuid,owner,time,content,type) "
                           "VALUES(?,?,?,?,?)",
                           (mid,uid,time.time(),msg,msg_type.value,))
         self.conn.commit()
         return (True, mid)
+    def syslog(self, msg:str):
+        """使用系统账户记录通知日志(发送消息)"""
+        return self.send_message(self._admi_sid, msg)
 
 class InterfaceCLI:
     """CLI交互"""
@@ -366,7 +378,7 @@ class InterfaceCLI:
             self.system.login(self.sid, name, passwd)
     def login(self) -> None:
         """交互式dl处理"""
-        if self.system.get_uid_by_sid(self.sid):
+        if self.system.get_uid_by_sid(self.sid)[0]:
             print("[WARN] 你已经登录")
             return
         try:
@@ -400,13 +412,13 @@ class InterfaceCLI:
             return
         u :User = stat["user"]
         print(f"名字: '{u.name}'")
-        print(f"注册时间: '{pytools.get_strtime(u.time)}'")
-        print(f"备注: '{u.note}'")
+        print(f"备注: '{u.note or ''}'")
+        print(f"注册: '{pytools.get_strtime(u.time)}'")
         print(f"UUID: '{u.uuid}'")
         # print(f"密码md5值: '{u.passwd}'")
         acti = [j for j,k in stat.get("activities") or [] if k == Activetype.LOGIN]
-        login_record = "\n".join("> "+f"在 {pytools.get_strtime(i)} 登录过" for i in acti)
-        print(f"登录记录:({len(stat["login"])})\n{login_record}")
+        login_record = "\n".join("> "+f"在 {pytools.get_strtime(i)} 登录过" for i in acti[-5:])
+        print(f"登录记录:(共{len(acti)}条{'，只显示最近5条' if len(acti)>5 else ''})\n{login_record}")
     def note_user(self) -> None:
         """修改用户自身的备注"""
         ret = self.system.get_uid_by_sid(self.sid)
@@ -598,6 +610,7 @@ class InterfaceCLI:
             try:
                 c = input(f"{color[0]}$ {color[1]}")
             except (KeyboardInterrupt, EOFError):
+                print("\n[INFO] C-c/C-d 退出")
                 c = "q"
             if c in menu:
                 menu[c][1]()
