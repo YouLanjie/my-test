@@ -2,7 +2,6 @@
 # Created:2026.07.27
 """作为talking_local.py的非兼容py3.8、非兼容windows、剔除无用功能的升级版"""
 
-import os
 import re
 import time
 import uuid
@@ -65,6 +64,7 @@ class Messagetype(Enum):
     HTML = 2
     MD = 3
     ORG = 4
+    BLOB = 5
 
 @dataclass
 class User:
@@ -79,7 +79,7 @@ class User:
 class Message:
     """消息类"""
     uuid : str
-    owner : str   # 用户名(非id)
+    owner : str   # 用户名(非uid)
     time : float
     content : str
     typ : Messagetype
@@ -215,10 +215,10 @@ LEFT JOIN users u ON u.uuid = m.owner;
                     "FROM event WHERE uid = ?", (uid,))
         ret["summary"] = cur.fetchone()
         return (True, ret)
-    def get_messages(self, pagenum = 1, limit = 12) -> tuple[list[Message],dict[str,int]]:
+    def get_messages(self, pagenum = -1, limit = 12) -> tuple[list[Message],dict[str,int]]:
         """获取分页的消息"""
         cur = self.conn.cursor()
-        msg_num = cur.execute("SELECT COUNT(*) FROM messages").fetchone()
+        msg_num = cur.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
         if limit < 1:
             limit = msg_num or 1
         total_page = int(msg_num/limit)+(1 if msg_num%limit else 0)
@@ -228,16 +228,27 @@ LEFT JOIN users u ON u.uuid = m.owner;
             pagenum = total_page
         # 包含情况：(offset, offset+limit]
         offset = (pagenum-1)*limit
-        cur.execute("SELECT uuid,owner,time,content,type "
+        cur.execute("SELECT m.uuid,u.name,m.time,content,m.type "
                     "FROM messages m "
                     "LEFT JOIN users u ON m.owner = u.uuid "
-                    "ORDER m.time ASC "
+                    "ORDER BY m.time ASC "
                     "LIMIT ? OFFSET ?", (limit,offset))
         li = []
         for mid,owner,ctime,content,typ in cur.fetchall():
             li.append(Message(mid,owner,ctime,content,typ))
         return (li, {"msg_num":msg_num, "total_page":total_page,
                      "now_page":pagenum,"limit":limit})
+    def get_message_by_mid(self, mid) -> Message|None:
+        """通过消息id获取消息内容"""
+        cur = self.conn.cursor()
+        cur.execute("SELECT m.uuid,u.name,m.time,content,m.type "
+                    "FROM messages m "
+                    "LEFT JOIN users u ON m.owner = u.uuid "
+                    "WHERE m.uuid = ?", (mid))
+        ret = cur.fetchone()
+        if not ret:
+            return None
+        return Message(*ret)
     def register(self, name:str, passwd:str) -> tuple[bool,str]:
         """注册，成功返回uid"""
         name = str(name)
@@ -296,6 +307,22 @@ LEFT JOIN users u ON u.uuid = m.owner;
         self.logevent(uid, Activetype.EDIT_NOTE)
         self.conn.commit()
         return (True, "修改备注成功")
+    def send_message(self, sid:str, msg:str,
+                     msg_type:Messagetype=Messagetype.TEXT) -> tuple[bool, str]:
+        """发送文本消息"""
+        if isinstance(msg,bytes) or msg_type == Messagetype.BLOB:
+            return (False, "发送消息失败：不应该发送二进制消息")
+        uid = self.get_uid_by_sid(sid)
+        if not uid[0]:
+            return (False, f"发送消息失败：{uid[1]}")
+        uid = uid[1]
+        mid = str(uuid.uuid4())
+        self.conn.execute("INSERT messages INTO "
+                          "uuid,owner,time,content,type "
+                          "VALUES(?,?,?,?,?)",
+                          (mid,uid,time.time(),msg,msg_type.value,))
+        self.conn.commit()
+        return (True, mid)
 
 class InterfaceCLI:
     """CLI交互"""
@@ -380,7 +407,170 @@ class InterfaceCLI:
         acti = [j for j,k in stat.get("activities") or [] if k == Activetype.LOGIN]
         login_record = "\n".join("> "+f"在 {pytools.get_strtime(i)} 登录过" for i in acti)
         print(f"登录记录:({len(stat["login"])})\n{login_record}")
+    def note_user(self) -> None:
+        """修改用户自身的备注"""
+        ret = self.system.get_uid_by_sid(self.sid)
+        if not ret[0]:
+            print(f"[INFO] 获取uid错误：{ret[1]}")
+            return
+        uid = ret[1]
+        ok,stat = self.system.get_userinfo(uid)
+        if not ok:
+            print("[INFO] 获取用户信息失败")
+            return
+        note = stat["user"].note
+        print(f"[INFO] 原备注：'{note}'")
+        try:
+            check = True
+            while check:
+                note = input("[INPUT] 输入备注：")
+                check = input("[ASK] 确认？(Y/n)").lower() == "n"
+        except (KeyboardInterrupt, EOFError):
+            print("[INFO] 取消操作")
+            return
+        self.system.set_usernote(self.sid, note)
+    def print_in_page(self, content: str|list, limit = 12) -> None:
+        """将传入的内容分页显示"""
+        if isinstance(content, list):
+            s = ""
+            count = 1
+            for i in content:
+                while len((s+i+"\n").splitlines()) > count*limit and \
+                        len(s.splitlines()) % limit != 0:
+                    s += "\n"
+                s += i + "\n"
+                count = len(s.splitlines()) // limit + 1
+            content = s
+        content = str(content)
+        pages = content.splitlines()
+        all_pages = len(pages)//limit + (len(pages)%limit!=0)
+        pages = ["\n".join(pages[i*limit:(i+1)*limit]) for i in range(all_pages)]
+        hint = ""
+        try:
+            ind = 0
+            while ind < len(pages):
+                seperator = f"{'-'*15} {ind+1}/{len(pages)} {'-'*15}"
+                print(hint or seperator+"\n"+pages[ind])
+                print(seperator)
+                hint = ""
+                number = input("[INPUT] 翻页器(h获取帮助):")
+                try:
+                    number = int(number)
+                    if 0 < number <= len(pages):
+                        ind = number - 1
+                except ValueError:
+                    if str(number).lower() == "q":
+                        ind = len(pages)
+                    elif str(number) == "g":
+                        ind = -1
+                    elif str(number) == "G":
+                        ind = len(pages)-2
+                    elif str(number).lower().startswith("h"):
+                        hint = "\n".join([
+                            "[INFO] g回到第一页, G跳到最后一页",
+                            "[INFO] 输入数字页码跳转到对应页面",
+                            "[INFO] h开头字符命令打印此信息",
+                            "[INFO] q退出程序(均需要回车确认)",
+                            ])
+                        ind -= 1
+                    ind += 1
+        except (KeyboardInterrupt, EOFError):
+            print("[INFO] 退出分页器")
+            return
+        return
+    def print_recent_msg(self, print_all=False):
+        """打印消息"""
+        limit = 20
+        if print_all:
+            limit = -1
+        messages,stat = self.system.get_messages(limit=limit)
+        colors = ("\x1b[34m", "\x1b[0m", "\x1b[2m")
+        li = []
+        for m in messages:
+            s = f"{colors[0]}[{m.owner}]在({pytools.get_strtime(m.time)})说:{colors[1]}\n"
+            content = m.content
+            if len(content.splitlines()) > 12:
+                content = "\n".join(content.splitlines()[:12]) +\
+                        "\n"+"="*40+"\n"+\
+                        "【以下内容由于行数超过12被系统自动截断】\n"+\
+                        f"【使用show命令查看全部内容】\n【消息ID:'{m.uuid}'】"
+            elif len(content) > 500:
+                content = content[:500]  +\
+                        "\n"+"="*40+"\n"+\
+                        "【以下内容由于字符数量超过500被系统自动截断】\n"+\
+                        f"【使用show命令查看全部内容】\n【消息ID:'{m.uuid}'】"
+            s += "\n".join(colors[2]+"> "+colors[1]+i for i in  content.splitlines()) + "\n"
+            li.append(s)
+        if print_all and len(("\n".join(li)).splitlines()) > 12:
+            self.print_in_page(li, limit=18)
+        else:
+            print("\n".join(li), end="")
+            if stat["total_page"] > 1:
+                print(f"\n[NOTE] 只打印了最新{len(li)}条消息")
+    def select_message(self) -> Message|None:
+        """过滤选择消息"""
+        msg_list :dict[str,Message] = {}
+        for m in self.system.get_messages(limit=-1)[0]:
+            msg = m.content.splitlines()[:1]
+            msg = (msg[0][:25]+"……" if len(msg[0])>25 else msg[0]) if msg else ""
+            s = f"[{m.uuid}] ({pytools.get_strtime(m.time)})[{m.owner}]:'{msg}'"
+            msg_list[s] = m
+
+        obj_msg = None
+        key = None
+        try:
+            while len(msg_list) > 1:
+                print(" "*30)
+                if len(msg_list) > 12:
+                    print("[INFO] 需要退出分页模式再使用关键词匹配过滤")
+                    self.print_in_page("\n".join(msg_list.keys()))
+                else:
+                    print("\n".join(msg_list.keys()) + "\n")
+                print("[INFO] 以上为待选项，通过多个关键词匹配得到对应消息")
+                key = input("[INPUT] 搜索关键词:")
+                msg_list = {k:v for k,v in msg_list.items() if key in k}
+            if len(msg_list) == 0:
+                print("[WARN] 不存在可选项")
+            else:
+                obj_msg = list(msg_list)[0]
+                print("[INFO] 最终选项：")
+                print(obj_msg)
+                obj_msg = msg_list[obj_msg]
+                if input("[ASK] 确认？(Y/n)").lower() == "n":
+                    print("[INFO] 取消操作")
+                    return None
+        except (KeyboardInterrupt, EOFError):
+            print("[INFO] 取消操作")
+            return None
+        if not obj_msg:
+            return None
+        return obj_msg
+    def show_sigal_message(self) -> None:
+        """显示特定历史信息"""
+        obj_msg = self.select_message()
+        if not obj_msg:
+            return
+        self.print_in_page(obj_msg.content)
+    def send_message(self):
+        """发送消息"""
+        if not self.system.get_uid_by_sid(self.sid)[0]:
+            print("[WARN] 尚未登录")
+            return
+        try:
+            check = True
+            message = ""
+            while check:
+                message = input("[INPUT] 输入消息：")
+                check = input("[ASK] 确认？(Y/n)").lower() == "n"
+            ret = self.system.send_message(self.sid, message)
+        except (KeyboardInterrupt, EOFError):
+            print("[INFO] 取消操作")
+            return
+        if not ret[0]:
+            print(f"[WARN] 发送消息失败：{ret[1]}")
+
     def main(self):
+        """主函数"""
         c = ""
         right = True
         menu : dict[str,tuple[str,Callable]] = {
@@ -392,11 +582,11 @@ class InterfaceCLI:
                 "login":("登录", self.login),
                 "logout":("登出",self.logout),
                 "info":("显示登录后用户的详细信息",self.info),
-                "renote":("修改用户自身的备注",system.note_user),
-                "p":("打印历史消息",system.show_message),
-                "p2":("打印历史消息(分页)", lambda: system.show_message(True)),
-                "show":("打印选择的特定历史消息",system.show_sigal_message),
-                "send":("发送消息",system.send_message),
+                "renote":("修改用户自身的备注",self.note_user),
+                "p":("打印历史消息",self.print_recent_msg),
+                "p2":("打印历史消息(分页)", lambda: self.print_recent_msg(True)),
+                "show":("打印选择的特定历史消息",self.show_sigal_message),
+                "send":("发送消息",self.send_message),
                 }
         menu["p"][1]()
         print("="*10+"以上为历史信息"+"="*10)
@@ -404,8 +594,7 @@ class InterfaceCLI:
         print("[INFO] 使用 help 加回车获取命令列表")
         print("[INFO] 使用命令进行操作时记得切下输入法")
         while c.lower() != "q":
-            color = [f"\x1b[{32 if right else 31}m", "\x1b[0m"] if os.name == "posix" else\
-                    [">"*10+"命令分隔符"+("" if right else "(上条命令不正确)")+"<"*10+"\n", ""]
+            color = [f"\x1b[{32 if right else 31}m", "\x1b[0m"]
             try:
                 c = input(f"{color[0]}$ {color[1]}")
             except (KeyboardInterrupt, EOFError):
