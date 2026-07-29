@@ -61,7 +61,7 @@ ${pages}
 <!-- template: msg_data -->
 <div class='messages'${id}>
 <p><a href='/userlist#uid_${owner}' class='msg_name'>${name}</a>
-<a href='/search?id=${msgid}'><span class='msg_time'>${timestamp} | #${ind}</span></a></p>
+<a href='/info?id=${msgid}'><span class='msg_time'>${timestamp} | #${ind}</span></a></p>
 <div class='msgcont'>${msg}
 </div>
 </div>
@@ -88,32 +88,30 @@ ${users}
 <!-- template: dashboard -->
 <div class="container">
   <h1>个人仪表板</h1>
-  ${userdata}
-</div>
-<!-- template: dashboard-data -->
-${usercard}
-<div class='container'>
-  <p>UUID: '${id}'</p>
-  <p>密码md5值: '${passwd}'</p>
-  <details>
-    <summary>登录记录</summary>
-    <p>${login_record}</p>
-  </details>
-</div>
+  ${usercard}
+  <div class='container'>
+    <p>UUID: '${id}'</p>
+    <!-- <p>密码md5值: '${passwd}'</p> -->
+    <details>
+      <summary>登录记录</summary>
+      <p>${login_record}</p>
+    </details>
+  </div>
 
-<div class='container'>
-  <form method="POST" action="/renote">
-    <div class="form-group">
-      <label for="note">修改备注:</label>
-      <textarea name="note" rows="4" required>${note}</textarea>
-    </div><br/>
-    <button type="submit">提交修改</button>
+  <div class='container'>
+    <form method="POST" action="/renote">
+      <div class="form-group">
+        <label for="note">修改备注:</label>
+        <textarea name="note" rows="4" required>${note}</textarea>
+      </div><br/>
+      <button type="submit">提交修改</button>
+    </form>
+  </div>
+
+  <form method="POST" action="/logout">
+    <button type="submit" style="background-color:red;">退出登录</button>
   </form>
 </div>
-
-<form method="POST" action="/logout">
-  <button type="submit" style="background-color:red;">退出登录</button>
-</form>
 <!-- template: edit -->
 <div class="container">
   <h1>消息重编辑页面</h1>
@@ -121,7 +119,7 @@ ${usercard}
     <div class="form-group">
     <input type="text" name="keyid" value="${keyid}" style="display:none;">
     <label for="message">在下面修改消息:</label>
-    <textarea name="message" rows="10" placeholder="${placeholder}" required>${content}</textarea>
+    <textarea name="message" rows="24" style="height:70svh;" placeholder="${placeholder}" required>${content}</textarea>
     </div>
     <button type="submit">提交修改</button>
   </form>
@@ -191,21 +189,27 @@ window.onload = function() {
   <p>最下面会列一些相关链接，那个【自动更新按钮】点击后会让后台启动一个线程更新程序，如果要应用修改需要关掉后台（cmd）在文件管理器里重新启动程序（我有点担心会被搞乱，但是既然能访问这个聊天室那素质应该还是有的吧？）</p>
   <h2 id="re">正则表达式使用</h2>
   <p>使用'.*'匹配任意字符：'.'意思是匹配任意字符,'*'意思是匹配任意次数前面的字符</p>
-  <p>使用'[0-9]'或者'\\d'匹配数字，结合上述'\\d*'就是匹配任意位数数字的意思</p>
+  <p>使用'[0-9]'或者'\d'匹配数字，结合上述'\d*'就是匹配任意位数数字的意思</p>
   <p>算了，写起来好累，自己去<a href="https://www.runoob.com/regexp/regexp-syntax.html">这个链接</a>里看教程如果感兴趣的话</p>
   <h2>相关链接:</h2>
   <ul>
-    <li><a href="/more_info">【统计信息】</a></li>
-    <li><a href="/self_update">【自动更新按钮】(请勿滥用)</a></li>
-    <li><a href="http://${url_self_1}">本程序链接(github)</a></li>
-    <li><a href="${url_self_2}">本程序链接(github.io)</a></li>
-    <li><a href="http://${url_anti_jiyu}">反极域程序链接(github)</a></li>
-    <li><a href="http://ghfast.top/${url_anti_jiyu}">反极域程序链接(github代理加速链接)</a></li>
+    <li><a href="/statistic">【统计信息】</a></li>
   </ul>
   <h2>主题设置</h2>
   <p>当前主题为：<a id="theme-toggle-button" onclick="toggleTheme()">light（点击切换）</a></p>
 </div>
-<!-- template: more_info -->
+<!-- template: info -->
+<div class="container">
+  <h1>消息详情</h1>
+  <h2>相关数据</h2>
+  ${data}
+  <h2>可用操作</h2>
+  ${actions}
+  <h2>原始消息</h2>
+  ${msgcard}
+  ${extention}
+</div>
+<!-- template: statistic -->
 <div class="container">
   <h1>统计信息</h1>
   <h2>总体统计</h2>
