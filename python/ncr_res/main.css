@@ -110,6 +110,10 @@ button:active {
 	box-shadow: 0 4px 15px rgba(0,0,0,0.08);
 }
 
+pre {
+	overflow: scroll;
+}
+
 .msg_name, .user_name {
 	font-weight: 700;
 	color: #3498db;

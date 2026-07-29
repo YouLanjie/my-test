@@ -29,6 +29,7 @@ from html import escape
 from string import Template
 
 import pytools
+import orgreader2
 
 # Better Input In Linux
 try:
@@ -97,7 +98,7 @@ class UserInfo:
     send_count : int
     send_char : int
     # total_edit : int
-@dataclass
+@dataclass(frozen=True)
 class Message:
     """消息类"""
     uuid : str
@@ -251,6 +252,29 @@ LEFT JOIN users u ON u.uuid = m.owner;
                     "FROM messages WHERE uuid = ?", (uid,))
         send_count, send_char = cur.fetchone()
         return (True, UserInfo(user[0], activities, send_count, send_char))
+    def get_message_statistic(self) -> dict[str,int|dict]:
+        """返回消息总长度"""
+        cur = self.conn.cursor()
+        statistic = {}
+        statistic["total_msgs"], statistic["total_chars"] = cur.execute(
+                "SELECT COUNT(*),COALESCE(SUM(LENGTH(content)),0) FROM messages"
+                ).fetchone()
+        statistic["total_edits"] = cur.execute("SELECT COUNT(*) FROM edit_hist").fetchone()[0]
+        cur.execute("""
+            SELECT 
+                u.uuid,
+                u.name,
+                COUNT(m.uuid) AS msg_count,
+                COALESCE(SUM(LENGTH(m.content)), 0) AS total_chars
+            FROM users u
+            LEFT JOIN messages m ON u.uuid = m.owner
+            GROUP BY u.uuid
+            HAVING msg_count > 0
+            ORDER BY msg_count DESC""")
+        statistic["user_stats"] = {}
+        for row in cur.fetchall():
+            statistic["user_stats"][row[0]] = row[1:]
+        return statistic
     def _get_sql_cond(self, search:dict) -> tuple[str, list]:
         params = []
         reg_func = "regexp"
@@ -314,14 +338,13 @@ LEFT JOIN users u ON u.uuid = m.owner;
             pagenum = total_page
         # 包含情况：(offset, offset+limit]
         offset = (pagenum-1)*limit
-        # print(f">>>> QUERYS: {search}")
-        # print(f">>>> BASE_SQL: {base_sql}")
-        # print(f">>>> PARAMS: {params}")
         cur.execute("SELECT m.uuid,u.name,m.owner,m.time,content,m.type "
                     f"{base_sql} ORDER BY {sort_key} "
                     "LIMIT ? OFFSET ?", params+[limit,offset])
         li = []
         for params in cur.fetchall():
+            params = list(params)
+            params[5] = Messagetype(params[5])
             li.append(Message(*params))
         return (li, {"msg_num":msg_num, "total_page":total_page,
                      "now_page":pagenum,"limit":limit})
@@ -592,25 +615,24 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
             "content":content,
             })
     @lru_cache
-    def gen_msg_content_html(self, content:str, msgid:str) -> str:
+    def gen_msg_content_html(self, msg:Message) -> str:
         """生成消息渲染后的html"""
-        # try:
-        #     if not self.orgreader:
-        #         raise ModuleNotFoundError
-        #     if not content.startswith("# USE ORG"):
-        #         raise ValueError
-        #     doc = self.orgreader.Document(content,
-        #                                   file_name=msgid+".org",
-        #                                   setting={"id_prefix":"org_"+msgid+"_"})
-        #     doc.root.line.s = ""
-        #     visitor = self.orgreader.HtmlExportVisitor()
-        #     msg = visitor.toc_to_html(doc) + doc.root.accept(visitor)
-        #     if doc.status["footnotes"]:
-        #         msg += visitor.fns_to_html(doc)
-        #     return msg
-        # except (ModuleNotFoundError, ValueError, OSError, FileNotFoundError):
-        del msgid
-        return "<br/>".join(escape(content).splitlines())
+        print(f">>>> {msg}")
+        if msg.typ == Messagetype.ORG:
+            doc = orgreader2.Document(msg.content,
+                                      file_name=msg.uuid+".org",
+                                      setting={"id_prefix":"org_"+msg.uuid+"_"})
+            doc.root.line.s = ""
+            visitor = orgreader2.HtmlExportVisitor()
+            s = visitor.toc_to_html(doc) + doc.root.accept(visitor)
+            if doc.status["footnotes"]:
+                s += visitor.fns_to_html(doc)
+            return s
+        if msg.typ == Messagetype.HTML:
+            return msg.content
+        if msg.typ == Messagetype.MONO:
+            return f'<pre>{escape(msg.content)}</pre>'
+        return "<br/>".join(escape(msg.content).splitlines())
     def gen_pager(self, now_page:int, all_pages:int, lst=True) -> str:
         """生成翻页器"""
         if all_pages == 0:
@@ -647,7 +669,7 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
         # else Usertype.BAN
         for m in messages:
             msg_id = ' id="last_msg"' if m.uuid == last_msg_id else ''
-            msg = self.gen_msg_content_html(m.content, m.uuid)
+            msg = self.gen_msg_content_html(m)
             if len(messages) == 1:
                 msg_id += ' style="max-height:100%;"'
             s += self.res.get("msg_data", {
@@ -684,9 +706,17 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
         limit = stat["limit"]
         pager = self.gen_pager(now_page, total_page)
         s = self.gen_message_list(msgs, offset=(now_page-1)*limit)
+        if is_login:
+            send_window = "\n".join([f'<option value="{i.value}">{i}</option>' \
+                    for i in Messagetype])
+            send_window = self.res.get("send_window",{
+                'msg_type':f"<select name='msg_type'>{send_window}</select>"
+                })
+        else:
+            send_window = self.res.get("send_window2", {})
         return self.get_base_html(self.res.get("msg_list", {
             "messages": s,
-            "send_window" : self.res.get("send_window" if is_login else "send_window2",{}),
+            "send_window" : send_window,
             "pages": pager,
             }), title="消息列表")
     def get_searchlist(self) -> str:
@@ -706,7 +736,6 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
                 now_page = -1
             else:
                 now_page = 1
-        is_login = self.system.get_uid_by_sid(self.get_sid())[0]
         querys = {k:urllib.parse.unquote(v) for k,v in querys.items()}
         msgs,stat = self.system.get_messages(pagenum=now_page,limit=limit, search=querys)
         s = self.gen_message_list(msgs)
@@ -717,7 +746,6 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
         sort_type = querys.get("sort_type")
         return self.get_base_html(self.res.get("search", {
             "messages":s or "<p>无搜索结果</p>",
-            "send_window" : self.res.get("send_window" if is_login else "send_window2",{}),
             "pages": pager,
             "user": querys.get("user") or ".*",
             "msg": querys.get("msg") or ".*",
@@ -774,17 +802,17 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
         if not ok or isinstance(stat, str):
             return self.get_response(str(stat) or "获取用户信息失败")
         u :User = stat.user
+        acti = [j for j,k in stat.activities if k == Activetype.LOGIN]
         data = {
                 "name":escape(u.name),
                 "timestamp":escape(pytools.get_strtime(u.time)),
                 "note":"\n".join(u.note.splitlines()),
                 "id":escape(u.uuid),
+                "login_num":str(len(acti))
                 }
         data["usercard"] = self.res.get("user-data", data)
-        acti = [j for j,k in stat.activities if k == Activetype.LOGIN]
         data["login_record"] = "<br/>".join("> "+f"在 {escape(pytools.get_strtime(i))} 登录过" \
                 for i in acti)
-        # TODO: check工作情况
         return self.get_base_html(
                 self.res.get("dashboard", data),
                 title="个人仪表板")
@@ -855,17 +883,29 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
             msgs = []
             for name,mtime,diff in edit_hist:
                 msgs.append(Message(msg.uuid, name, msg.owner_id,
-                                    mtime, diff, Messagetype.MONO))
+                                    mtime, diff or "None", Messagetype.MONO))
             data["extention"] += self.gen_message_list(msgs)
         return self.get_base_html(
                 self.res.get("info", data),
                 title="详细信息")
     def get_statistic(self) -> str:
         """统计信息"""
+        if not self.system:
+            return "500"
+        statistic :dict = self.system.get_message_statistic()
+        rows = []
+        for uid, stats in statistic["user_stats"].items():
+            if stats[1] > 0:
+                rows.append(
+                    f'<tr><td><a href="/userlist#uid_{uid}">{escape(stats[0])}</td>'
+                    f"<td>{stats[1]}</td>"
+                    f"<td>{stats[2]}</td></tr>"
+                )
+        statistic["user_stats_rows"] = "\n".join(rows) if rows else \
+                "<tr><td colspan='3'>暂无消息</td></tr>"
         return self.get_base_html(
-                self.res.get("404", {}),
-                title="统计信息",
-                meta='<meta http-equiv="refresh" content="2;url=/">')
+                self.res.get("statistic", statistic),
+                title="统计信息")
     def get_response(self, msg:str, timeout=5, url="/"):
         """返回带有msg提示的重定向界面html"""
         return self.get_base_html(
@@ -1021,7 +1061,12 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
             return False
         message = post_data.get("message")
         message = str(message[0] if message else "")
-        ok,data["msg"] = self.system.send_message(self.get_sid(), message)
+        typ = post_data.get("msg_type")
+        try:
+            typ = Messagetype(int(typ[0]))
+        except (ValueError, TypeError, IndexError):
+            typ = Messagetype.TEXT
+        ok,data["msg"] = self.system.send_message(self.get_sid(), message, typ)
         if ok:
             data["msg"] = "留言成功！"
         data["url"] = "/?p=last_msg#last_msg"

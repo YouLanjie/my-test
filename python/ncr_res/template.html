@@ -68,7 +68,10 @@ ${pages}
 <!-- template: send_window -->
 <form method="POST" action="/send_message">
 <div class="form-group">
-<label for="message">填写要发送的消息:</label><textarea name="message" rows="4" required></textarea>
+<label for="message">填写要发送的消息:</label>
+<textarea name="message" rows="4" required></textarea>
+<label for="msg_type">消息类型</label>
+${msg_type}
 </div><br/>
 <button type="submit">发送</button></form>
 <!-- template: send_window2 -->
@@ -91,6 +94,7 @@ ${users}
   ${usercard}
   <div class='container'>
     <p>UUID: '${id}'</p>
+    <p>登录次数: '${login_num}'</p>
     <!-- <p>密码md5值: '${passwd}'</p> -->
     <details>
       <summary>登录记录</summary>
@@ -229,9 +233,4 @@ window.onload = function() {
       ${user_stats_rows}
     </tbody>
   </table>
-
-  <h2>消息详情</h2>
-  <ol>
-      ${message_rows}
-  </ol>
 </div>
