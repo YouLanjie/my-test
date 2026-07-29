@@ -577,8 +577,8 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
         sid = self.get_sid()
         s = []
         if self.system and (sid := self.get_sid()) and (uid:=self.system.get_uid_by_sid(sid)[1]) \
-                and (u:=self.system.get_userlist(uid)[0]):
-            s.append(f"""<a href="/dashboard">{escape(u.name)}</a>""")
+                and (u:=self.system.get_userlist(uid)):
+            s.append(f"""<a href="/dashboard">{escape(u[0].name)}</a>""")
         else:
             s.append("""<a href="/register">注册</a></li>""")
             s.append("""<a href="/login">登录</a>""")
@@ -637,7 +637,7 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
             pages += '点击查看最新消息</a>'
         pages += '</p>'
         return pages
-    def gen_message_list(self, messages:list[Message]) -> str:
+    def gen_message_list(self, messages:list[Message], offset=0) -> str:
         """生成消息列表(html)"""
         if not self.system:
             return ""
@@ -656,7 +656,7 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
                 "name":escape(m.owner),
                 "owner":escape(m.owner_id),
                 "timestamp":escape(pytools.get_strtime(m.time)),
-                "ind":messages.index(m)+1,
+                "ind":messages.index(m)+offset+1,
                 "msg":msg,
                 })
         return s
@@ -679,11 +679,11 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
                 now_page = 1
         is_login = self.system.get_uid_by_sid(self.get_sid())[0]
         msgs,stat = self.system.get_messages(pagenum=now_page,limit=limit)
-        s = self.gen_message_list(msgs)
         total_page = stat["total_page"]
         now_page = stat["now_page"]
         limit = stat["limit"]
         pager = self.gen_pager(now_page, total_page)
+        s = self.gen_message_list(msgs, offset=(now_page-1)*limit)
         return self.get_base_html(self.res.get("msg_list", {
             "messages": s,
             "send_window" : self.res.get("send_window" if is_login else "send_window2",{}),
