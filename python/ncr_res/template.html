@@ -46,7 +46,7 @@ ${send_window}
       <label for="msg">搜索内容(均支持<a href="/about#re">正则表达式</a>):</label><input type="text" name="msg" value="${msg}"><br/>
       <label for="user">搜索用户:</label><input type="text" name="user" value="${user}"><br/>
       <label for="page_limit">每页展示的消息数:</label><input type="number" name="page_limit" value="${page_limit}"><br/>
-      <label for="sort_type">排序方式:</label><br/>
+      <label for="sort_type">排序方式:</label>
       <select name="sort_type">
         ${sort_type_options}
       </select>
@@ -85,7 +85,7 @@ ${users}
 <!-- template: user-data -->
 <div class='users' id="uid_${id}">
   <p><a href="/login?id=${id}" class="user_name">${name}</a>
-  <span class='user_time'>注册时间: ${timestamp}</span></p>
+  <span class='user_time'>(${type}) | ${timestamp}</span></p>
   <p>${note}</p>
 </div>
 <!-- template: dashboard -->
@@ -124,6 +124,10 @@ ${users}
     <input type="text" name="keyid" value="${keyid}" style="display:none;">
     <label for="message">在下面修改消息:</label>
     <textarea name="message" rows="24" style="height:70svh;" placeholder="${placeholder}" required>${content}</textarea>
+    <label for="msg_type">消息类型</label>
+    <select name='msg_type'>
+      ${msg_type}
+    </select>"
     </div>
     <button type="submit">提交修改</button>
   </form>
@@ -198,6 +202,7 @@ window.onload = function() {
   <h2>相关链接:</h2>
   <ul>
     <li><a href="/statistic">【统计信息】</a></li>
+    <li><a href="/admi">【用户管理】（仅限管理员账号）</a></li>
   </ul>
   <h2>主题设置</h2>
   <p>当前主题为：<a id="theme-toggle-button" onclick="toggleTheme()">light（点击切换）</a></p>
@@ -233,4 +238,26 @@ window.onload = function() {
       ${user_stats_rows}
     </tbody>
   </table>
+</div>
+<!-- template: admi -->
+<div class="container">
+  <h1>用户管理</h1>
+${users}
+</div>
+<!-- template: admi-ud -->
+<div class='users' id="uid_${id}">
+  <p><a href="/login?id=${id}" class="user_name">${name}</a>
+  <span class='user_time'>(${type}) | ${timestamp}</span></p>
+  <div class="container">
+    <p>${note}</p>
+  </div>
+  <form method="POST" action="/admi-setusertype" class="admi-form">
+    <div class="form-group">
+      <input type="text" name="uid" value="${id}" style="display:none;">
+      <select name="type">
+        ${user_type_options}
+      </select>
+    </div>
+    <button type="submit">设置类型</button>
+  </form>
 </div>

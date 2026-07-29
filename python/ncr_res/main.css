@@ -1,3 +1,7 @@
+html {
+	scroll-padding-top: 50px;
+}
+
 body {
 	font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 	max-width: 1000px;
@@ -56,6 +60,9 @@ input, textarea, select {
 	transition: all 0.3s ease;
 	background-color: #f8f9fa;
 }
+
+.admi-form .form-group { display: inline; }
+.admi-form .form-group select { width: 50%; }
 
 input:focus, textarea:focus {
 	outline: none;

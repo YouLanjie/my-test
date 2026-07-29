@@ -71,6 +71,7 @@ class Activetype(Enum):
     LOGOUT = 2
     EDIT_NOTE = 3
     EDIT_MSG = 4
+    CHUSER = 5
 @unique
 class Messagetype(Enum):
     """消息类型枚举"""
@@ -111,8 +112,8 @@ class Message:
 class MessageInfo:
     """更多含有关联表的消息数据"""
     msg : Message
-    # 编辑历史：修改者名，时间，diff文本
-    edit : list[tuple[str,float,str]]
+    # 编辑历史：修改者名，修改者uid，时间，diff文本
+    edit : list[tuple[str,str,float,str]]
 
 class System:
     """操作类"""
@@ -167,6 +168,7 @@ CREATE TABLE IF NOT EXISTS "messages" (
 );
 
 CREATE TABLE IF NOT EXISTS "edit_hist" (
+	uid TEXT NOT NULL,  -- 操作者id
 	mid TEXT NOT NULL,  -- 消息id
 	time DOUBLE NOT NULL,
 	diff TEXT,    -- diff新旧文本结果
@@ -378,10 +380,10 @@ LEFT JOIN users u ON u.uuid = m.owner;
         ret = list(ret)
         ret[5] = Messagetype(ret[5])
         msg = Message(*ret)
-        cur.execute("SELECT u.name,e.time,e.diff "
+        cur.execute("SELECT u.name,u.uuid,e.time,e.diff "
                     "FROM edit_hist e "
                     "LEFT JOIN messages m ON m.uuid = e.mid "
-                    "LEFT JOIN users u ON u.uuid = m.owner "
+                    "LEFT JOIN users u ON u.uuid = e.uid "
                     "WHERE e.mid = ? "
                     "ORDER BY e.time ASC", (mid,))
         ret = cur.fetchall()
@@ -434,6 +436,24 @@ LEFT JOIN users u ON u.uuid = m.owner;
         """向内部event表记录事件，需要手动commit()以减少commit数量"""
         self.conn.execute("INSERT INTO event (uid,time,type) VALUES(?,?,?)",
                           (uid,time.time(),ev.value))
+    def set_usertype(self, sid:str, uid:str, new_type:Usertype) -> tuple[bool, str]:
+        """修改设置用户类型"""
+        u = self.get_uid_by_sid(sid)
+        if not u[0]:
+            return (False, "你不能在未登录的时候干这事")
+        u = u[1]
+        if not (u:=self.get_userlist(u)):
+            return (False, "操作用户不存在")
+        u = u[0]
+        if not self.get_userlist(uid):
+            return (False, "被操作用户不存在")
+        if u.typ != Usertype.ADMI and u.uuid != self._admi_uuid:
+            return (False, "权限不足（Only 管理员 can do）")
+        self.conn.execute("UPDATE users SET type = ? WHERE uuid = ?",
+                          (new_type.value,uid,))
+        self.logevent(uid, Activetype.CHUSER)
+        self.conn.commit()
+        return (True, "修改用户类型成功")
     def set_usernote(self, sid:str, new_note:str) -> tuple[bool, str]:
         """修改设置用户备注"""
         uid = self.get_uid_by_sid(sid)
@@ -464,7 +484,8 @@ LEFT JOIN users u ON u.uuid = m.owner;
                           (mid,uid,time.time(),msg,msg_type.value,))
         self.conn.commit()
         return (True, mid)
-    def set_message(self, sid:str, mid:str, new_msg:str) -> tuple[bool, str]:
+    def set_message(self, sid:str, mid:str, new_msg:str,
+                    new_type:Messagetype|None=None) -> tuple[bool, str]:
         """修改已有消息"""
         uid = self.get_uid_by_sid(sid)
         if not uid[0] or not (u:=self.get_userlist(uid[1])):
@@ -475,16 +496,24 @@ LEFT JOIN users u ON u.uuid = m.owner;
             return (False, "消息不存在")
         if msg.owner_id != u.uuid and u.typ != Usertype.ADMI:
             return (False, "权限不足（别乱改别人的消息啊喂！）")
+        new_type = new_type or msg.typ
         self.logevent(u.uuid, Activetype.EDIT_MSG)
         ts = time.time()
         s1 = [i+"\n" for i in msg.content.splitlines()]
         s2 = [i+"\n" for i in new_msg.splitlines()]
         difftext = "".join(list(difflib.unified_diff(s1, s2)))
+        if msg.content == new_msg:
+            difftext += "\n[SYSTEM NOTICE] 消息内容没有变化"
+        if msg.typ != new_type:
+            difftext += f"\n[SYSTEM NOTICE] 消息类型变化{msg.typ} -> {new_type}"
 
         cur = self.conn.cursor()
         self.logevent(u.uuid, Activetype.EDIT_NOTE)
-        cur.execute("INSERT INTO edit_hist (mid,time,diff) VALUES(?,?,?)", (msg.uuid,ts,difftext) )
+        cur.execute("INSERT INTO edit_hist (uid,mid,time,diff) VALUES(?,?,?,?)",
+                    (u.uuid,msg.uuid,ts,difftext) )
         cur.execute("UPDATE messages SET content = ? WHERE uuid = ?", (new_msg,msg.uuid,))
+        if msg.typ != new_type:
+            cur.execute("UPDATE messages SET type = ? WHERE uuid = ?", (new_type.value,msg.uuid,))
         self.conn.commit()
         return (True, "修改消息成功")
     def syslog(self, msg:str):
@@ -499,20 +528,19 @@ class Rescourses:
         self.tf_html = Path(__file__).parent/"ncr_res/template.html"
         self.css = ""
         self.darkcss = ""
+        self.last_update = time.time()
         # 键：meta, title, loginstatus, content
         self.index = Template("<html><head>${meta}</head><body>${content}</body></html>")
         self.template :dict[str,Template] = {}
         self.load_template()
-    def _is_newer(self, f1:Path, f2:Path) -> bool:
-        if not f1.exists() or not f2.exists():
-            return False
-        return f1.stat().st_mtime > f2.stat().st_mtime
+    def _check_mtime(self, fl:list[Path]) -> float:
+        tl = [f.stat().st_mtime for f in fl if f.is_file()]+[0]
+        return max(tl)
     def check_update(self):
         """检查模板文件更新"""
-        f = Path(__file__)
-        if self._is_newer(self.tf_css, f) or self._is_newer(self.tf_dcss, f)\
-                or self._is_newer(self.tf_html, f):
+        if self._check_mtime([self.tf_css, self.tf_dcss, self.tf_html]) > self.last_update:
             self.load_template()
+            self.last_update = time.time()
     def load_template(self):
         """加载模板文件"""
         if self.tf_css.is_file():
@@ -617,7 +645,6 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
     @lru_cache
     def gen_msg_content_html(self, msg:Message) -> str:
         """生成消息渲染后的html"""
-        print(f">>>> {msg}")
         if msg.typ == Messagetype.ORG:
             doc = orgreader2.Document(msg.content,
                                       file_name=msg.uuid+".org",
@@ -767,8 +794,11 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
             return "500"
         s = ""
         for u in self.system.get_userlist():
+            if u.typ == Usertype.BAN:
+                continue
             s += self.res.get("user-data", {
                 "id":escape(u.uuid), "name":escape(u.name),
+                "type":u.typ,
                 "timestamp":escape(pytools.get_strtime(u.time)),
                 "note":"<br/>".join(u.note.splitlines()),
                 })
@@ -830,15 +860,20 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
         content = ""
         mid = self.get_querys().get("id", "")
         msg = self.system.get_message_by_mid(mid)
+        msg_typ = ""
         if msg:
             placeholder = "请填写修改后的消息"
             content = escape(msg.content)
             meta = ""
+            msg_typ = "\n".join([
+                f'<option value="{i.value}"{" selected" if i == msg.typ else ""}>{i}</option>' \
+                        for i in Messagetype])
         return self.get_base_html(
                 self.res.get("edit", {
                     "keyid":mid,
                     "placeholder":placeholder,
-                    "content":content
+                    "content":content,
+                    "msg_type":msg_typ
                     }),
                 title="消息重编辑界面", meta=meta)
     def get_msginfo(self) -> str:
@@ -863,7 +898,7 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
             data["actions"] += f'<li><a href="/edit?id={msg.uuid}">编辑本消息</a></li>'
         data["actions"] += "</ul>"
         spl = msg.content.splitlines()
-        last_edit = f'[{edit_hist[-1][0]}] {pytools.get_strtime(edit_hist[-1][1])}' \
+        last_edit = f'[{edit_hist[-1][0]}] {pytools.get_strtime(edit_hist[-1][2])}' \
                 if edit_hist else 'None'
         data["data"] = f"""<ul><li>{"</li><li>".join(escape(i) for i in (
             i for i in (
@@ -881,8 +916,8 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
         if edit_hist:
             data["extention"] = "<h2>历史记录</h2>\n"
             msgs = []
-            for name,mtime,diff in edit_hist:
-                msgs.append(Message(msg.uuid, name, msg.owner_id,
+            for name,uid,mtime,diff in edit_hist:
+                msgs.append(Message(msg.uuid, name, uid,
                                     mtime, diff or "None", Messagetype.MONO))
             data["extention"] += self.gen_message_list(msgs)
         return self.get_base_html(
@@ -906,6 +941,35 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
         return self.get_base_html(
                 self.res.get("statistic", statistic),
                 title="统计信息")
+    def get_admi(self):
+        """获取用户管理界面"""
+        if not self.system:
+            return "500"
+        ok,uid = self.system.get_uid_by_sid(self.get_sid())
+        if not ok:
+            return self.get_response(uid)
+        if not (uid:=self.system.get_userlist(uid)):
+            return self.get_response("用户不存在")
+        u = uid[0]
+        if u.typ != Usertype.ADMI:
+            return self.get_response("权限不足")
+        s = ""
+        for u in self.system.get_userlist():
+            user_type_options = "\n".join([
+                f'<option value="{i.value}"{" selected" if i == u.typ else ""}>{i}</option>' \
+                        for i in Usertype])
+            s += self.res.get("admi-ud", {
+                "id":escape(u.uuid), "name":escape(u.name),
+                "type":u.typ,
+                "user_type_options":user_type_options,
+                "timestamp":escape(pytools.get_strtime(u.time)),
+                "note":"<br/>".join(u.note.splitlines()),
+                })
+        return self.get_base_html(
+                self.res.get("admi", {
+                    "users":s
+                    }),
+                title="用户管理")
     def get_response(self, msg:str, timeout=5, url="/"):
         """返回带有msg提示的重定向界面html"""
         return self.get_base_html(
@@ -953,6 +1017,7 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
                 "/info":self.get_msginfo,
                 "/statistic":self.get_statistic,
                 "/ret":self.get_deque_msg,
+                "/admi":self.get_admi,
                 }
         css_list = {"/main.css":self.res.css,
                     "/dark.css":self.res.darkcss}
@@ -1005,6 +1070,7 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
                 "/send_message":self.post_send_message,
                 "/edit":self.post_reedit,
                 "/renote":self.post_renote,
+                "/admi-setusertype":self.post_setusertype,
                 }
         if parsed_path.path not in handler:
             self.ret_404()
@@ -1024,6 +1090,7 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
         if ok:
             data["header"]["Set-Cookie"] = f'sid={msg}; HttpOnly; Path=/'
             data["msg"] = "欢迎回来！"
+            data["url"] = "/?p=last_msg#last_msg"
         else:
             data["msg"] = msg
             data["url"] = "/login"
@@ -1090,7 +1157,13 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
         keyid = str(keyid[0] if keyid else "")
         message = post_data.get("message")
         message = str(message[0] if message else "")
-        _,data["msg"] = self.system.set_message(self.get_sid(), keyid, message)
+        typ = post_data.get("msg_type")
+        try:
+            typ = Messagetype(int(typ[0]))
+        except (ValueError, TypeError, IndexError):
+            typ = Messagetype.TEXT
+        _,data["msg"] = self.system.set_message(self.get_sid(), keyid,
+                                                message, typ)
         data["url"] = f"/info?id={keyid}"
         return True
     def post_logout(self, post_data, data:dict):
@@ -1102,6 +1175,21 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
         ok,data["msg"] = self.system.logout(self.get_sid())
         if ok:
             data["header"]["Set-Cookie"] = 'sid=; HttpOnly; Path=/'
+        return True
+    def post_setusertype(self, post_data, data:dict):
+        """处理用户更改类型操作"""
+        if not self.system:
+            self.ret_response("500系统内部错误")
+            return False
+        uid = post_data.get("uid")
+        uid = str(uid[0] if uid else "")
+        typ = post_data.get("type")
+        try:
+            typ = Usertype(int(typ[0]))
+        except (ValueError, TypeError, IndexError):
+            typ = Usertype.NORM
+        _,data["msg"] = self.system.set_usertype(self.get_sid(), uid, typ)
+        data["url"] = f"/admi#uid_{uid}"
         return True
 
 class InterfaceCLI:
