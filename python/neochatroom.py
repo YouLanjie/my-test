@@ -3,28 +3,28 @@
 """作为talking_local.py的非兼容py3.8、非兼容windows、剔除无用功能的升级版"""
 
 import re
+import sys
 import time
 import uuid
+import signal
 import difflib
 import sqlite3
 import hashlib
 import argparse
 import threading
+from enum import Enum, unique
+from typing import Callable
 from pathlib import Path
 from getpass import getpass
-from dataclasses import dataclass
-from collections import deque
 from importlib import import_module
 from functools import lru_cache
-from typing import Callable
-from enum import Enum, unique
+from dataclasses import dataclass
+from collections import deque
 
 # web ui
 import http.server
 import socketserver
 import urllib.parse
-import urllib.request
-import urllib.error
 from html import escape
 from string import Template
 
@@ -412,15 +412,21 @@ LEFT JOIN users u ON u.uuid = m.owner;
         cur = self.conn.cursor()
         cur.execute("SELECT uuid FROM users WHERE name = ? AND passwd = ?",
                     (name, passwd))
-        ret = cur.fetchone()
-        if not ret:
+        uid = cur.fetchone()
+        if not uid:
             return (False, "用户名或密码不正确")
+        uid = uid[0]
+        if not (u:=self.get_userlist(uid)):
+            return (False, "用户不存在")
+        u = u[0]
+        if u.typ == Usertype.BAN:
+            return (False, "封禁用户不能登录")
         if sid == "":
             sid = str(uuid.uuid4())
         cur.execute("INSERT INTO sessions (sid,uid,ctime) VALUES(?,?,?)",
-                    (sid,ret[0],int(time.time()),))
+                    (sid,uid,int(time.time()),))
         cur.close()
-        self.logevent(ret[0], Activetype.LOGIN)
+        self.logevent(uid, Activetype.LOGIN)
         self.conn.commit()
         return (True, sid)
     def logout(self, sid:str) -> tuple[bool,str]:
@@ -477,6 +483,11 @@ LEFT JOIN users u ON u.uuid = m.owner;
             if not uid[0]:
                 return (False, f"发送消息失败：{uid[1]}")
             uid = uid[1]
+        if not (u:=self.get_userlist(uid)):
+            return (False, "用户不存在")
+        u = u[0]
+        if u.typ == Usertype.BAN:
+            return (False, "封禁用户不能发消息")
         mid = str(uuid.uuid4())
         self.conn.execute("INSERT INTO messages "
                           "(uuid,owner,time,content,type) "
@@ -494,7 +505,7 @@ LEFT JOIN users u ON u.uuid = m.owner;
         msg = self.get_message_by_mid(mid)
         if not msg:
             return (False, "消息不存在")
-        if msg.owner_id != u.uuid and u.typ != Usertype.ADMI:
+        if (msg.owner_id != u.uuid and u.typ != Usertype.ADMI) or u.typ == Usertype.BAN:
             return (False, "权限不足（别乱改别人的消息啊喂！）")
         new_type = new_type or msg.typ
         self.logevent(u.uuid, Activetype.EDIT_MSG)
@@ -592,8 +603,9 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
                 continue
             break
         cls.httpd = None
-        cls.system.close()
-        cls.system = None
+        if cls.system:
+            cls.system.close()
+            cls.system = None
     @classmethod
     def start_server(cls, port:int|None=None, daemon=True):
         """开启服务器"""
@@ -605,6 +617,9 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
     @classmethod
     def close(cls):
         """关闭服务器以及system资源"""
+        if cls.system:
+            cls.system.close()
+            cls.system = None
         if cls.httpd:
             cls.httpd.shutdown()
             cls.httpd = None
@@ -835,6 +850,7 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
         acti = [j for j,k in stat.activities if k == Activetype.LOGIN]
         data = {
                 "name":escape(u.name),
+                "type":u.typ,
                 "timestamp":escape(pytools.get_strtime(u.time)),
                 "note":"\n".join(u.note.splitlines()),
                 "id":escape(u.uuid),
@@ -1514,6 +1530,14 @@ def import_from_json_chatroom(jsonfile:Path):
     system.conn.commit()
     system.close()
 
+def sigkill_handle(sig:int, frame):
+    """处理终止信号"""
+    del frame
+    print(f"GOT SIGNAL {sig}, exit")
+    InterfaceWeb.httpd = None
+    InterfaceWeb.close()
+    sys.exit(0)
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='python本地(局域网)聊天室(非py3.8兼容版)')
@@ -1528,6 +1552,7 @@ def main():
     if args.import_file:
         import_from_json_chatroom(Path(args.import_file))
     if args.pure_http_server:
+        signal.signal(signal.SIGTERM, sigkill_handle)
         InterfaceWeb.start_server(daemon=False)
         return
     try:
@@ -1536,9 +1561,12 @@ def main():
         print(f"[ERROR] sqlite3错误：{e}")
         print("[ERROR] 程序将直接退出")
         return
+    signal.signal(signal.SIGTERM,
+                  lambda sig,_:print(f"GOT SIG({sig}),QUIT") or cli.close() or sys.exit(0))
     cli.main()
-    InterfaceWeb.close()
     cli.close()
+    InterfaceWeb.system = None
+    InterfaceWeb.close()
 
 if __name__ == "__main__":
     main()
