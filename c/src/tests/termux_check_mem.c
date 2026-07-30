@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdcountof.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <errno.h>
 #include <dirent.h>
@@ -163,7 +164,7 @@ int monitor()
 
 	printf("[INFO] 自动监视模式工作\n");
 	while (true) {
-		usleep(0.5*1e6);
+		usleep(0.8*1e6);
 		sysinfo(&info);
 		freeram = read_meminfo();  // kb
 		pmem = 100*(1.-(double)(1024*freeram+info.freeswap)/(info.totalram+info.totalswap));
@@ -175,6 +176,7 @@ int monitor()
 			qsort(proc_list, countof(proc_list), sizeof(proc_list[0]), proc_cmp);
 		}
 
+		waitpid((pid_t)-1, NULL, WNOHANG);
 		if (!active || proc_list[0].total < MINMEM) {
 			if (hold) printf("[INFO] 脱离临界情况\n");
 			hold = 0;
@@ -222,6 +224,7 @@ int monitor()
 		}
 		usleep(0.5*1e6);
 	}
+	while (wait(NULL) != -1);
 }
 
 int main(int argc, char *argv[])

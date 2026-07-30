@@ -114,8 +114,9 @@ int main(int argc, char *argv[])
 	struct timespec t1 = {};
 	clock_gettime(CLOCK_MONOTONIC, &t1);
 	if (!pid) {
+		dup2(STDOUT_FILENO, STDERR_FILENO);
 		execvp(argv[1], argv+1);
-		exit(2);
+		exit(127);
 	}
 	child_pid = pid;
 	signal(SIGINT, sig_handle);
@@ -133,7 +134,7 @@ int main(int argc, char *argv[])
 		if (fp_st) fclose(fp_st);
 		fprintf(stderr, "[ERROR] 进程状态文件打开错误，等待子进程返回\n");
 		while (wait(NULL) != -1);
-		return 3;
+		return 2;
 	}
 
 	struct timespec tm = {.tv_sec = 0, .tv_nsec = 0.01e9};
@@ -153,20 +154,24 @@ int main(int argc, char *argv[])
 	fclose(fp_io);
 
 	struct rusage st = {};
-	wait4(pid, NULL, 0, &st);
+	int ret = 0;
+	wait4(pid, &ret, 0, &st);
 
-	printf("[EXEC] '%s'\n", argv[1]);
-	printf("[TIME] 用户态:%ld.%06lds  内核态:%ld.%06lds  真实时间:%ld.%09lds  CPU:%.1f%%\n",
-	       st.ru_utime.tv_sec, st.ru_utime.tv_usec,
-	       st.ru_stime.tv_sec, st.ru_stime.tv_usec,
-	       t1.tv_sec, t1.tv_nsec,
-	       (st.ru_utime.tv_sec+st.ru_stime.tv_sec+(st.ru_utime.tv_usec+st.ru_stime.tv_usec)/1e6)/(t1.tv_sec+t1.tv_nsec/1e9)*100
-	       );
-	printf("[INFO] 内存峰值:%.2fMB\n", max_mem/1024.);
-	printf("[IO] 输入:%.2fMB/%zu次  输出:%.2fMB/%zu次\n",
-	       iost.rchar/1024./1024, iost.syscr, iost.wchar/1024./1024, iost.syscw);
-	printf("[IO] 读盘:%.2fMB  写盘:%.2fMB\n",
-	       iost.read_bytes/1024./1024, iost.write_bytes/1024./1024);
+	if (WEXITSTATUS(ret) == 127) {
+		fprintf(stderr, "[ERROR] COMMAND NOT FOUND\n");
+	}
+	fprintf(stderr, "[EXEC] '%s'\n", argv[1]);
+	fprintf(stderr, "[TIME] 用户态:%ld.%06lds  内核态:%ld.%06lds  真实时间:%ld.%09lds  CPU:%.1f%%\n",
+		st.ru_utime.tv_sec, st.ru_utime.tv_usec,
+		st.ru_stime.tv_sec, st.ru_stime.tv_usec,
+		t1.tv_sec, t1.tv_nsec,
+		(st.ru_utime.tv_sec+st.ru_stime.tv_sec+(st.ru_utime.tv_usec+st.ru_stime.tv_usec)/1e6)/(t1.tv_sec+t1.tv_nsec/1e9)*100
+		);
+	fprintf(stderr, "[INFO] 内存峰值:%.2fMB  返回值:%d\n", max_mem/1024., WEXITSTATUS(ret));
+	fprintf(stderr, "[IO] 输入:%.2fMB/%zu次  输出:%.2fMB/%zu次\n",
+		iost.rchar/1024./1024, iost.syscr, iost.wchar/1024./1024, iost.syscw);
+	fprintf(stderr, "[IO] 读盘:%.2fMB  写盘:%.2fMB\n",
+		iost.read_bytes/1024./1024, iost.write_bytes/1024./1024);
 	// printf("[SIZE] MaxRSS: %.2fMB  InBlock: %ld  OutBlock: %ld\n",
 	//        st.ru_maxrss/1024., st.ru_inblock, st.ru_oublock);
 	// #define IOVAR(v) printf("[INFO] %s: %ld\n", #v, iost.v);
