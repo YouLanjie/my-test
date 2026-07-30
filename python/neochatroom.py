@@ -1523,8 +1523,8 @@ def import_from_json_chatroom(jsonfile:Path):
                           "\n".join(str(m["content"]).splitlines()),
                           Messagetype.TEXT.value))
             for edit in m["edit_history"]:
-                cur.execute("INSERT INTO edit_hist (mid,time) VALUES(?,?)",
-                            (m["_id"], edit))
+                cur.execute("INSERT INTO edit_hist (uid,mid,time) VALUES(?,?,?)",
+                            (m["owner"],m["_id"], edit))
         except sqlite3.IntegrityError as e:
             print(f"在导入消息'{m["_id"]}'(uuid)时遇到问题：{e}")
     system.conn.commit()

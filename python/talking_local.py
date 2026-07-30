@@ -1265,6 +1265,8 @@ class System:
                 limit = int(str(querys.get("page_limit")))
             except ValueError:
                 limit = 12
+            if limit <= 0:
+                limit = len(messages)
             all_pages = len(messages)//limit + (len(messages)%limit!=0)
             now_page = querys.get("p") or "1"
             try:

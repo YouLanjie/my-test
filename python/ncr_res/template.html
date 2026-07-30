@@ -49,7 +49,7 @@ ${send_window}
       <label for="sort_type">排序方式:</label>
       <select name="sort_type">
         ${sort_type_options}
-      </select>
+      </select><br/>
       <label for="cap">不区分大小写:</label><input style="width:auto;" type="checkbox" name="cap"${cap}><br/>
     </div>
     <button type="submit">更新搜索</button>
@@ -68,9 +68,9 @@ ${pages}
 <!-- template: send_window -->
 <form method="POST" action="/send_message">
 <div class="form-group">
-<label for="message">填写要发送的消息:</label>
-<textarea name="message" rows="4" required></textarea>
-<label for="msg_type">消息类型</label>
+<label for="message">填写要发送的消息:</label><br/>
+<textarea name="message" rows="4" required></textarea><br/>
+<label for="msg_type">消息类型:</label><br/>
 ${msg_type}
 </div><br/>
 <button type="submit">发送</button></form>
@@ -121,13 +121,13 @@ ${users}
   <h1>消息重编辑页面</h1>
   <form method="POST" action="/edit">
     <div class="form-group">
-    <input type="text" name="keyid" value="${keyid}" style="display:none;">
-    <label for="message">在下面修改消息:</label>
-    <textarea name="message" rows="24" style="height:70svh;" placeholder="${placeholder}" required>${content}</textarea>
-    <label for="msg_type">消息类型</label>
+    <input type="text" name="keyid" value="${keyid}" style="display:none;"><br/>
+    <label for="message">在下面修改消息:</label><br/>
+    <textarea name="message" rows="24" style="height:70svh;" placeholder="${placeholder}" required>${content}</textarea><br/>
+    <label for="msg_type">消息类型</label><br/>
     <select name='msg_type'>
       ${msg_type}
-    </select>"
+    </select>
     </div>
     <button type="submit">提交修改</button>
   </form>
