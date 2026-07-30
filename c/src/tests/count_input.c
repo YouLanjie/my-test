@@ -21,23 +21,27 @@ void quit(int i) {
 	LOCK = 0;
 }
 
-int main()
+int main(int argc, const char *argv[])
 {
-	if (isatty(STDIN_FILENO)) {
-		printf("Not allow stdin is a tty\n");
-		return 0;
+	FILE *fp = NULL;
+	if (argc > 1) {
+		fp = fopen(argv[1], "rb");
 	}
+	if (!fp && isatty(STDIN_FILENO)) {
+		printf("不能无参又tty当stdin\n");
+		return 0;
+	} else if (!fp) fp = stdin;
 	struct timespec begging, t;
 	clock_gettime(CLOCK_MONOTONIC, &begging);
 
 	register int c = 0;
-	unsigned register int count = 0;
+	register unsigned int count = 0;
 	long sec = 0, nsec = 0;
-	double diff;
+	double diff = 0;
 
 	signal(SIGINT, quit);
 	while (LOCK && sec < 5 && c != -1) {
-		c = fgetc(stdin);
+		c = fgetc(fp);
 		if (c == -1) continue;
 		count++;
 
@@ -57,7 +61,8 @@ int main()
 		/*printf("%ld.%06ld\n", t.tv_sec, t.tv_nsec);*/
 	}
 	printf("\nRESULT: %d [%ld.%09lds] (%lftps)     \n",
-	       count, sec, nsec, count/diff);
+	       count, sec, nsec, count/(diff!=0?diff:1e-9));
 	printf("QUIT\n");
+	if (fp != stdin) fclose(fp);
 	return 0;
 }
