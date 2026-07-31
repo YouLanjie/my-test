@@ -29,6 +29,7 @@ typedef struct {
 	int pid;
 } Process_t;
 
+/* 获取命令名称（无参数） */
 void read_comm(const char *path, Process_t *proc)
 {
 	if (!path || !proc) return;
@@ -47,6 +48,7 @@ void read_comm(const char *path, Process_t *proc)
 	if (p) *p = '\0';
 }
 
+/* 读取总体内存信息 */
 size_t read_meminfo()
 {
 	FILE *fp = fopen("/proc/meminfo", "r");
@@ -61,6 +63,7 @@ size_t read_meminfo()
 	return mem_available;
 }
 
+/* 读取每个进程的状态信息 */
 void read_status(const char *path, Process_t *proc)
 {
 	if (!path || !proc) return;
@@ -78,6 +81,7 @@ void read_status(const char *path, Process_t *proc)
 	return;
 }
 
+/* 遍历读取进程列表 */
 int update(Process_t *proc_summary, Process_t *proc_list, int proc_len)
 {
 	if (!proc_summary || !proc_list || proc_len <= 0) return -1;
@@ -133,6 +137,7 @@ int update(Process_t *proc_summary, Process_t *proc_list, int proc_len)
 	return count;
 }
 
+/* qsort排序比较 */
 int proc_cmp(const void *p1, const void *p2)
 {
 	if (!p1 || !p2) return 0;
@@ -236,7 +241,7 @@ int main(int argc, char *argv[])
 		switch (ch) {
 		case '?':
 		case 'h':
-			printf("Usage: %s [-hp]\n", argv[0]);
+			printf("Usage: %s [-hp] [-t <num>]\n", argv[0]);
 			return 0;
 			break;
 		case 'p':

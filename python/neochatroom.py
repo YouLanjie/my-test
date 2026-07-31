@@ -166,6 +166,8 @@ CREATE TABLE IF NOT EXISTS "messages" (
 	type INTEGER NOT NULL,
 	FOREIGN KEY ("owner") REFERENCES "users"(uuid)
 );
+CREATE INDEX idx_messages_time ON messages(time);
+CREATE INDEX idx_messages_owner ON messages(owner);
 
 CREATE TABLE IF NOT EXISTS "edit_hist" (
 	uid TEXT NOT NULL,  -- 操作者id
