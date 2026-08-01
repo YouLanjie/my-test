@@ -58,6 +58,8 @@ size_t read_status(FILE *fp, size_t max_mem)
 		else if (sscanf(buffer, "VmSwap: %zu ", &swap) == 1) count++;
 		if (count == 2) break;
 	}
+	/* 刷新文件内容否则读到的内容不会变 */
+	fflush(fp);
 	fseek(fp, 0L, SEEK_SET);
 	clearerr(fp);
 	return rss+swap > max_mem ? rss+swap : max_mem;
