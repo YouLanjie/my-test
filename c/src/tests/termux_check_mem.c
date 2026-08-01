@@ -141,10 +141,12 @@ int update(Process_t *proc_summary, Process_t *proc_list, int proc_len)
 int proc_cmp(const void *p1, const void *p2)
 {
 	if (!p1 || !p2) return 0;
-	return ((Process_t*)p2)->total - ((Process_t*)p1)->total;
+	int cmp = ((Process_t*)p2)->total - ((Process_t*)p1)->total;
+	if (cmp) return cmp;
+	return ((Process_t*)p2)->pid - ((Process_t*)p1)->pid;
 }
 
-int monitor()
+int monitor(bool auto_kill)
 {
 	const double MINPMEM = 85.;           // 触发需要的最少内存占比
 	const double MINAVAIMEM = 250*1024;   // 可用内存小于该值触发
@@ -195,11 +197,11 @@ int monitor()
 			buffer_title, pmem, MINPMEM);
 		for (size_t i = 0; i < countof(proc_list); i++) {
 			char *p = "";
-			if (proc_list[i].total >= MINKILLMEM) {
+			if (auto_kill && proc_list[i].total >= MINKILLMEM) {
 				hold = 114514;
 				kill(proc_list[i].pid, SIGKILL);
 				p = " [SIGKILL]";
-			} else if (proc_list[i].total >= MINSTOPMEM && freeram <= MINAVAIMEM) {
+			} else if (auto_kill && proc_list[i].total >= MINSTOPMEM && freeram <= MINAVAIMEM) {
 				kill(proc_list[i].pid, SIGSTOP);
 				p = " [SIGSTOP]";
 			}
@@ -236,23 +238,23 @@ int main(int argc, char *argv[])
 {
 	size_t len = 20;
 	int ch = 0;
-	bool flg_once = false;
-	while ((ch = getopt(argc, argv, "hpt:")) != -1) {
+	bool flg_monitor = false;
+	while ((ch = getopt(argc, argv, "hmt:")) != -1) {
 		switch (ch) {
 		case '?':
 		case 'h':
-			printf("Usage: %s [-hp] [-t <num>]\n", argv[0]);
+			printf("Usage: %s [-hm] [-t <num>]\n", argv[0]);
 			return 0;
 			break;
-		case 'p':
-			flg_once = true;
+		case 'm':
+			flg_monitor = true;
 			break;
 		case 't':
 			sscanf(optarg, "%zu", &len);
 			break;
 		}
 	}
-	if (!flg_once) return monitor();
+	if (flg_monitor) return monitor(true);
 
 	if (len == 0 || len > 2000) len = 2000;
 	Process_t proc_summary = {0};
@@ -264,7 +266,7 @@ int main(int argc, char *argv[])
 	qsort(proc_list, countof(proc_list), sizeof(proc_list[0]), proc_cmp);
 
 	printf("Top %ld:\n", len);
-	for (size_t i = 0; i < countof(proc_list); i++) {
+	for (size_t i = 0; i < len; i++) {
 		printf("[%4.1f%%] %.1lfMB (rss:%.1f ,swap:%.1f) (pid:%d) %s\n",
 		       100.*proc_list[i].total/total_mem, proc_list[i].total/1024.,
 		       proc_list[i].rss/1024., proc_list[i].swap/1024.,
