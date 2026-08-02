@@ -38,23 +38,19 @@ int proc_cmp(const void *p1, const void *p2)
 	return ((Process_t*)p2)->pid - ((Process_t*)p1)->pid;
 }
 
-/* 获取命令名称（无参数） */
-void read_comm(const char *path, Process_t *proc)
+
+/* 获取命令名称（无参数|带参数） */
+void read_comm(Process_t *proc)
 {
-	if (!path || !proc) return;
-	FILE *fp = fopen(path, "r");
+	if (!proc) return;
+	sprintf(proc->comm, "/proc/%d/comm", proc->pid);
+
+	FILE *fp = fopen(proc->comm, "r");
 	if (!fp) return;
-	char comm[PATH_MAX] = "";
-	fgets(comm, sizeof(comm), fp);
-	fclose(fp);
-	char *p = strrchr(comm, '/');
-	if (!p || !*(p+1)) p = comm;
-	if (strlen(p) < countof(proc->comm))
-		strncpy(proc->comm, p, sizeof(proc->comm)-1);
-	else
-		strncpy(proc->comm, p+(strlen(p)-sizeof(proc->comm)), sizeof(proc->comm)-1);
-	p = strrchr(proc->comm, '\n');
+	fgets(proc->comm, sizeof(proc->comm), fp);
+	char *p = strrchr(proc->comm, '\n');
 	if (p) *p = '\0';
+	fclose(fp);
 }
 
 /* 读取MemAvailable(而不是MemFree) */
@@ -73,16 +69,16 @@ size_t read_meminfo()
 }
 
 /* 读取每个进程的状态信息 */
-void read_maxmem(const char *path, Process_t *proc)
+void read_status(Process_t *proc)
 {
-	if (!path || !proc) return;
-	FILE *fp = fopen(path, "r");
+	if (!proc) return;
+	sprintf(proc->comm, "/proc/%d/status", proc->pid);
+	FILE *fp = fopen(proc->comm, "r");
 	if (!fp) return;
-	char buffer[PATH_MAX] = "";
 	proc->rss = proc->swap = 0;
-	while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-		sscanf(buffer, "VmRSS: %ld ", &proc->rss);
-		sscanf(buffer, "VmSwap: %ld ", &proc->swap);
+	while (fgets(proc->comm, sizeof(proc->comm), fp) != NULL) {
+		if (sscanf(proc->comm, "VmRSS: %ld ", &proc->rss));
+		else sscanf(proc->comm, "VmSwap: %ld ", &proc->swap);
 		if (proc->rss && proc->swap) break;
 	}
 	fclose(fp);
@@ -116,10 +112,7 @@ int update(Process_t *proc_list, int proc_len)
 		if (proc.pid == 0) continue;
 		proc.pid = atoi(path);
 
-		sprintf(path, "/proc/%d/status", proc.pid);
-		read_maxmem(path, &proc);
-		sprintf(path, "/proc/%d/comm", proc.pid);
-		read_comm(path, &proc);
+		read_status(&proc);
 
 		if (idx < proc_len) {
 			proc_list[idx] = proc;
@@ -140,9 +133,17 @@ int update(Process_t *proc_list, int proc_len)
 	}
 	closedir(dp);
 	qsort(proc_list, proc_len, sizeof(proc_list[0]), proc_cmp);
+	idx = 0;
+	while (idx < proc_len) {
+		if (proc_list[idx].pid <= 0) break;
+		/* 减少读无用进程名 */
+		read_comm(proc_list+idx);
+		idx++;
+	}
 	return count;
 }
 
+// #define DEBUG
 void send_notification(char *title, char *content)
 {
 	pid_t pid = fork();
@@ -159,11 +160,13 @@ void send_notification(char *title, char *content)
 	       "--vibrate", "500",
 	       "--sound", NULL});
 
+#ifndef DEBUG
 	notificatior = "dunstify";
 	execvp(notificatior, (char*[]){
 	       notificatior,
 	       "-u", "CRITICAL",
 	       title, content, NULL});
+#endif
 
 	fprintf(stderr, "[WARN] 启动通知进程错误，未找到可用命令\n");
 	exit(127);    /* command not found */
@@ -206,17 +209,23 @@ int monitor(struct timespec delay, size_t len, bool auto_kill)
 		total_mem = (info.totalram+info.totalswap)/1024.;
 		pmem = 100*(1-(freeram+info.freeswap)/1024./total_mem);
 
+#ifndef DEBUG
 		// pmem超过阈值 或者 可用内存过少
 		active = pmem >= MINPMEM || freeram <= MINAVAIMEM;
 		if (active) update(proc_list, countof(proc_list));
+#else
+		update(proc_list, countof(proc_list));
+#endif
 
 		waitpid((pid_t)-1, NULL, WNOHANG);    /* 不阻塞回收子进程(通知) */
+#ifndef DEBUG
 		if (!active || proc_list[0].total < MINMEM) {
 			if (hold) fprintf(stderr, "[INFO] 脱离临界情况\n");
 			hold = 0;
 			continue;
 		}
 		if (hold && hold <= 40 && proc_list[0].total < MINSTOPMEM && hold++) continue;
+#endif
 		time(&timep);
 		timetmp = localtime(&timep);
 		strftime(buffer_title, sizeof(buffer_title), "%Y.%m.%d %H:%M:%S", timetmp);
@@ -224,6 +233,7 @@ int monitor(struct timespec delay, size_t len, bool auto_kill)
 			buffer_title, pmem, MINPMEM);
 		for (size_t i = 0; i < countof(proc_list); i++) {
 			char *p = "";
+#ifndef DEBUG
 			if (auto_kill && proc_list[i].total >= MINKILLMEM) {
 				hold = 114514;
 				kill(proc_list[i].pid, SIGKILL);
@@ -232,6 +242,7 @@ int monitor(struct timespec delay, size_t len, bool auto_kill)
 				kill(proc_list[i].pid, SIGSTOP);
 				p = " [SIGSTOP]";
 			}
+#endif
 			sprintf(buffer_title, "\n[%4.1f%%] %.1lfMB (pid:%d) %s%s",
 			       100.*proc_list[i].total/total_mem, proc_list[i].total/1024.,
 			       proc_list[i].pid, proc_list[i].comm,
@@ -240,8 +251,10 @@ int monitor(struct timespec delay, size_t len, bool auto_kill)
 		}
 		sprintf(buffer_title, "[WARN] 内存占用警告 (%.1f%%)", pmem);
 
+#ifndef DEBUG
 		if (hold && hold <= 40 && hold++) continue;
 		hold = 1;
+#endif
 
 		printf("===============================\n");
 		printf("[TITLE] %s\n", buffer_title);
@@ -300,7 +313,8 @@ int main(int argc, char *argv[])
 			       "    -n <SEC> 检查间隔\n"
 			       "    -w       类似于watch，自动重复运行\n"
 			       "    -m       类似-w,但只在超限时打印并发送通知\n"
-			       "    -k       指定-m时自动暂停/杀死超限进程（仅termux）\n",
+			       "    -k       指定-m时自动暂停/杀死超限进程（仅termux）\n"
+			       "    -s       在rish(shizuku)里运行\n",
 			       argc>0?argv[0]:"memcheck");
 			return 0;
 			break;
