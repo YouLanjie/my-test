@@ -116,6 +116,7 @@ int main(int argc, char *argv[])
 	struct timespec t1 = {};
 	clock_gettime(CLOCK_MONOTONIC, &t1);
 	if (!pid) {
+		/* 重定向子进程stderr输出到stdout */
 		dup2(STDOUT_FILENO, STDERR_FILENO);
 		execvp(argv[1], argv+1);
 		exit(127);

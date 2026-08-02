@@ -29,6 +29,15 @@ typedef struct {
 	int pid;
 } Process_t;
 
+/* 用于qsort排序比较 */
+int proc_cmp(const void *p1, const void *p2)
+{
+	if (!p1 || !p2) return 0;
+	int cmp = ((Process_t*)p2)->total - ((Process_t*)p1)->total;
+	if (cmp) return cmp;
+	return ((Process_t*)p2)->pid - ((Process_t*)p1)->pid;
+}
+
 /* 获取命令名称（无参数） */
 void read_comm(const char *path, Process_t *proc)
 {
@@ -48,7 +57,7 @@ void read_comm(const char *path, Process_t *proc)
 	if (p) *p = '\0';
 }
 
-/* 读取总体内存信息 */
+/* 读取MemAvailable(而不是MemFree) */
 size_t read_meminfo()
 {
 	FILE *fp = fopen("/proc/meminfo", "r");
@@ -56,15 +65,15 @@ size_t read_meminfo()
 	char buffer[PATH_MAX] = "";
 	size_t mem_available = 0;
 	while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-		sscanf(buffer, "MemAvailable: %ld ", &mem_available);
-		if (mem_available) break;
+		if (sscanf(buffer, "MemAvailable: %ld ", &mem_available) == 1)
+			break;
 	}
 	fclose(fp);
 	return mem_available;
 }
 
 /* 读取每个进程的状态信息 */
-void read_status(const char *path, Process_t *proc)
+void read_maxmem(const char *path, Process_t *proc)
 {
 	if (!path || !proc) return;
 	FILE *fp = fopen(path, "r");
@@ -81,11 +90,10 @@ void read_status(const char *path, Process_t *proc)
 	return;
 }
 
-/* 遍历读取进程列表 */
-int update(Process_t *proc_summary, Process_t *proc_list, int proc_len)
+/* 遍历读取进程列表(自动置空+排序) */
+int update(Process_t *proc_list, int proc_len)
 {
-	if (!proc_summary || !proc_list || proc_len <= 0) return -1;
-	memset(proc_summary, 0, sizeof(*proc_summary));
+	if (!proc_list || proc_len <= 0) return -1;
 	memset(proc_list, 0, sizeof(*proc_list)*proc_len);
 
 	static const char *proc_path = "/proc/";
@@ -109,10 +117,7 @@ int update(Process_t *proc_summary, Process_t *proc_list, int proc_len)
 		proc.pid = atoi(path);
 
 		sprintf(path, "/proc/%d/status", proc.pid);
-		read_status(path, &proc);
-		proc_summary->rss += proc.rss;
-		proc_summary->swap += proc.swap;
-		proc_summary->total += proc.total;
+		read_maxmem(path, &proc);
 		sprintf(path, "/proc/%d/comm", proc.pid);
 		read_comm(path, &proc);
 
@@ -134,34 +139,56 @@ int update(Process_t *proc_summary, Process_t *proc_list, int proc_len)
 		idx = proc_len;
 	}
 	closedir(dp);
+	qsort(proc_list, proc_len, sizeof(proc_list[0]), proc_cmp);
 	return count;
 }
 
-/* qsort排序比较 */
-int proc_cmp(const void *p1, const void *p2)
+void send_notification(char *title, char *content)
 {
-	if (!p1 || !p2) return 0;
-	int cmp = ((Process_t*)p2)->total - ((Process_t*)p1)->total;
-	if (cmp) return cmp;
-	return ((Process_t*)p2)->pid - ((Process_t*)p1)->pid;
+	pid_t pid = fork();
+	if (pid != 0) {
+		printf("[INFO] 启动通知子进程(PID%d)\n", pid);
+		return;
+	}
+	char *notificatior = "termux-notification";
+	execvp(notificatior, (char*[]){
+	       notificatior,
+	       "--title", title,
+	       "--content", content,
+	       "--priority", "max",
+	       "--vibrate", "500",
+	       "--sound", NULL});
+
+	notificatior = "dunstify";
+	execvp(notificatior, (char*[]){
+	       notificatior,
+	       "-u", "CRITICAL",
+	       title, content, NULL});
+	exit(127);    /* command not found */
 }
 
-int monitor(bool auto_kill)
+int monitor(struct timespec delay, size_t len, bool auto_kill)
 {
-	const double MINPMEM = 85.;           // 触发需要的最少内存占比
-	const double MINAVAIMEM = 250*1024;   // 可用内存小于该值触发
-	const double MINMEM = 250*1024;       // 需要的最少Termux最大内存占用进程内存占用
+	const double MINPMEM = 80.;           // 内存占比大于该值为active
+	const double MINAVAIMEM = 250*1024;   // 可用内存小于该值为active
+	const double MINMEM = 250*1024;       // 处理逻辑所需最低内存峰值
 	const double MINSTOPMEM = 600*1024;   // 考虑自动暂停内存占用超过该值的进程
 	const double MINKILLMEM = 3700*1024;  // 考虑自动KILL掉内存占用超过该值的进程
-	char *NOTIFICATIOR = "termux-notification";
+
+	if (access("/data/data/com.termux/files/home/", R_OK|W_OK) != 0) {
+		if (auto_kill) {
+			printf("[WARN] 在非termux环境下无法使用SIGKILL\n");
+		}
+		auto_kill = false;
+		// 非termux环境下禁用自动杀死进程
+	}
 
 	char buffer_title[PATH_MAX] = {0};
 	char buffer_content[PATH_MAX] = {0};
-	Process_t proc_summary = {0};
-	Process_t proc_list[3] = {0};
+	Process_t proc_list[len];
 	struct sysinfo info;
 	sysinfo(&info);
-	const double total_mem = (info.totalram+info.totalswap)/1024.;
+	double total_mem = 0;
 	double pmem = 0;
 	time_t timep;
 	struct tm *timetmp;
@@ -170,20 +197,17 @@ int monitor(bool auto_kill)
 	bool active = 0;
 
 	printf("[INFO] 自动监视模式工作\n");
-	while (true) {
-		usleep(0.8*1e6);
+	for (;; nanosleep(&delay, NULL)) {
 		sysinfo(&info);
 		freeram = read_meminfo();  // kb
-		pmem = 100*(1.-(double)(1024*freeram+info.freeswap)/(info.totalram+info.totalswap));
+		total_mem = (info.totalram+info.totalswap)/1024.;
+		pmem = 100*(1-(freeram+info.freeswap)/total_mem);
 
 		// pmem超过阈值 或者 可用内存过少
 		active = pmem >= MINPMEM || freeram <= MINAVAIMEM;
-		if (active) {
-			update(&proc_summary, proc_list, countof(proc_list));
-			qsort(proc_list, countof(proc_list), sizeof(proc_list[0]), proc_cmp);
-		}
+		if (active) update(proc_list, countof(proc_list));
 
-		waitpid((pid_t)-1, NULL, WNOHANG);
+		waitpid((pid_t)-1, NULL, WNOHANG);    /* 不阻塞回收子进程(通知) */
 		if (!active || proc_list[0].total < MINMEM) {
 			if (hold) printf("[INFO] 脱离临界情况\n");
 			hold = 0;
@@ -201,7 +225,7 @@ int monitor(bool auto_kill)
 				hold = 114514;
 				kill(proc_list[i].pid, SIGKILL);
 				p = " [SIGKILL]";
-			} else if (auto_kill && proc_list[i].total >= MINSTOPMEM && freeram <= MINAVAIMEM) {
+			} else if (proc_list[i].total >= MINSTOPMEM && freeram <= MINAVAIMEM) {
 				kill(proc_list[i].pid, SIGSTOP);
 				p = " [SIGSTOP]";
 			}
@@ -213,70 +237,111 @@ int monitor(bool auto_kill)
 		}
 		sprintf(buffer_title, "[WARN] 内存占用警告 (%.1f%%)", pmem);
 
+		printf("===============================\n");
 		printf("[TITLE] %s\n", buffer_title);
 		printf("[CONTENT] %s\n", buffer_content);
 
 		if (hold && hold <= 40 && hold++) continue;
 		hold = 1;
 
-		if (fork() == 0) {
-			execvp(NOTIFICATIOR, (char*[]){
-			       NOTIFICATIOR,
-			       "--title", buffer_title,
-			       "--content", buffer_content,
-			       "--priority", "max",
-			       "--vibrate", "500",
-			       "--sound", NULL});
-			exit(-1);
-		}
-		usleep(0.5*1e6);
+		send_notification(buffer_title, buffer_content);
 	}
 	while (wait(NULL) != -1);
 }
 
-int main(int argc, char *argv[])
+void print_top(Process_t proc_list[], size_t len)
 {
-	size_t len = 20;
-	int ch = 0;
-	bool flg_monitor = false;
-	while ((ch = getopt(argc, argv, "hmt:")) != -1) {
-		switch (ch) {
-		case '?':
-		case 'h':
-			printf("Usage: %s [-hm] [-t <num>]\n", argv[0]);
-			return 0;
-			break;
-		case 'm':
-			flg_monitor = true;
-			break;
-		case 't':
-			sscanf(optarg, "%zu", &len);
-			break;
-		}
-	}
-	if (flg_monitor) return monitor(true);
+	len = update(proc_list, len);
 
-	if (len == 0 || len > 2000) len = 2000;
 	Process_t proc_summary = {0};
-	Process_t proc_list[len];
 	struct sysinfo info;
 	sysinfo(&info);
 	const double total_mem = (info.totalram+info.totalswap)/1024.;
-	len = update(&proc_summary, proc_list, countof(proc_list));
-	qsort(proc_list, countof(proc_list), sizeof(proc_list[0]), proc_cmp);
 
 	printf("Top %ld:\n", len);
 	for (size_t i = 0; i < len; i++) {
+		proc_summary.rss += proc_list[i].rss;
+		proc_summary.swap += proc_list[i].swap;
 		printf("[%4.1f%%] %.1lfMB (rss:%.1f ,swap:%.1f) (pid:%d) %s\n",
 		       100.*proc_list[i].total/total_mem, proc_list[i].total/1024.,
 		       proc_list[i].rss/1024., proc_list[i].swap/1024.,
 		       proc_list[i].pid, proc_list[i].comm);
 	}
-	printf("SUMMARY:\n- RSS(%.1f/%.1f [%.1f%%])\n- SWAP(%.1f/%.1f [%.1f%%])\n- Total(%.1f/%.1f [%.1f%%])\n",
+	proc_summary.total += proc_summary.rss+proc_summary.swap;
+	printf("SUMMARY:\n"
+	       "- RSS(%.1f/%.1f [%.1f%%])\n"
+	       "- SWAP(%.1f/%.1f [%.1f%%])\n"
+	       "- Total(%.1f/%.1f [%.1f%%])\n",
 	       proc_summary.rss/1024., info.totalram/1024./1024., proc_summary.rss*1024./info.totalram*100,
 	       proc_summary.swap/1024., info.totalswap/1024./1024., proc_summary.swap*1024./info.totalswap*100,
 	       proc_summary.total/1024., total_mem/1024., proc_summary.total*1024./(info.totalram+info.totalswap)*100
 	       );
+}
+
+int main(int argc, char *argv[])
+{
+	size_t len = 0;
+	double delay = 2;
+	int ch = 0;
+	bool flg_watch = false;
+	bool flg_monitor = false;
+	bool flg_kill = false;
+	while ((ch = getopt(argc, argv, "ht:n:wmk")) != -1) {
+		switch (ch) {
+		case '?':
+		case 'h':
+			printf("Usage: %s [OPTIONS]\n"
+			       "Options:\n"
+			       "    -h       显示帮助\n"
+			       "    -t <NUM> 打印的进程次数\n"
+			       "    -n <SEC> 检查间隔\n"
+			       "    -w       类似于watch，自动重复运行\n"
+			       "    -m       类似-w,但只在超限时打印并发送通知\n"
+			       "    -k       指定-m时自动暂停/杀死超限进程（仅termux）\n",
+			       argc>0?argv[0]:"memcheck");
+			return 0;
+			break;
+		case 't':
+			sscanf(optarg, "%zu", &len);
+			break;
+		case 'w':
+			flg_watch = true;
+			break;
+		case 'm':
+			flg_monitor = true;
+			break;
+		case 'k':
+			flg_kill = true;
+			break;
+		case 'n':
+			sscanf(optarg, "%lf", &delay);
+			if (delay < 0.001) delay = 0.1;
+			else if (delay > 1000) delay = 1000;
+			break;
+		}
+	}
+	struct timespec tm = {
+		.tv_sec = delay,
+		.tv_nsec = (delay-(int)delay)*1e9,
+	};
+	if (flg_monitor) {
+		if (len == 0 || len > 50) len = 3;
+		return monitor(tm, len, flg_kill);
+	}
+	if (len == 0) len = 20;
+	else if (len > 2000) len = 2000;
+	Process_t proc_list[len];
+	memset(proc_list, 0, sizeof(proc_list));
+	if (!flg_watch) {
+		print_top(proc_list, countof(proc_list));
+		return 0;
+	}
+	for (;;) {
+		print_top(proc_list, countof(proc_list));
+		printf("[INFO] 每%g秒一轮\n", delay);
+		nanosleep(&tm, NULL);
+		printf("\e[2J\e[H");
+	}
 	return 0;
 }
 
