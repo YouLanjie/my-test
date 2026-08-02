@@ -147,7 +147,7 @@ void send_notification(char *title, char *content)
 {
 	pid_t pid = fork();
 	if (pid != 0) {
-		printf("[INFO] 启动通知子进程(PID%d)\n", pid);
+		fprintf(stderr, "[INFO] 启动通知子进程(PID%d)\n", pid);
 		return;
 	}
 	char *notificatior = "termux-notification";
@@ -164,6 +164,8 @@ void send_notification(char *title, char *content)
 	       notificatior,
 	       "-u", "CRITICAL",
 	       title, content, NULL});
+
+	fprintf(stderr, "[WARN] 启动通知进程错误，未找到可用命令\n");
 	exit(127);    /* command not found */
 }
 
@@ -177,7 +179,7 @@ int monitor(struct timespec delay, size_t len, bool auto_kill)
 
 	if (access("/data/data/com.termux/files/home/", R_OK|W_OK) != 0) {
 		if (auto_kill) {
-			printf("[WARN] 在非termux环境下无法使用SIGKILL\n");
+			fprintf(stderr, "[WARN] 在非termux环境下无法使用SIGKILL\n");
 		}
 		auto_kill = false;
 		// 非termux环境下禁用自动杀死进程
@@ -196,12 +198,13 @@ int monitor(struct timespec delay, size_t len, bool auto_kill)
 	size_t freeram = 0;
 	bool active = 0;
 
-	printf("[INFO] 自动监视模式工作\n");
+	memset(proc_list, 0, sizeof(proc_list));
+	fprintf(stderr, "[INFO] 自动监视模式工作\n");
 	for (;; nanosleep(&delay, NULL)) {
 		sysinfo(&info);
 		freeram = read_meminfo();  // kb
 		total_mem = (info.totalram+info.totalswap)/1024.;
-		pmem = 100*(1-(freeram+info.freeswap)/total_mem);
+		pmem = 100*(1-(freeram+info.freeswap)/1024./total_mem);
 
 		// pmem超过阈值 或者 可用内存过少
 		active = pmem >= MINPMEM || freeram <= MINAVAIMEM;
@@ -209,7 +212,7 @@ int monitor(struct timespec delay, size_t len, bool auto_kill)
 
 		waitpid((pid_t)-1, NULL, WNOHANG);    /* 不阻塞回收子进程(通知) */
 		if (!active || proc_list[0].total < MINMEM) {
-			if (hold) printf("[INFO] 脱离临界情况\n");
+			if (hold) fprintf(stderr, "[INFO] 脱离临界情况\n");
 			hold = 0;
 			continue;
 		}
@@ -237,12 +240,12 @@ int monitor(struct timespec delay, size_t len, bool auto_kill)
 		}
 		sprintf(buffer_title, "[WARN] 内存占用警告 (%.1f%%)", pmem);
 
+		if (hold && hold <= 40 && hold++) continue;
+		hold = 1;
+
 		printf("===============================\n");
 		printf("[TITLE] %s\n", buffer_title);
 		printf("[CONTENT] %s\n", buffer_content);
-
-		if (hold && hold <= 40 && hold++) continue;
-		hold = 1;
 
 		send_notification(buffer_title, buffer_content);
 	}
