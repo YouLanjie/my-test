@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdcountof.h>
@@ -298,6 +299,51 @@ void print_top(Process_t proc_list[], size_t len)
 	       );
 }
 
+void proxy_notice(int pipefd)
+{
+	struct pollfd fd = {
+		.fd = pipefd,
+		.events = POLLIN,
+	};
+	const char *pattern_title = "[TITLE] ";
+	const char *pattern_content = "[CONTENT] ";
+	char buffer[2*PATH_MAX];
+	char title[PATH_MAX];
+	char content[2*PATH_MAX];
+	do {
+		printf("[INFO] polling\n");
+		if (poll(&fd, 1, 1e3) == -1) break;
+		if (!(fd.revents & POLLIN)) continue;
+		printf("[INFO] passed\n");
+		memset(buffer, 0, sizeof(buffer));
+		memset(title, 0, sizeof(title));
+		memset(content, 0, sizeof(content));
+		read(fd.fd, buffer, sizeof(buffer));
+		enum {S_TITLE, S_CONTENT} st = S_TITLE;
+		char *p, *left = buffer;
+		while ((p = left) && *left && (left = strchr(left, '\n'))) {
+			*left = '\0';
+			left++;
+			printf("%d GETLINE >>> '%s'\n", st, p);
+			if (st == S_TITLE && strncmp(p, pattern_title, strlen(pattern_title)) == 0) {
+				strncpy(title, p+strlen(pattern_title), sizeof(title)-1);
+				st = S_CONTENT;
+			} else if (st != S_CONTENT || p[0] != '[') {
+			} else if (strncmp(p, pattern_content, strlen(pattern_content)) == 0) {
+				strncat(content, p+strlen(pattern_content), sizeof(content)-strlen(content)-1);
+				strncat(content, "\n", sizeof(content)-strlen(content)-1);
+			} else {
+				strncat(content, p, sizeof(content)-strlen(content)-1);
+				strncat(content, "\n", sizeof(content)-strlen(content)-1);
+			}
+		}
+		if (st != S_CONTENT) continue;
+		waitpid((pid_t)-1, NULL, WNOHANG);    /* 不阻塞回收子进程(通知) */
+		send_notification(title, content);
+	}while (true);
+	while (wait(NULL) != -1);
+}
+
 bool run_in_rish(int argc, char *argv[], char *rish_path)
 {
 	if (argc < 1) return false;
@@ -348,14 +394,31 @@ bool run_in_rish(int argc, char *argv[], char *rish_path)
 		return false;
 	}
 
-	char *child_argv[argc+3];
-	memcpy(child_argv+1, argv, argc*sizeof(*argv));
-	child_argv[0] = rish_path;
-	child_argv[1] = OBJ_SH"";    /* 替代原argv[0] */
-	child_argv[argc+1] = "-S";
-	child_argv[argc+2] = NULL;
-	execvp(rish_path, child_argv);
-	printf("[ERROR] '%s' command not found\n", rish_path);
+	if (pipe(pipefd) == -1) {
+		perror("pipe");
+		return false;
+	}
+	if (!fork()) {
+		close(in_fd);
+		close(pipefd[0]);
+		if (dup2(pipefd[1], STDOUT_FILENO) == -1) {
+			perror("dup2");
+			exit(1);
+		}
+		close(pipefd[1]);
+
+		char *child_argv[argc+3];
+		memcpy(child_argv+1, argv, argc*sizeof(*argv));
+		child_argv[0] = rish_path;
+		child_argv[1] = OBJ_SH"";    /* 替代原argv[0] */
+		child_argv[argc+1] = "-S";
+		child_argv[argc+2] = NULL;
+		execvp(rish_path, child_argv);
+		printf("[ERROR] '%s' command not found\n", rish_path);
+		exit(127);
+	}
+	close(pipefd[1]);
+	proxy_notice(pipefd[0]);
 #undef OBJ_EXE
 	return false;
 }
