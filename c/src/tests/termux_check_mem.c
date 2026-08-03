@@ -5,21 +5,24 @@
  * @brief       专门用于在termux下检查通报内存占用
  */
 
-#include <stddef.h>
-#include <stdio.h>
+#include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdcountof.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#include <errno.h>
-#include <dirent.h>
-#include <limits.h>
+#include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
-#include <time.h>
+#include <sys/sendfile.h>
+#include <sys/stat.h>
 #include <sys/sysinfo.h>
-#include <signal.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
 
 typedef struct {
 	size_t rss;    // kb
@@ -259,6 +262,7 @@ int monitor(struct timespec delay, size_t len, bool auto_kill)
 		printf("===============================\n");
 		printf("[TITLE] %s\n", buffer_title);
 		printf("[CONTENT] %s\n", buffer_content);
+		fflush(stdout);
 
 		send_notification(buffer_title, buffer_content);
 	}
@@ -294,6 +298,68 @@ void print_top(Process_t proc_list[], size_t len)
 	       );
 }
 
+bool run_in_rish(int argc, char *argv[], char *rish_path)
+{
+	if (argc < 1) return false;
+	if (access("/data/data/com.termux/files/home/", R_OK|W_OK) != 0) {
+		printf("[ERROR] 不支持在非termux环境下使用rish\n");
+		return false;
+	}
+	struct stat st = {};
+	stat("/proc/self/exe", &st);
+	int in_fd = open("/proc/self/exe", O_RDONLY);
+	if (in_fd == -1) {
+		perror("open");
+		return false;
+	}
+
+#define OBJ_EXE "/data/local/tmp/termux_check_mem"
+#define OBJ_SH OBJ_EXE"_RUN.sh"
+	int pipefd[2] = {};
+	if (pipe(pipefd) == -1) {
+		perror("pipe");
+		return false;
+	}
+	if (!fork()) {
+		close(in_fd);
+		close(pipefd[1]);
+		if (dup2(pipefd[0], STDIN_FILENO) == -1) {
+			perror("dup2");
+			exit(1);
+		}
+		close(pipefd[0]);
+		execvp(rish_path, (char*[]){
+		       rish_path, "-c",
+		       "cat >'"OBJ_EXE"' && "
+		       "chmod +x '"OBJ_EXE"' && "
+		       "echo '#!/system/bin/sh\n"OBJ_EXE" \"${@}\"' >'"OBJ_SH"' && "
+		       "chmod +x '"OBJ_SH"'",
+		       NULL});
+		perror("execvp");
+		exit(127);
+	}
+	close(pipefd[0]);
+	sendfile(pipefd[1], in_fd, 0, st.st_size);
+	close(pipefd[1]);
+	int ret = 0;
+	wait(&ret);
+	if (WEXITSTATUS(ret) != 0) {
+		printf("[ERROR] rish命令执行错误\n");
+		return false;
+	}
+
+	char *child_argv[argc+3];
+	memcpy(child_argv+1, argv, argc*sizeof(*argv));
+	child_argv[0] = rish_path;
+	child_argv[1] = OBJ_SH"";    /* 替代原argv[0] */
+	child_argv[argc+1] = "-S";
+	child_argv[argc+2] = NULL;
+	execvp(rish_path, child_argv);
+	printf("[ERROR] '%s' command not found\n", rish_path);
+#undef OBJ_EXE
+	return false;
+}
+
 int main(int argc, char *argv[])
 {
 	size_t len = 0;
@@ -302,19 +368,21 @@ int main(int argc, char *argv[])
 	bool flg_watch = false;
 	bool flg_monitor = false;
 	bool flg_kill = false;
-	while ((ch = getopt(argc, argv, "ht:n:wmk")) != -1) {
+	bool flg_rish = false;
+	char rish_path[PATH_MAX] = "";
+	while ((ch = getopt(argc, argv, "ht:n:wmks:S")) != -1) {
 		switch (ch) {
 		case '?':
 		case 'h':
 			printf("Usage: %s [OPTIONS]\n"
 			       "Options:\n"
-			       "    -h       显示帮助\n"
-			       "    -t <NUM> 打印的进程次数\n"
-			       "    -n <SEC> 检查间隔\n"
-			       "    -w       类似于watch，自动重复运行\n"
-			       "    -m       类似-w,但只在超限时打印并发送通知\n"
-			       "    -k       指定-m时自动暂停/杀死超限进程（仅termux）\n"
-			       "    -s       在rish(shizuku)里运行\n",
+			       "    -h        显示帮助\n"
+			       "    -t <NUM>  打印的进程次数\n"
+			       "    -n <SEC>  检查间隔\n"
+			       "    -w        类似于watch，自动重复运行\n"
+			       "    -m        类似-w,但只在超限时打印并发送通知\n"
+			       "    -k        指定-m时自动暂停/杀死超限进程（仅termux）\n"
+			       "    -s <FILE> 在rish(shizuku)里运行，要指定路径\n",
 			       argc>0?argv[0]:"memcheck");
 			return 0;
 			break;
@@ -335,8 +403,21 @@ int main(int argc, char *argv[])
 			if (delay < 0.001) delay = 0.1;
 			else if (delay > 1000) delay = 1000;
 			break;
+		case 's':
+			strncpy(rish_path, optarg, sizeof(rish_path)-1);
+			flg_rish = true;
+			break;
+		case 'S':
+			flg_rish = false;
+			break;
 		}
 	}
+	if (flg_rish) {
+		if (!run_in_rish(argc, argv, rish_path))
+			return 127;
+		return 0;
+	}
+
 	struct timespec tm = {
 		.tv_sec = delay,
 		.tv_nsec = (delay-(int)delay)*1e9,
