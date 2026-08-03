@@ -43,11 +43,23 @@ int proc_cmp(const void *p1, const void *p2)
 }
 
 
+void getnowtime(char *buff, size_t size)
+{
+	time_t timep;
+	time(&timep);
+	struct tm *timetmp = localtime(&timep);
+	strftime(buff, size, "%Y.%m.%d %H:%M:%S", timetmp);
+}
+
+
+bool flg_read_cmdline = false;
 /* 获取命令名称（无参数|带参数） */
 void read_comm(Process_t *proc)
 {
 	if (!proc) return;
-	sprintf(proc->comm, "/proc/%d/comm", proc->pid);
+	if (flg_read_cmdline)
+		sprintf(proc->comm, "/proc/%d/cmdline", proc->pid);
+	else sprintf(proc->comm, "/proc/%d/comm", proc->pid);
 
 	FILE *fp = fopen(proc->comm, "r");
 	if (!fp) return;
@@ -199,8 +211,6 @@ int monitor(struct timespec delay, size_t len, bool auto_kill)
 	sysinfo(&info);
 	double total_mem = 0;
 	double pmem = 0;
-	time_t timep;
-	struct tm *timetmp;
 	int hold = 0;
 	size_t freeram = 0;
 	bool active = 0;
@@ -230,9 +240,7 @@ int monitor(struct timespec delay, size_t len, bool auto_kill)
 		}
 		if (hold && hold <= 40 && proc_list[0].total < MINSTOPMEM && hold++) continue;
 #endif
-		time(&timep);
-		timetmp = localtime(&timep);
-		strftime(buffer_title, sizeof(buffer_title), "%Y.%m.%d %H:%M:%S", timetmp);
+		getnowtime(buffer_title, sizeof(buffer_title));
 		sprintf(buffer_content, "[%s] 当前内存使用率 %.1f%% (阈值 %.1f%%)",
 			buffer_title, pmem, MINPMEM);
 		for (size_t i = 0; i < countof(proc_list); i++) {
@@ -344,7 +352,7 @@ void proxy_notice(int pipefd)
 	while (wait(NULL) != -1);
 }
 
-bool run_in_rish(int argc, char *argv[], char *rish_path)
+bool run_in_rish(int argc, char *argv[], char *rish_path, bool proxy)
 {
 	if (argc < 1) return false;
 	if (access("/data/data/com.termux/files/home/", R_OK|W_OK) != 0) {
@@ -394,6 +402,18 @@ bool run_in_rish(int argc, char *argv[], char *rish_path)
 		return false;
 	}
 
+	char *child_argv[argc+3];
+	memcpy(child_argv+1, argv, argc*sizeof(*argv));
+	child_argv[0] = rish_path;
+	child_argv[1] = OBJ_SH"";    /* 替代原argv[0] */
+	child_argv[argc+1] = "-S";
+	child_argv[argc+2] = NULL;
+	if (!proxy) {
+		execvp(rish_path, child_argv);
+		perror("execvp");
+		exit(127);
+	}
+
 	if (pipe(pipefd) == -1) {
 		perror("pipe");
 		return false;
@@ -406,13 +426,6 @@ bool run_in_rish(int argc, char *argv[], char *rish_path)
 			exit(1);
 		}
 		close(pipefd[1]);
-
-		char *child_argv[argc+3];
-		memcpy(child_argv+1, argv, argc*sizeof(*argv));
-		child_argv[0] = rish_path;
-		child_argv[1] = OBJ_SH"";    /* 替代原argv[0] */
-		child_argv[argc+1] = "-S";
-		child_argv[argc+2] = NULL;
 		execvp(rish_path, child_argv);
 		printf("[ERROR] '%s' command not found\n", rish_path);
 		exit(127);
@@ -432,8 +445,9 @@ int main(int argc, char *argv[])
 	bool flg_monitor = false;
 	bool flg_kill = false;
 	bool flg_rish = false;
+	bool flg_proxy = false;
 	char rish_path[PATH_MAX] = "";
-	while ((ch = getopt(argc, argv, "ht:n:wmks:S")) != -1) {
+	while ((ch = getopt(argc, argv, "ht:n:wmks:Spf")) != -1) {
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -445,7 +459,9 @@ int main(int argc, char *argv[])
 			       "    -w        类似于watch，自动重复运行\n"
 			       "    -m        类似-w,但只在超限时打印并发送通知\n"
 			       "    -k        指定-m时自动暂停/杀死超限进程（仅termux）\n"
-			       "    -s <FILE> 在rish(shizuku)里运行，要指定路径\n",
+			       "    -s <FILE> 在rish(shizuku)里运行，要指定rish路径\n"
+			       "    -p        在rish运行时，使用消息代理(配合-m)\n"
+			       "    -f        读取cmdline(仅第一个参数)\n",
 			       argc>0?argv[0]:"memcheck");
 			return 0;
 			break;
@@ -473,10 +489,16 @@ int main(int argc, char *argv[])
 		case 'S':
 			flg_rish = false;
 			break;
+		case 'p':
+			flg_proxy = true;
+			break;
+		case 'f':
+			flg_read_cmdline = true;
+			break;
 		}
 	}
 	if (flg_rish) {
-		if (!run_in_rish(argc, argv, rish_path))
+		if (!run_in_rish(argc, argv, rish_path, flg_proxy))
 			return 127;
 		return 0;
 	}
@@ -499,7 +521,8 @@ int main(int argc, char *argv[])
 	}
 	for (;;) {
 		print_top(proc_list, countof(proc_list));
-		printf("[INFO] 每%g秒一轮\n", delay);
+		getnowtime(rish_path, sizeof(rish_path));
+		printf("[INFO] 每%g秒一轮 (%s)\n", delay, rish_path);
 		nanosleep(&tm, NULL);
 		printf("\e[2J\e[H");
 	}
