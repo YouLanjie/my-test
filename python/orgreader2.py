@@ -504,9 +504,6 @@ class Meta(Root):
             self.document.meta[self.key] = self.value
 
         if self.key == "setupfile":
-            if self.value in self.document.status["setupfiles"]:
-                self.log(f"重复的setupfile:{self.value}")
-                return
             self._load_sub_setupfile()
         elif self.key == "seq_todo":
             self._process_seq_todo()
@@ -625,6 +622,9 @@ class Meta(Root):
                 return
         else:
             self.log(f"异常文件名提示: '{self.value}'")
+        if obj in self.document.status["setupfiles"]:
+            self.log(f"重复的setupfile:{self.value}")
+            return
         self.document.status["setupfiles"].append(obj)
         content = str(content).splitlines()
         doc = Document(content,
