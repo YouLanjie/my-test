@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DAP(da, offset) (da->ptr+(da->size*(offset)))
+#define DAP(da, offset) ((void*)((char*)da->ptr+(da->size*(offset))))
 
 DA_t *da_create(DA_t *da, size_t cap)
 {
