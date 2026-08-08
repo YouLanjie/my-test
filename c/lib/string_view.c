@@ -93,6 +93,68 @@ bool sv_end_with(SV_t s, SV_t pat)
 	return !strncmp(s.p+s.len-pat.len, pat.p, pat.len);
 }
 
+bool sv_forline(SV_t *line, SV_t *left)
+{
+	if (!line || !left || !left->p || !left->len) return false;
+	*line = sv_chop_by_delim(left, '\n');
+	if (line->len && line->p[line->len-1] == '\r') sv_chop_right(line, 1);
+	return true;
+}
+
+bool sv_forline_reverse(SV_t *line, SV_t *left)
+{
+	if (!line || !left || !left->p || !left->len) return false;
+	size_t i = 0;
+	while (i < left->len && left->p[left->len-i-1] != '\n') i++;
+	// printf("-- %zu/%zu\n", i, left->len);
+	*line = *left;
+	sv_chop_left(line, left->len-i);
+	sv_chop_right(left, i+1<=left->len ? i+1 : left->len);
+	if (left->len && left->p[left->len-1] == '\r') sv_chop_right(left, 1);
+	if (!line->len && !left->len) return false;
+	return true;
+}
+
+size_t sv_countlines(SV_t content)
+{
+	SV_t line = {};
+	size_t ind = 0;
+	while (sv_forline(&line, &content)) ind++;
+	return ind;
+}
+
+SV_t sv_seekline(SV_t base, SV_t slice, int line_offset)
+{
+	if (!base.p || !slice.p || slice.p < base.p || slice.p+slice.len > base.p+base.len)
+		return (SV_t){};
+	// const int8_t direc = line_offset >= 0 ? 1 : -1;
+	size_t idx = slice.p - base.p;
+	while (idx > 0 && base.p[idx] != '\n') idx--;
+	if (base.p[idx] == '\n' && idx < base.len) idx++;
+	if (idx && slice.p[0] == '\n') idx--;
+	int count = 0;
+	if (line_offset >= 0) {
+		line_offset++;
+		sv_chop_left(&base, idx);
+		while (count < line_offset && sv_forline(&slice, &base)) count++;
+	} else {
+		line_offset--;
+		sv_chop_right(&base, base.len-idx);
+		while (count > line_offset && sv_forline_reverse(&slice, &base)) count--;
+	}
+	if (count != line_offset) slice.len = 0;
+	return slice;
+}
+
+size_t sv_getlinenum(SV_t base, SV_t slice)
+{
+	slice = sv_seekline(base, slice, 0);
+	if (!slice.p) return 0;
+	if (!slice.len) slice.len++;
+	base.len = slice.p+slice.len-base.p;
+	return sv_countlines(base);
+}
+
 
 /* ===================
  * SVA相关

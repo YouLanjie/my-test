@@ -28,13 +28,25 @@ static inline SV_t sv_from_cstr(const char *p)
 #define sv_from_lstr(str) ((SV_t){.len=sizeof(str)-1, .p=str})
 void sv_chop_left(SV_t *s, size_t len);
 void sv_chop_right(SV_t *s, size_t len);
-SV_t sv_chop_by_delim(SV_t *s, char delim);    // 返回左侧部分，*s保存右侧部分，分隔符不保留
-SV_t sv_chop_by_type(SV_t *s, int (*istype)(int c));    // 返回左侧部分，*s保存右侧部分
+/* 返回左侧部分，*s保存右侧部分，分隔符不保留 */
+SV_t sv_chop_by_delim(SV_t *s, char delim);
+/* 返回左侧部分，*s保存右侧部分 */
+SV_t sv_chop_by_type(SV_t *s, int (*istype)(int c));
 void sv_trim_left_by_type(SV_t *s, int (*istype)(int c));
 void sv_trim_right_by_type(SV_t *s, int (*istype)(int c));
 bool sv_cmp(SV_t s1, SV_t s2);
 bool sv_end_with(SV_t s, SV_t pat);
 bool sv_begin_with(SV_t s, SV_t pat);
+/* 正向遍历行 */
+bool sv_forline(SV_t *line, SV_t *left);
+/* 反向遍历行 */
+bool sv_forline_reverse(SV_t *line, SV_t *left);
+/* 计算行数 */
+size_t sv_countlines(SV_t content);
+/* 根据源切片寻找换行 */
+SV_t sv_seekline(SV_t base, SV_t slice, int line_offset);
+/* 获取当前行号 */
+size_t sv_getlinenum(SV_t base, SV_t slice);
 
 
 /* 具有所有权的sv */
