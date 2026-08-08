@@ -59,8 +59,14 @@ SV_t sv_chop_by_type(SV_t *s, int (*istype)(int c))
 
 void sv_trim_left_by_type(SV_t *s, int (*istype)(int c))
 {
-	if (!s) return;
+	if (!s || !istype) return;
 	while(s->len > 0 && istype(s->p[0])) sv_chop_left(s, 1);
+}
+
+void sv_trim_right_by_type(SV_t *s, int (*istype)(int c))
+{
+	if (!s || !istype) return;
+	while(s->len > 0 && istype(s->p[s->len-1])) sv_chop_right(s, 1);
 }
 
 bool sv_cmp(SV_t s1, SV_t s2)

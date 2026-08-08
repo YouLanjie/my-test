@@ -188,8 +188,9 @@ SVA_t *path_readfile(SV_t path, SVA_t *dest, size_t maxsize)
 {
 	if (!path.p || !path.len || !dest) return NULL;
 	SVA_t file = {};
-	sva_from_sv(&file, path);
-	FILE *fp = fopen(file.p, "r");
+	sva_from_sv(dest, path);
+	FILE *fp = fopen(dest->p, "r");
+	sva_clear(dest);
 	if (!fp) return NULL;
 
 	size_t size = 0;
