@@ -34,9 +34,15 @@ SV_t sv_chop_by_delim(SV_t *s, char delim);
 SV_t sv_chop_by_type(SV_t *s, int (*istype)(int c));
 void sv_trim_left_by_type(SV_t *s, int (*istype)(int c));
 void sv_trim_right_by_type(SV_t *s, int (*istype)(int c));
-bool sv_cmp(SV_t s1, SV_t s2);
-bool sv_end_with(SV_t s, SV_t pat);
+/* 仅判断是否相等 */
+bool sv_issame(SV_t s1, SV_t s2);
+/* 类似strcmp */
+int sv_cmp(SV_t s1, SV_t s2);
+int sv_case_cmp(SV_t s1, SV_t s2);
 bool sv_begin_with(SV_t s, SV_t pat);
+bool sv_end_with(SV_t s, SV_t pat);
+bool sv_case_begin_with(SV_t s, SV_t pat);
+bool sv_case_end_with(SV_t s, SV_t pat);
 /* 正向遍历行 */
 bool sv_forline(SV_t *line, SV_t *left);
 /* 反向遍历行 */
@@ -47,6 +53,8 @@ size_t sv_countlines(SV_t content);
 SV_t sv_seekline(SV_t base, SV_t slice, int line_offset);
 /* 获取当前行号 */
 size_t sv_getlinenum(SV_t base, SV_t slice);
+/* 根据两个切片的最大边界合并切片 */
+SV_t sv_merge(SV_t base, SV_t slice1, SV_t slice2);
 
 
 /* 具有所有权的sv */

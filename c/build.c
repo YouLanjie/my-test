@@ -127,7 +127,7 @@ static bool build_c2obj(Target_t *target)
 	for (uint64_t i = 0; i < countof(CFILEFLAGS); i++) {
 		if (!CFILEFLAGS[i].filename) continue;
 		path_normalize(sva_from_cstr(&obj, CFILEFLAGS[i].filename));
-		if (!sva_cmp(&obj, &target->name)) continue;
+		if (sva_cmp(&obj, &target->name) != 0) continue;
 		flag = CFILEFLAGS+i;
 		break;
 	}
@@ -421,8 +421,8 @@ static bool rule_fordir(SV_t d_name, uint8_t d_type)
 {
 	if (!d_name.p || !d_name.len) return false;
 	/* 跳过特殊路径 */
-	if (sv_cmp(d_name, sv_from_cstr("..")) ||
-	    sv_cmp(d_name, sv_from_cstr(".")))
+	if (sv_cmp(d_name, sv_from_cstr("..")) == 0 ||
+	    sv_cmp(d_name, sv_from_cstr(".")) == 0)
 		return false;
 	if (d_type == DT_DIR) {
 		/* 跳过lib.*文件夹 */
@@ -474,7 +474,7 @@ static Target_t *action_c_elf(Target_t *list, SV_t full_path)
 	for (uint64_t i = 0; i < countof(CFILEFLAGS); i++) {
 		if (!CFILEFLAGS[i].filename) continue;
 		path_normalize(sva_from_cstr(&tmp, CFILEFLAGS[i].filename));
-		if (!sv_cmp(sv_from_sva(&tmp), full_path)) continue;
+		if (sv_cmp(sv_from_sva(&tmp), full_path) != 0) continue;
 		flag = CFILEFLAGS+i;
 		break;
 	}
@@ -516,7 +516,7 @@ static Target_t *action_c_lib(Target_t *list, SV_t full_path)
 		testpath = sv_from_cstr(CLIBS[i].sources[0]);
 		if (sv_end_with(testpath, sv_from_lstr("/*"))) sv_chop_right(&testpath, 1);
 		else testpath = path_father(testpath);
-		if (!sv_cmp(testpath, libdir)) continue;
+		if (sv_cmp(testpath, libdir) != 0) continue;
 
 		lib = get_target_by_libname(list, sv_from_cstr(CLIBS[i].libname));
 		if (!lib) break;

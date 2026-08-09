@@ -228,7 +228,7 @@ User_t *user_get(Runtimedata_t *rt, SV_t name)
 	for (size_t i = 0; i < rt->users.len; i++) {
 		user = da_get(&rt->users, i);
 		if (!user) continue;
-		if (sv_cmp(sv_from_sva(&user->name), name)) break;
+		if (sv_cmp(sv_from_sva(&user->name), name) == 0) break;
 		user = NULL;
 	}
 	return user;
@@ -281,8 +281,8 @@ Session_t *session_get(Runtimedata_t *rt, SV_t ipaddr, SV_t ua)
 	for (size_t i = 0; i < rt->sessions.len; i++) {
 		session = da_get(&rt->sessions, i);
 		if (!session) continue;
-		if (sv_cmp(sv_from_sva(&session->ipaddr), ipaddr) &&
-		    sv_cmp(sv_from_sva(&session->ua), ua)) break;
+		if (sv_cmp(sv_from_sva(&session->ipaddr), ipaddr) == 0 &&
+		    sv_cmp(sv_from_sva(&session->ua), ua) == 0) break;
 		session = NULL;
 	}
 	return session;
@@ -344,7 +344,7 @@ Session_t *session_login(Runtimedata_t *rt, Session_t *session, SV_t username, S
 		User_t *u = user_get(rt, username);
 		if (!u) break;
 		code++;
-		if (!sv_cmp(sv_from_sva(&u->passwd), passwd)) break;
+		if (sv_cmp(sv_from_sva(&u->passwd), passwd) != 0) break;
 		code++;
 		if (u->type == UT_BAN) break;
 		session->is_logined = true;

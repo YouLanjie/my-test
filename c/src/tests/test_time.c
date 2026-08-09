@@ -98,11 +98,13 @@ bool is_pid_exited(pid_t pid)
 	return false;
 }
 
+static int sig_count = 0;
 static pid_t child_pid = 0;
 
 void sig_handle(int sig)
 {
-	printf("[GOT SIGNAL(%d) -> PID %d]\n", sig, child_pid);
+	sig_count++;
+	printf("[GOT SIGNAL(%d) -> PID %d] (%d/5)\n", sig, child_pid, sig_count);
 	kill(child_pid, sig);
 }
 
@@ -147,6 +149,7 @@ int main(int argc, char *argv[])
 		max_mem = read_status(fp_st, max_mem);
 		read_io(fp_io, &iost);
 		if (is_pid_exited(pid)) break;
+		if (sig_count >= 5) break;
 		nanosleep(&tm, NULL);
 	}
 

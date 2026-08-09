@@ -69,7 +69,7 @@ void sv_trim_right_by_type(SV_t *s, int (*istype)(int c))
 	while(s->len > 0 && istype(s->p[s->len-1])) sv_chop_right(s, 1);
 }
 
-bool sv_cmp(SV_t s1, SV_t s2)
+bool sv_issame(SV_t s1, SV_t s2)
 {
 	if (memcmp(&s1, &s2, sizeof(s1)) == 0) return true;
 	if (!s1.len && !s2.len) return true;
@@ -79,18 +79,54 @@ bool sv_cmp(SV_t s1, SV_t s2)
 	return memcmp(s1.p, s2.p, s1.len) == 0;
 }
 
+#define min(var1, var2) ((var1)<=(var2) ? (var1) : (var2))
+#define max(var1, var2) ((var1)>=(var2) ? (var1) : (var2))
+int sv_cmp(SV_t s1, SV_t s2)
+{
+	if (memcmp(&s1, &s2, sizeof(s1)) == 0) return 0;
+	if (!s1.len && !s2.len) return 0;
+	size_t len = min(s1.len, s2.len);
+	int ret = memcmp(s1.p, s2.p, len);
+	if (ret == 0) return s1.len - s2.len;
+	return ret;
+}
+
+int sv_case_cmp(SV_t s1, SV_t s2)
+{
+	if (memcmp(&s1, &s2, sizeof(s1)) == 0) return 0;
+	if (!s1.len && !s2.len) return 0;
+	size_t len = min(s1.len, s2.len);
+	int ret = strncasecmp(s1.p, s2.p, len);
+	if (ret == 0) return s1.len - s2.len;
+	return ret;
+}
+
 bool sv_begin_with(SV_t s, SV_t pat)
 {
 	if (!s.p || !pat.p) return false;
 	if (s.len < pat.len) return false;
-	return !strncmp(s.p, pat.p, pat.len);
+	return !memcmp(s.p, pat.p, pat.len);
 }
 
 bool sv_end_with(SV_t s, SV_t pat)
 {
 	if (!s.p || !pat.p) return false;
 	if (s.len < pat.len) return false;
-	return !strncmp(s.p+s.len-pat.len, pat.p, pat.len);
+	return !memcmp(s.p+s.len-pat.len, pat.p, pat.len);
+}
+
+bool sv_case_begin_with(SV_t s, SV_t pat)
+{
+	if (!s.p || !pat.p) return false;
+	if (s.len < pat.len) return false;
+	return !strncasecmp(s.p, pat.p, pat.len);
+}
+
+bool sv_case_end_with(SV_t s, SV_t pat)
+{
+	if (!s.p || !pat.p) return false;
+	if (s.len < pat.len) return false;
+	return !strncasecmp(s.p+s.len-pat.len, pat.p, pat.len);
 }
 
 bool sv_forline(SV_t *line, SV_t *left)
@@ -109,7 +145,7 @@ bool sv_forline_reverse(SV_t *line, SV_t *left)
 	// printf("-- %zu/%zu\n", i, left->len);
 	*line = *left;
 	sv_chop_left(line, left->len-i);
-	sv_chop_right(left, i+1<=left->len ? i+1 : left->len);
+	sv_chop_right(left, min(i+1, left->len));
 	if (left->len && left->p[left->len-1] == '\r') sv_chop_right(left, 1);
 	if (!line->len && !left->len) return false;
 	return true;
@@ -153,6 +189,18 @@ size_t sv_getlinenum(SV_t base, SV_t slice)
 	if (!slice.len) slice.len++;
 	base.len = slice.p+slice.len-base.p;
 	return sv_countlines(base);
+}
+
+SV_t sv_merge(SV_t base, SV_t slice1, SV_t slice2)
+{
+	if (!base.p ||
+	    !slice1.p || slice1.p < base.p || slice1.p+slice1.len > base.p+base.len ||
+	    !slice2.p || slice2.p < base.p || slice2.p+slice2.len > base.p+base.len)
+		return (SV_t){};
+	// const int8_t direc = line_offset >= 0 ? 1 : -1;
+	const char *p1 = min(slice1.p, slice2.p);
+	const char *p2 = max(slice1.p+slice1.len, slice2.p+slice2.len);
+	return (SV_t){.p = p1, .len = p2-p1};
 }
 
 

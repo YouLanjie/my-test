@@ -58,10 +58,10 @@ static inline void _path_tails_process(Path_t *path, char c)
 	while (sv_end_with(sv_from_sva(path), sv_from_lstr("/.."))) {    /* 撤回一个目录层级 */
 		path->len -= 3;
 		const SV_t sv = sv_from_sva(path);
-		if (sv_cmp(sv, sv_from_cstr("..")) || sv_end_with(sv, sv_from_lstr("/.."))) {
+		if (sv_cmp(sv, sv_from_cstr("..")) == 0 || sv_end_with(sv, sv_from_lstr("/.."))) {
 			path->len+=3;    /* 如果上一级目录也是..则取消撤回并添加新字符 */
 			break;
-		} else if (sv_cmp(sv, sv_from_cstr("."))  || sv_end_with(sv, sv_from_lstr("/."))) {
+		} else if (sv_cmp(sv, sv_from_cstr(".")) == 0 || sv_end_with(sv, sv_from_lstr("/."))) {
 			/* 如果上一级是.则替换为.. */
 			path->p[path->len] = '.';
 			path->len+=1;
@@ -187,7 +187,6 @@ int path_remove(SV_t path)
 SVA_t *path_readfile(SV_t path, SVA_t *dest, size_t maxsize)
 {
 	if (!path.p || !path.len || !dest) return NULL;
-	SVA_t file = {};
 	sva_from_sv(dest, path);
 	FILE *fp = fopen(dest->p, "r");
 	sva_clear(dest);

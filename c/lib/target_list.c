@@ -80,7 +80,7 @@ void target_depend_append(Target_t *target, Target_t *dependency)
 
 Target_t *target_get_by_name(Target_t *list, SV_t name)
 {
-	while (list && sv_cmp(sv_from_sva(&list->name), name) != true) {
+	while (list && sv_cmp(sv_from_sva(&list->name), name) != 0) {
 		list = list->next;
 	}
 	return list;
