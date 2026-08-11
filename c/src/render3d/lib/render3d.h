@@ -66,6 +66,9 @@ Vec_t vec_add3(Vec_t v1, Vec_t v2, Vec_t v3);
 Vec_t vec_addn_(Vec_t vecs[], size_t size);
 /* 不定项多向量加法 */
 #define vec_adds(...) vec_addn_((Vec_t[]){__VA_ARGS__}, sizeof((Vec_t[]){__VA_ARGS__})/sizeof(Vec_t))
+/* 求同处xOy平面的AB与AC的叉乘的z轴值（无检查,预期叉乘结果x,y为零） */
+#define vec2d_area(A, B, C) \
+	(((B).x-(A).x)*((C).y-(A).y) - ((B).y-(A).y)*((C).x-(A).x))
 
 
 /* 相机 */
@@ -87,6 +90,8 @@ Camera_t *camera_create();
 void camera_free(Camera_t *p);
 void camera_lock(Camera_t *camera);
 void camera_unlock(Camera_t *camera);
+/* 将世界坐标转相机坐标，z表示深度 */
+Point_t camera_world2camera(Camera_t *camera, Point_t p);
 /**
  * @brief 将点投影到虚拟屏幕(相机)上
  *
@@ -96,7 +101,19 @@ void camera_unlock(Camera_t *camera);
  * （若z<=0则点无法投影或在屏幕外）
  */
 Point_t camera_cast(Camera_t *camera, Point_t p);
+/**
+ * @brief 投影线条
+ *
+ * @param camera 相机
+ * @param p1 线段端点1
+ * @param p2 线段端点2
+ * @param ret_p1 存储投影后端点1地址
+ * @param ret_p2 存储投影后端点2地址
+ * @return 若ret < 0则无投影
+ */
 int camera_cast_line(Camera_t *camera, Point_t p1, Point_t p2, Point2d_t *ret_p1, Point2d_t *ret_p2);
+/* 投影三角面，不作裁切 */
+int camera_cast_surface(Camera_t *camera, Point_t *p1, Point_t *p2, Point_t *p3);
 void camera_shift(Camera_t *camera, Vec_t direction);
 void camera_rotate(Camera_t *camera, Vec_t direction, double theta);
 /**

@@ -66,20 +66,36 @@ void camera_unlock(Camera_t *camera)
 	((PrivatCamera_t*)camera->private_data)->locked = false;
 }
 
-Point2d_t camera_cast(Camera_t *camera, Point_t p)
+static void camera_update_direct(Camera_t *camera)
 {
-	if (!camera || !camera->private_data || camera->scale <= 0) return (Point_t){0,0,-1};
+	if (!camera) return;
 	PrivatCamera_t *pc = camera->private_data;
-	if (!pc->locked) {    /* 一旦锁定即停止同步运算,减少计算量 */
-		/* 得到相机坐标系的x,y,z三轴 */
-		pc->z = vec_direct(vec_mul(camera->forward, -1));
-		pc->y = vec_direct(camera->up);
-		pc->x = vec_direct(vec_cross_product(pc->y, pc->z));
+	if (pc->locked) {
+		/* 一旦锁定即停止同步运算,减少计算量 */
+		return;
 	}
+	/* 得到相机坐标系的x,y,z三轴 */
+	pc->z = vec_direct(vec_mul(camera->forward, -1));
+	pc->y = vec_direct(camera->up);
+	pc->x = vec_direct(vec_cross_product(pc->y, pc->z));
+}
+
+Point_t camera_world2camera(Camera_t *camera, Point_t p)
+{
+	if (!camera || !camera->private_data) return (Point_t){0,0,INFINITY};
+	PrivatCamera_t *pc = camera->private_data;
 	/* 转换坐标系 */
 	p = vec_sub(p, camera->position);
 	p = (Vec_t){vec_point_product(p,pc->x), vec_point_product(p,pc->y), vec_point_product(p,pc->z)};
 	p.z = -p.z;    /* 负数方向转为正数深度 */
+	return p;
+}
+
+Point2d_t camera_cast(Camera_t *camera, Point_t p)
+{
+	if (!camera || !camera->private_data || camera->scale <= 0) return (Point_t){0,0,-1};
+	camera_update_direct(camera);
+	p = camera_world2camera(camera, p);
 	if (p.z <= 0 || p.z > camera->dept) return (Point_t){0,0,-2};
 
 	p.x = camera->scale*p.x/p.z - camera->offset_x;
@@ -90,36 +106,12 @@ Point2d_t camera_cast(Camera_t *camera, Point_t p)
 	return p;
 }
 
-/* 投影线条(需要传入两个端点的地址)
- * ret < 0 : 无投影 */
-/**
- * @brief 投影线条
- *
- * @param camera 相机
- * @param p1 线段端点1
- * @param p2 线段端点2
- * @param ret_p1 存储投影后端点1地址
- * @param ret_p2 存储投影后端点2地址
- * @return 若ret < 0则无投影
- */
 int camera_cast_line(Camera_t *camera, Point_t p1, Point_t p2, Point2d_t *ret_p1, Point2d_t *ret_p2)
 {
 	if (!camera || !camera->private_data || camera->scale <= 0 || !ret_p1 || !ret_p2) return -1;
-	PrivatCamera_t *pc = camera->private_data;
-	if (!pc->locked) {    /* 一旦锁定即停止同步运算,减少计算量 */
-		/* 得到相机坐标系的x,y,z三轴 */
-		pc->z = vec_direct(vec_mul(camera->forward, -1));
-		pc->y = vec_direct(camera->up);
-		pc->x = vec_direct(vec_cross_product(pc->y, pc->z));
-	}
-	/* 转换坐标系 */
-	p1 = vec_sub(p1, camera->position);
-	p1 = (Vec_t){vec_point_product(p1,pc->x), vec_point_product(p1,pc->y), vec_point_product(p1,pc->z)};
-	p1.z = -p1.z;    /* 负数方向转为正数深度 */
-
-	p2 = vec_sub(p2, camera->position);
-	p2 = (Vec_t){vec_point_product(p2,pc->x), vec_point_product(p2,pc->y), vec_point_product(p2,pc->z)};
-	p2.z = -p2.z;
+	camera_update_direct(camera);
+	p1 = camera_world2camera(camera, p1);
+	p2 = camera_world2camera(camera, p2);
 
 	/* 如果两端都同侧越界，则认为非法跳过(若dept小于零则忽略) */
 	if ((p1.z <= 0 && p2.z <= 0) || (camera->dept > 0 && p1.z > camera->dept && p2.z > camera->dept)) return -2;
@@ -168,6 +160,20 @@ int camera_cast_line(Camera_t *camera, Point_t p1, Point_t p2, Point2d_t *ret_p1
 	if (u1 > u2) return -4;
 	*ret_p1 = (Point2d_t){p1.x+u1*dx, p1.y+u1*dy, 1/(1/p1.z+u1*(1/p2.z-1/p1.z))};
 	*ret_p2 = (Point2d_t){p1.x+u2*dx, p1.y+u2*dy, 1/(1/p1.z+u2*(1/p2.z-1/p1.z))};
+	return 0;
+}
+
+int camera_cast_surface(Camera_t *camera, Point_t *p1, Point_t *p2, Point_t *p3)
+{
+	if (!camera || !p1 || !p2 || !p3) return -1;
+	camera_update_direct(camera);
+	Point_t *points[3] = {p1, p2, p3};
+	for (size_t i = 0; i < countof(points); i++) {
+		*points[i] = camera_world2camera(camera, *points[i]);
+		if (points[i]->z == 0) points[i]->z = 1e-9;
+		points[i]->x = camera->scale*points[i]->x/points[i]->z - camera->offset_x;
+		points[i]->y = camera->scale*points[i]->y/points[i]->z - camera->offset_y;
+	}
 	return 0;
 }
 

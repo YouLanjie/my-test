@@ -57,6 +57,7 @@ class Node:
     template = Template(
 """\
 #+title: ${title}
+#+description: ${title} - ${path}
 # fancybox
 ${fancybox}
 # user's theme
@@ -237,9 +238,11 @@ ${nav_t}
                 prevp = self.father.tree[idx-1]
             if idx+1 < len(self.father.tree):
                 nextp = self.father.tree[idx+1]
+        obj_path = pytools.calculate_relative3(self.name, self.root.name)
         s = self.gen_page({
-            "title": str(args.get("title") or ""),
-            "subtitle":f"{done} / {pytools.calculate_relative3(self.name, self.root.name)}" \
+            "title": str(args.get("title") or "默认标题"),
+            "path": str(obj_path),
+            "subtitle":f"{done} / {obj_path}" \
                     if total > 0 else self.name.name,
             "fancybox": str(args.get("fancybox") or ""),
             "split": args.get("split"),

@@ -151,6 +151,7 @@ bool obj_merge(Obj_t *obj, Obj_t *from)
 		for (; i < obj->count_surface; i++) {    /* 更新索引 */
 			surfaces[i][0] += ori_count_points;
 			surfaces[i][1] += ori_count_points;
+			surfaces[i][2] += ori_count_points;
 		}
 	}
 	return true;
@@ -179,9 +180,11 @@ Obj_t *obj_create_line_from_point(Point_t p1, Point_t p2)
 
 Obj_t *obj_create_box_from_point(Point_t points[8])
 {
-	return obj_create((Point_t){0,0,0}, 8, points, 12,
+	return obj_create((Point_t){0,0,0}, 8, points,
+			  12,
 			  (Line_t[]){ {0,4},{1,5},{2,6},{3,7}, {0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4} },
-			  0, NULL);
+			  2,
+			  (Surface_t[]){ {0,1,2}, {2,3,0} });
 }
 
 Obj_t *obj_create_cube(double edge_len)
@@ -241,40 +244,97 @@ Obj_t *obj_create_image_from_str(Point_t center, double k, const char *p, char c
 	return obj;
 }
 
+bool triangle_check_in(Point_t p1, Point_t p2, Point_t p3, Point_t check_point, Vec_t *result)
+{
+	double total = vec2d_area(p1, p2, p3);
+	if (fabs(total) < 1e-5) return false;
+	Vec_t ret = {};
+	ret.x = vec2d_area(p2, p3, check_point)/total;
+	ret.y = vec2d_area(p3, p1, check_point)/total;
+	ret.z = vec2d_area(p1, p2, check_point)/total;
+	if (!(ret.x>0 && ret.y>0 && ret.z>0)) return false;
+	if (result) *result = ret;
+	return true;
+}
+
 /* 投影物体 */
 void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 {
 	if (!camera || !backend) return;
 	size_t i = 0;
-	Point2d_t p;
+	Point2d_t p[3] = {};
 	camera_lock(camera);
 	for (i = 0; i < obj->count_point; i++) {
-		p = camera_cast(camera, vec_add(obj->points[i], obj->center));
-		if (p.z <= 0) continue;
-		backend->draw(backend, (Point2d_t){p.x, p.y, p.z/fabs(camera->dept)});
+		p[0] = camera_cast(camera, vec_add(obj->points[i], obj->center));
+		if (p[0].z <= 0) continue;
+		backend->draw(backend, (Point2d_t){p[0].x, p[0].y, p[0].z/fabs(camera->dept)});
 	}
-	Point2d_t p2;
+
 	double dx, dy, dz;
 	int8_t step = 0;
 	for (i = 0; i < obj->count_line; i++) {
 		if (camera_cast_line(camera,
 				     vec_add(obj->center, obj->points[obj->lines[i][0]]),
-				     vec_add(obj->center, obj->points[obj->lines[i][1]]), &p, &p2) < 0)
+				     vec_add(obj->center, obj->points[obj->lines[i][1]]), p, p+1) < 0)
 			continue;
-		if (p.z <= 0 || p2.z <= 0) continue;
-		dx = p2.x-p.x, dy = p2.y-p.y, dz = p2.z-p.z;
+		if (p[0].z <= 0 || p[1].z <= 0) continue;
+		dx = p[1].x-p[0].x, dy = p[1].y-p[0].y, dz = p[1].z-p[0].z;
 		if (fabs(dx) >= fabs(dy)) {
 			step = dx < 0 ? -1 : 1;
-			for (int x = p.x; (x-p2.x)*step <= 0; x+=step) {
-				backend->draw(backend, (Point2d_t){x, p.y+(x-p.x)*dy/dx, (p.z+(x-p.x)*dz/dx)/fabs(camera->dept)});
+			for (int x = p[0].x; (x-p[1].x)*step <= 0; x+=step) {
+				backend->draw(backend, (Point2d_t){
+					      x, p[0].y+(x-p[0].x)*dy/dx,
+					      (p[0].z+(x-p[0].x)*dz/dx)/fabs(camera->dept)
+					      });
 			}
 		} else {
 			step = dy < 0 ? -1 : 1;
-			for (int y = p.y; (y-p2.y)*step <= 0; y+=step) {
-				backend->draw(backend, (Point2d_t){p.x+(y-p.y)*dx/dy, y, (p.z+(y-p.y)*dz/dy)/fabs(camera->dept)});
+			for (int y = p[0].y; (y-p[1].y)*step <= 0; y+=step) {
+				backend->draw(backend, (Point2d_t){
+					      p[0].x+(y-p[0].y)*dx/dy, y,
+					      (p[0].z+(y-p[0].y)*dz/dy)/fabs(camera->dept)
+					      });
 			}
 		}
-		p = (Point_t){0, 0, 0}, p2 = (Point2d_t){0, 0, 0};
+		p[0] = (Point_t){0, 0, 0}, p[1] = (Point2d_t){0, 0, 0};
+	}
+
+	for (i = 0; i < obj->count_surface; i++) {
+		for (int j = 0; j < 3; j++) {
+			printf("%lu,", obj->surfaces[i][j]);
+			p[j] = vec_add(obj->center, obj->points[obj->surfaces[i][j]]);
+		}
+		printf("|");
+		camera_cast_surface(camera, p, p+1, p+2);
+
+		double x_min = camera->width/2;
+		double x_max = camera->width/-2;
+		double y_min = camera->height/2;
+		double y_max = camera->height/-2;
+		for (int j = 0; j < 3; j++) {
+			x_min = fmin(x_min, p[j].x);
+			x_max = fmax(x_max, p[j].x);
+			y_min = fmin(y_min, p[j].y);
+			y_max = fmax(y_max, p[j].y);
+		}
+		x_min = fmax(camera->width/-2, x_min);
+		x_max = fmin(camera->width/2, x_max);
+		y_min = fmax(camera->height/-2, y_min);
+		y_max = fmin(camera->height/2, y_max);
+		Point_t ret;
+		double z = 0;
+		for (int j = x_min; j < x_max; j++) {
+			for (int k = y_min; k < y_max; k++) {
+				if (!triangle_check_in(p[0], p[1], p[2], (Vec_t){j, k, 0}, &ret))
+					continue;
+				z = 1. / (ret.x*(1/p[0].z) + ret.y*(1/p[1].z) + ret.z*(1/p[2].z));
+				if (z < 0 || (camera->dept > 0 && z > camera->dept))
+					continue;
+				backend->draw(backend, (Point2d_t){
+					      j, k,
+					      z/fabs(camera->dept)});
+			}
+		}
 	}
 	camera_unlock(camera);
 }
