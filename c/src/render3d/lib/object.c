@@ -165,6 +165,9 @@ Obj_t *obj_add_surface(Obj_t *obj, size_t p1, size_t p2, size_t p3)
 		surfaces = malloc((obj->count_surface+1)*sizeof(*surfaces));
 	}
 	if (!surfaces) return obj;
+	surfaces[obj->count_surface][0] = p1;
+	surfaces[obj->count_surface][1] = p2;
+	surfaces[obj->count_surface][2] = p3;
 	obj->surfaces = surfaces;
 	obj->count_surface++;
 	return obj;
@@ -264,6 +267,35 @@ Obj_t *obj_create_cube(double edge_len)
 		points[i] = vec_mul(points[i], edge_len/2);
 	}
 	return obj_create_box_from_point(points);
+}
+
+Obj_t *obj_create_cube_with_surface(double edge_len)
+{
+	Point_t points[] = {
+		{-1,-1,1},
+		{1,-1,1},
+		{1,1,1},
+		{-1,1,1},
+		{-1,-1,-1},
+		{1,-1,-1},
+		{1,1,-1},
+		{-1,1,-1}
+	};
+	for (size_t i = 0; i < countof(points); i++) {
+		points[i] = vec_mul(points[i], edge_len/2);
+	}
+	Obj_t *obj = obj_create_box_from_point(points);
+	if (!obj) return NULL;
+	obj_add_surface(obj, 0, 1, 2);
+	obj_add_surface(obj, 2, 3, 0);
+
+	obj_add_surface(obj, 4, 5, 6);
+	obj_add_surface(obj, 6, 7, 4);
+	for (size_t i = 0; i < 4; i++) {
+		obj_add_surface(obj, i, i+4, (i+1)%4);
+		obj_add_surface(obj, (i+1)%4, (i+1)%4+4, i+4);
+	}
+	return obj;
 }
 
 Obj_t *obj_create_image_from_str(Point_t center, double k, const char *p, char ch)

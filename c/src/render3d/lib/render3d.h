@@ -248,6 +248,8 @@ Obj_t *obj_create_box_from_point(Point_t points[8]);
  * @return 创建后的物体
  */
 Obj_t *obj_create_cube(double edge_len);
+/* 类似obj_create_cube但是创建有封闭六面的立方体 */
+Obj_t *obj_create_cube_with_surface(double edge_len);
 /**
  * @brief 通过字符串字符画生成物体
  * (画布垂直于z轴,中心在边界框中心)

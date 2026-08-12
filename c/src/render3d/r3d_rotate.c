@@ -65,8 +65,9 @@ static bool setup(Runtimedata_t *rt)
 	if (!rt) return false;
 	const int term_w = get_winsize_col() - 0;
 	const int term_h = get_winsize_row() - 1;
-	rt->backend = backend_create_utf8(term_w, term_h);
+	// rt->backend = backend_create_utf8(term_w, term_h);
 	// rt->backend = backend_create_ascii_8bit(term_w, term_h);
+	rt->backend = backend_create_utf8_256bit(term_w, term_h);
 	rt->camera = camera_create();
 	rt->axis_helper = obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){10*SCALE,0,0}));
 	obj_merge_and_free(rt->axis_helper, obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){0,6*SCALE,0})));
@@ -286,8 +287,9 @@ int main(void)
 	Star_t objs[] = {
 		(Star_t){
 			.name = "地球",
-			.obj = obj_rotate(obj_shift(obj_create_cube(6371*2), (Vec_t){Dx_SE, 0, 0}),
-					  (Vec_t){1, 1, -1}, M_PI/3.8),
+			.obj = obj_set_color(obj_rotate(obj_shift(obj_create_cube_with_surface(6371*2),
+								  (Vec_t){Dx_SE, 0, 0}),
+							(Vec_t){1, 1, -1}, M_PI/3.8), (Color_t){29,153,243,-1}),
 			.mass = 5.965e24,
 			.speed = (Vec_t){0, Vy_SE, 0},
 			.self_rotate = (Vec_t){0, 0, 1},
@@ -297,7 +299,8 @@ int main(void)
 			// 7.9km/s  11.2km/s
 		}, (Star_t){
 			.name = "地球小卫星",
-			.obj = obj_shift(obj_create_cube(1), (Vec_t){7000+Dx_SE, 0, 0}),
+			.obj = obj_set_color(obj_shift(obj_create_cube(1), (Vec_t){7000+Dx_SE, 0, 0}),
+					     (Color_t){-1,30,30,-1}),
 			.mass = 1,
 			.speed = vec_add(vec_mul(vec_direct((Vec_t){0, 1, 0.8}), 7.9), (Vec_t){0, Vy_SE, 0}),
 		}, (Star_t){
@@ -368,7 +371,8 @@ int main(void)
 			.self_omiga = 2*M_PI/(16.11*60*60),
 		}, (Star_t){
 			.name = "太阳",
-			.obj = obj_shift(obj_create_cube(695700*2), (Vec_t){0, 384400, 0}),
+			.obj = obj_set_color(obj_shift(obj_create_cube(695700*2), (Vec_t){0, 384400, 0}),
+					     (Color_t){-1,-1,0,-1}),
 			.mass = 1.989e30,
 			.speed = vec_mul(vec_direct((Vec_t){0, 0, 0}), 1.022),
 			.self_rotate = (Vec_t){0, 0, 1},
