@@ -55,8 +55,9 @@ static inline double *scr_c(Scr_t *s, int x, int y)
 }
 
 /* 绘制 */
-static void draw(RenderBackend_t *backend, Point2d_t p)
+static void draw(RenderBackend_t *backend, Point2d_t p, Color_t rgb)
 {
+	(void)rgb;
 	if (!backend || !backend->data) return;
 	Scr_t *scr = backend->data;
 	double *i = scr_c(scr, p.x, p.y/2);

@@ -29,6 +29,13 @@ typedef struct {
 typedef Vec_t Point_t;
 /* 二维平面点 */
 typedef Vec_t Point2d_t;
+/* RGB色彩 */
+typedef struct {
+	double r;
+	double g;
+	double b;
+	double a;
+} Color_t;
 
 /* 向量操作函数 */
 
@@ -112,8 +119,10 @@ Point_t camera_cast(Camera_t *camera, Point_t p);
  * @return 若ret < 0则无投影
  */
 int camera_cast_line(Camera_t *camera, Point_t p1, Point_t p2, Point2d_t *ret_p1, Point2d_t *ret_p2);
-/* 投影三角面，不作裁切 */
-int camera_cast_surface(Camera_t *camera, Point_t *p1, Point_t *p2, Point_t *p3);
+/* 投影三角面，仅作近平面裁切，返回面数 */
+int camera_cast_surface(Camera_t *camera,
+			Point_t *p1, Point_t *p2, Point_t *p3,
+			Point_t *p4, Point_t *p5, Point_t *p6);
 void camera_shift(Camera_t *camera, Vec_t direction);
 void camera_rotate(Camera_t *camera, Vec_t direction, double theta);
 /**
@@ -149,7 +158,8 @@ void camera_look_no_hold(Camera_t *camera, Point_t point);
 	BACKEND(ascii_8bit) \
 	BACKEND(ascii_grey) \
 	BACKEND(utf8) \
-	BACKEND(utf8_8bit)
+	BACKEND(utf8_8bit) \
+	BACKEND(utf8_256bit)
 #endif
 
 #define BACKEND(name) RDBK_##name,
@@ -157,7 +167,7 @@ enum Backend_id {BACKEND_LIST};
 #undef BACKEND
 typedef struct RenderBackend_t RenderBackend_t;
 struct RenderBackend_t {
-	void (*draw)(RenderBackend_t *backend, Point2d_t p);  /* 绘制(p的取值范围：xy:-1~1,z:0~1) */
+	void (*draw)(RenderBackend_t *backend, Point2d_t p, Color_t rgb);  /* 绘制(p的取值范围：xy:-1~1,z:0~1) */
 	void (*render)(RenderBackend_t *backend);             /* 输出一帧 */
 	void (*clean)(RenderBackend_t *backend);              /* 清理上一帧的数据 */
 	void (*destroy)(RenderBackend_t *backend);            /* 释放内存 */

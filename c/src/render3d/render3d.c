@@ -28,7 +28,7 @@ static bool setup(RenderBackend_t **bk, Camera_t *ca, uint8_t num)
 		LOG("终端太小(当前可用尺寸：%dx%d)", scr_w, scr_h);
 		return false;
 	}
-	*bk = backend_list[num%(sizeof(backend_list)/sizeof(backend_list[0]))](scr_w, scr_h);
+	*bk = backend_list[num%countof(backend_list)](scr_w, scr_h);
 	if (ca) {
 		ca->width  = scr_w;      /* 需要让相机捕捉到的画面与终端大小相匹配减少无效运算 */
 		ca->height = scr_h*2;    /* 每行能显示的实际大小为每列的两倍 */

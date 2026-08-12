@@ -163,18 +163,42 @@ int camera_cast_line(Camera_t *camera, Point_t p1, Point_t p2, Point2d_t *ret_p1
 	return 0;
 }
 
-int camera_cast_surface(Camera_t *camera, Point_t *p1, Point_t *p2, Point_t *p3)
+int camera_cast_surface(Camera_t *camera,
+			Point_t *p1, Point_t *p2, Point_t *p3,
+			Point_t *p4, Point_t *p5, Point_t *p6)
 {
-	if (!camera || !p1 || !p2 || !p3) return -1;
+	if (!camera || !p1 || !p2 || !p3 || !p4 || !p5 || !p6) return -1;
 	camera_update_direct(camera);
 	Point_t *points[3] = {p1, p2, p3};
+	Point_t *positive[3] = {};
+	Point_t *nagative[3] = {};
+	size_t count = 0;
 	for (size_t i = 0; i < countof(points); i++) {
 		*points[i] = camera_world2camera(camera, *points[i]);
 		if (points[i]->z == 0) points[i]->z = 1e-9;
-		points[i]->x = camera->scale*points[i]->x/points[i]->z - camera->offset_x;
-		points[i]->y = camera->scale*points[i]->y/points[i]->z - camera->offset_y;
+		if (points[i]->z > camera->z_near) {
+			positive[count] = points[i];
+			count++;
+		} else {
+			nagative[i-count] = points[i];
+		}
+		points[i]->x = camera->scale*points[i]->x/fabs(points[i]->z) - camera->offset_x;
+		points[i]->y = camera->scale*points[i]->y/fabs(points[i]->z) - camera->offset_y;
 	}
-	return 0;
+	if (count == 0) return 0;
+	if (count == 3) return 1;
+	if (count == 2) {
+		*p4 = *positive[0];
+		*p5 = *positive[1];
+		*p6 = vec_add(*p4, vec_mul(vec_sub(*nagative[0], *p4), (p4->z-camera->z_near)/(p4->z-nagative[0]->z)));
+		*positive[0] = *p6;
+		*nagative[0] = vec_add(*p5, vec_mul(vec_sub(*nagative[0], *p5), (p5->z-camera->z_near)/(p5->z-nagative[0]->z)));
+		return 2;
+	}
+	p4 = positive[0];
+	*nagative[0] = vec_add(*p4, vec_mul(vec_sub(*nagative[0], *p4), (p4->z-camera->z_near)/(p4->z-nagative[0]->z)));
+	*nagative[1] = vec_add(*p4, vec_mul(vec_sub(*nagative[1], *p4), (p4->z-camera->z_near)/(p4->z-nagative[1]->z)));
+	return 1;
 }
 
 void camera_shift(Camera_t *camera, Vec_t direction)
