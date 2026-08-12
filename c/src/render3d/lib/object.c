@@ -30,8 +30,12 @@ Obj_t *obj_create(Point_t initial_position,
 	};
 	if (!point_num) return p;
 	p->points = malloc(point_num*sizeof(*p->points));
-	assert(p->points != NULL);
+	p->colors = malloc(point_num*sizeof(*p->colors));
+	assert(p->points != NULL && p->colors != NULL);
 	memcpy(p->points, points, point_num*sizeof(*p->points));
+	for (size_t i = 0; i < point_num; i++) {
+		p->colors[i] = COLOR_WHITE;
+	}
 
 	if (line_num) {
 		p->lines = malloc(line_num*sizeof(*p->lines));
@@ -63,6 +67,7 @@ void obj_free(Obj_t *obj)
 {
 	if (!obj) return;
 	if (obj->points) free(obj->points);
+	if (obj->colors) free(obj->colors);
 	if (obj->lines) free(obj->lines);
 	if (obj->surfaces) free(obj->surfaces);
 	free(obj);
@@ -114,12 +119,69 @@ void obj_scale(Obj_t *obj, double k)
 	}
 }
 
+Obj_t *obj_set_point_color(Obj_t *obj, size_t ind, Color_t color)
+{
+	if (!obj) return NULL;
+	if (ind >= obj->count_point) return obj;
+	obj->colors[ind] = color;
+	return obj;
+}
+
+Obj_t *obj_set_color(Obj_t *obj, Color_t color)
+{
+	if (!obj) return NULL;
+	for (size_t i = 0; i < obj->count_point; i++) {
+		obj->colors[i] = color;
+	}
+	return obj;
+}
+
+Obj_t *obj_add_line(Obj_t *obj, size_t p1, size_t p2)
+{
+	if (!obj) return NULL;
+	if (p1 >= obj->count_point || p2 >= obj->count_point)
+		return obj;
+	Line_t *lines;
+	if (obj->count_line && obj->lines) {
+		lines = realloc(obj->lines, (obj->count_line+1)*sizeof(*lines));
+	} else {
+		lines = malloc((obj->count_line+1)*sizeof(*lines));
+	}
+	if (!lines) return obj;
+	obj->lines = lines;
+	obj->count_line++;
+	return obj;
+}
+
+Obj_t *obj_add_surface(Obj_t *obj, size_t p1, size_t p2, size_t p3)
+{
+	if (!obj) return NULL;
+	if (p1 >= obj->count_point || p2 >= obj->count_point || p3 >= obj->count_point)
+		return obj;
+	Surface_t *surfaces;
+	if (obj->count_surface && obj->surfaces) {
+		surfaces = realloc(obj->surfaces, (obj->count_surface+1)*sizeof(*surfaces));
+	} else {
+		surfaces = malloc((obj->count_surface+1)*sizeof(*surfaces));
+	}
+	if (!surfaces) return obj;
+	obj->surfaces = surfaces;
+	obj->count_surface++;
+	return obj;
+}
+
 /* 会自动重新申请内存 */
 bool obj_merge(Obj_t *obj, Obj_t *from)
 {
 	if (!obj || !from) return false;
 
 	size_t ori_count_points = obj->count_point;
+	if (from->count_point && from->colors) {
+		Color_t *colors = realloc(obj->colors, sizeof(*colors)*(obj->count_point+from->count_point));
+		if (!colors) return false;
+		memcpy(colors+obj->count_point, from->colors, sizeof(*colors)*from->count_point);
+		obj->colors = colors;
+	}
 	if (from->count_point && from->points) {
 		Point_t *points = realloc(obj->points, sizeof(*points)*(obj->count_point+from->count_point));
 		if (!points) return false;
@@ -183,8 +245,7 @@ Obj_t *obj_create_box_from_point(Point_t points[8])
 	return obj_create((Point_t){0,0,0}, 8, points,
 			  12,
 			  (Line_t[]){ {0,4},{1,5},{2,6},{3,7}, {0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4} },
-			  2,
-			  (Surface_t[]){ {4,5,6}, {6,7,4} });
+			  0, (Surface_t[]){});
 }
 
 Obj_t *obj_create_cube(double edge_len)
@@ -239,6 +300,10 @@ Obj_t *obj_create_image_from_str(Point_t center, double k, const char *p, char c
 	}
 	obj->count_point = count;
 	obj->points = points;
+	obj->colors = malloc(count*sizeof(*obj->colors));
+	for (size_t i = 0; i < count; i++) {
+		obj->colors[i] = COLOR_WHITE;
+	}
 	obj_transform_shift(obj, (Vec_t){max_x/-2., y/-2., 0});
 	obj_scale(obj, k);
 	return obj;
@@ -258,9 +323,17 @@ static bool triangle_check_in(Point_t p1, Point_t p2, Point_t p3, Point_t check_
 }
 
 static void draw_surface(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend,
-			 Point_t p1, Point_t p2, Point_t p3)
+			 Point_t p1, Point_t p2, Point_t p3,
+			 size_t surface_id)
 {
 	if (!obj || !camera || !backend) return;
+	Color_t color[3] = {};
+	memset(color, -1, sizeof(color));
+	if (surface_id < obj->count_surface) {
+		color[0] = obj->colors[obj->surfaces[surface_id][0]];
+		color[1] = obj->colors[obj->surfaces[surface_id][1]];
+		color[2] = obj->colors[obj->surfaces[surface_id][2]];
+	}
 	Point2d_t p[3] = {p1, p2, p3};
 	double x_min = camera->width/2;
 	double x_max = camera->width/-2;
@@ -278,19 +351,25 @@ static void draw_surface(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend,
 	y_max = fmin(camera->height/2 +1, y_max);
 	Point_t ret;
 	double z = 0;
+	Color_t rgb;
 	// printf("[%.2f,%.2f,%.2f,%.2f]", x_min, x_max, y_min, y_max);
 	for (int j = x_min; j < x_max; j++) {
 		for (int k = y_min; k < y_max; k++) {
 			if (!triangle_check_in(p[0], p[1], p[2], (Vec_t){j, k, 0}, &ret))
 				continue;
-			z = 1. / (ret.x*(1/p[0].z) + ret.y*(1/p[1].z) + ret.z*(1/p[2].z));
+#define interpolation(var, field) (1./(ret.x*(1./var[0].field) + ret.y*(1./var[1].field) + ret.z*(1./var[2].field)))
+			z = interpolation(p, z);
+			rgb.r = interpolation(color, r);
+			rgb.g = interpolation(color, g);
+			rgb.b = interpolation(color, b);
+			rgb.a = interpolation(color, a);
 			if (z < 0 || (camera->dept > 0 && z > camera->dept))
 				continue;
 			// assert(z <= 10);
 			backend->draw(backend, (Point2d_t){
 				      j, k,
 				      z/fabs(camera->dept)},
-				      (Color_t){});
+				      rgb);
 		}
 	}
 	return;
@@ -307,7 +386,7 @@ void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 		p[0] = camera_cast(camera, vec_add(obj->points[i], obj->center));
 		if (p[0].z <= 0) continue;
 		backend->draw(backend, (Point2d_t){p[0].x, p[0].y, p[0].z/fabs(camera->dept)},
-			      (Color_t){});
+			      obj->colors[i]);
 	}
 
 	double dx, dy, dz;
@@ -317,6 +396,10 @@ void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 				     vec_add(obj->center, obj->points[obj->lines[i][0]]),
 				     vec_add(obj->center, obj->points[obj->lines[i][1]]), p, p+1) < 0)
 			continue;
+		Color_t color = obj->colors[obj->lines[i][0]];
+		color.r = (color.r + obj->colors[obj->lines[i][1]].r) / 2;
+		color.g = (color.g + obj->colors[obj->lines[i][1]].g) / 2;
+		color.b = (color.b + obj->colors[obj->lines[i][1]].b) / 2;
 		if (p[0].z <= 0 || p[1].z <= 0) continue;
 		dx = p[1].x-p[0].x, dy = p[1].y-p[0].y, dz = p[1].z-p[0].z;
 		if (fabs(dx) >= fabs(dy)) {
@@ -325,7 +408,7 @@ void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 				backend->draw(backend, (Point2d_t){
 					      x, p[0].y+(x-p[0].x)*dy/dx,
 					      (p[0].z+(x-p[0].x)*dz/dx)/fabs(camera->dept)
-					      }, (Color_t){});
+					      }, color);
 			}
 		} else {
 			step = dy < 0 ? -1 : 1;
@@ -333,7 +416,7 @@ void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 				backend->draw(backend, (Point2d_t){
 					      p[0].x+(y-p[0].y)*dx/dy, y,
 					      (p[0].z+(y-p[0].y)*dz/dy)/fabs(camera->dept)
-					      }, (Color_t){});
+					      }, color);
 			}
 		}
 		p[0] = (Point_t){0, 0, 0}, p[1] = (Point2d_t){0, 0, 0};
@@ -346,7 +429,7 @@ void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 		}
 		count = camera_cast_surface(camera, p+0, p+1, p+2, p+3, p+4, p+5);
 		for (int j = 0; j < count && j*3+2 < (int)countof(p); j++) {
-			draw_surface(obj, camera, backend, p[j*3], p[j*3+1], p[j*3+2]);
+			draw_surface(obj, camera, backend, p[j*3], p[j*3+1], p[j*3+2], i);
 		}
 	}
 	camera_unlock(camera);

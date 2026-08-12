@@ -31,11 +31,13 @@ typedef Vec_t Point_t;
 typedef Vec_t Point2d_t;
 /* RGB色彩 */
 typedef struct {
-	double r;
-	double g;
-	double b;
-	double a;
+	uint8_t r;
+	uint8_t g;
+	uint8_t b;
+	uint8_t a;
 } Color_t;
+#define COLOR_WHITE ((Color_t){-1,-1,-1,-1})
+#define COLOR_BLACK ((Color_t){0,0,0,-1})
 
 /* 向量操作函数 */
 
@@ -189,6 +191,7 @@ typedef struct {
 	Point_t   *points;    /* 点 */
 	Line_t    *lines;     /* 线(引用点的id) */
 	Surface_t *surfaces;  /* 面(引用点的id) */
+	Color_t   *colors;    /* 点的颜色（与点数量严格对应） */
 	/* 点线面的计数 */
 	size_t count_point;
 	size_t count_line;
@@ -208,6 +211,14 @@ Obj_t *obj_transform_shift(Obj_t *obj, Vec_t v);
 Obj_t *obj_rotate(Obj_t *obj, Vec_t direction, double theta);
 /* 对所有点应用向量乘法（缩放） */
 void obj_scale(Obj_t *obj, double k);
+/* 设置物体对应点的颜色 */
+Obj_t *obj_set_point_color(Obj_t *obj, size_t ind, Color_t color);
+/* 设置物体所有点的颜色 */
+Obj_t *obj_set_color(Obj_t *obj, Color_t color);
+/* 连接线 */
+Obj_t *obj_add_line(Obj_t *obj, size_t p1, size_t p2);
+/* 连接面 */
+Obj_t *obj_add_surface(Obj_t *obj, size_t p1, size_t p2, size_t p3);
 /* 合并from的物体数据到obj */
 bool obj_merge(Obj_t *obj, Obj_t *from);
 /* 会自动释放from对象的内存（方便传参） */

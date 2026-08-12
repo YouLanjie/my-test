@@ -28,7 +28,8 @@ static bool setup(RenderBackend_t **bk, Camera_t *ca, uint8_t num)
 		LOG("终端太小(当前可用尺寸：%dx%d)", scr_w, scr_h);
 		return false;
 	}
-	*bk = backend_list[num%countof(backend_list)](scr_w, scr_h);
+	while (!(*bk = backend_list[num%countof(backend_list)](scr_w, scr_h)))
+		num++;
 	if (ca) {
 		ca->width  = scr_w;      /* 需要让相机捕捉到的画面与终端大小相匹配减少无效运算 */
 		ca->height = scr_h*2;    /* 每行能显示的实际大小为每列的两倍 */
@@ -228,8 +229,9 @@ int main(int argc, char *argv[])
 "#.#.##.#.###.##.#.##\n"
 "###########.########\n"
 "####################\n", '.');
-	obj_merge_and_free(block, obj_create_box_from_point((Point_t[]){
-{-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1},{-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1} }));
+	obj_set_color(block, (Color_t){10,255,40,-1});
+	obj_merge_and_free(block, obj_set_color(obj_create_box_from_point((Point_t[]){
+{-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1},{-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1} }), (Color_t){220,255,30,-1}));
 	obj_transform_shift(block, (Vec_t){.x=0,.y=1,.z=0});    /* 让参考中心点下移一格 */
 	/*obj_rotate(block, (Vec_t){0, 1, 0}, M_PI*5);*/
 	data.obj = block;

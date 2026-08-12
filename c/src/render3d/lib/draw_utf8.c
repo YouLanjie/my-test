@@ -12,6 +12,7 @@ typedef struct {
 	size_t w;
 	size_t h;
 	double *scr;
+	Color_t *color;
 } Scr_t;
 
 static Scr_t *scr_create(int width, int height)
@@ -22,15 +23,16 @@ static Scr_t *scr_create(int width, int height)
 		.w = width,
 		.h = height,
 		.scr = malloc(sizeof(*p->scr)*width*height*2),
+		.color = malloc(sizeof(*p->color)*width*height*2),
 	};
-	memset(p->scr, 0, sizeof(p->scr)*width*height*2);
+	memset(p->scr, 0, sizeof(*p->scr)*width*height*2);
+	memset(p->color, 0, sizeof(*p->color)*width*height*2);
 	return p;
 }
 
 static void draw(RenderBackend_t *backend, Point2d_t point, Color_t rgb)
 {
 	if (!backend || !backend->data) return;
-	(void)rgb;
 	Scr_t *s = backend->data;
 	if (point.x < (double)s->w/-1 || point.x > (double)s->w/1) return;
 	if (point.y < (double)s->h/-0.5 || point.y > (double)s->h/0.5) return;
@@ -38,6 +40,9 @@ static void draw(RenderBackend_t *backend, Point2d_t point, Color_t rgb)
 	if (ind >= s->w*s->h*2) return;
 	if (s->scr[ind]==0 || s->scr[ind] > point.z) {
 		s->scr[ind] = point.z;    /* [0.0, 1.0] */
+		if (s->color) {
+			s->color[ind] = rgb;
+		}
 	}
 }
 
@@ -74,7 +79,10 @@ static void clean(RenderBackend_t *backend)
 {
 	if (!backend || !backend->data) return;
 	Scr_t *s = backend->data;
-	memset(s->scr, 0, sizeof(*s->scr)*s->w*s->h*2);
+	if (s->scr) memset(s->scr, 0, sizeof(*s->scr)*s->w*s->h*2);
+	for (size_t i = 0; i < s->w*s->h*2; i++) {
+		s->color[i] = COLOR_BLACK;
+	}
 }
 
 static void destroy(RenderBackend_t *backend)
@@ -82,6 +90,7 @@ static void destroy(RenderBackend_t *backend)
 	if (!backend || !backend->data) return;
 	Scr_t *s = backend->data;
 	if (s->scr) free(s->scr);
+	if (s->color) free(s->color);
 	free(s);
 	free(backend);
 }
@@ -161,22 +170,31 @@ static void render_256bit(RenderBackend_t *backend)
 	if (!backend || !backend->data) return;
 	Scr_t *s = backend->data;
 	double t, b, lt = -1, lb = -1;
+	Color_t color_top = COLOR_BLACK, color_bottom = COLOR_BLACK;
+	Color_t lcolor_top = COLOR_WHITE, lcolor_bottom = COLOR_WHITE;
 	// fputs("\033[H", stdout);    /* puts自带换行符不可用 */
 	for (size_t i = 0; i < s->h; ++i) {
 		for (size_t j = 0; j < s->w; ++j) {
-			t = s->scr[i*2*s->w+j] ? s->scr[i*2*s->w+j] : 1;
-			b = s->scr[(i*2+1)*s->w+j] ? s->scr[(i*2+1)*s->w+j] : 1;
-			t = UINT8_MAX-t*UINT8_MAX;
-			b = UINT8_MAX-b*UINT8_MAX;
-			if ((int)t != (int)lt) {
+			t = s->scr[i*2*s->w+j] ? 1-s->scr[i*2*s->w+j] : 1;
+			b = s->scr[(i*2+1)*s->w+j] ? 1-s->scr[(i*2+1)*s->w+j] : 1;
+			color_top = s->scr[i*2*s->w+j] ? s->color[i*2*s->w+j] : COLOR_BLACK;
+			color_bottom = s->scr[(i*2+1)*s->w+j] ? s->color[(i*2+1)*s->w+j] : COLOR_BLACK;
+
+			if ((int)t != (int)lt || memcmp(&lcolor_top, &color_top, sizeof(Color_t)) != 0) {
 				lt = t;
+				lcolor_top = color_top;
 				printf("\033[38;2;%d;%d;%dm",
-				       (int)(t*0.2), (int)(t*0.7), (int)t);
+				       (int)(color_top.r*t),
+				       (int)(color_top.g*t),
+				       (int)(color_top.b*t));
 			}
-			if ((int)b != (int)lb) {
+			if ((int)b != (int)lb || memcmp(&lcolor_bottom, &color_bottom, sizeof(Color_t)) != 0) {
 				lb = b;
+				lcolor_bottom = color_bottom;
 				printf("\033[48;2;%d;%d;%dm",
-				       (int)(b*0.2), (int)(b*0.7), (int)b);
+				       (int)(color_bottom.r*b),
+				       (int)(color_bottom.g*b),
+				       (int)(color_bottom.b*b));
 			}
 			fputs("▀", stdout); // 上半块字符
 		}
