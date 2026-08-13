@@ -24,15 +24,21 @@ static bool setup(RenderBackend_t **bk, Camera_t *ca, uint8_t num)
 #undef BACKEND
 	int scr_h = get_winsize_row() - 5,
 	    scr_w = get_winsize_col() - 1;
-	if (scr_h <= 10 || scr_w <= 10) {
-		LOG("终端太小(当前可用尺寸：%dx%d)", scr_w, scr_h);
-		return false;
-	}
 	while (!(*bk = backend_list[num%countof(backend_list)](scr_w, scr_h)))
 		num++;
+	if ((!*bk || !(*bk)->get_size) && (scr_h <= 10 || scr_w <= 10)) {
+		LOG("终端太小(当前可用尺寸：%dx%d)", scr_w, scr_h);
+		if (ca) camera_free(ca);
+		if (*bk) (*bk)->destroy(*bk);
+		return false;
+	}
+	if ((*bk)->get_size) {
+		(*bk)->get_size(*bk, &scr_w, &scr_h);
+	} else scr_h *= 2;
 	if (ca) {
 		ca->width  = scr_w;      /* 需要让相机捕捉到的画面与终端大小相匹配减少无效运算 */
-		ca->height = scr_h*2;    /* 每行能显示的实际大小为每列的两倍 */
+		ca->height = scr_h;    /* 每行能显示的实际大小为每列的两倍 */
+		ca->scale = fmax(ca->width, ca->height) / 2;
 	}
 	return false;
 }

@@ -63,24 +63,41 @@ static void cleanup(Runtimedata_t *rt)
 static bool setup(Runtimedata_t *rt)
 {
 	if (!rt) return false;
-	const int term_w = get_winsize_col() - 0;
-	const int term_h = get_winsize_row() - 1;
-	// rt->backend = backend_create_utf8(term_w, term_h);
-	// rt->backend = backend_create_ascii_8bit(term_w, term_h);
-	rt->backend = backend_create_utf8_256bit(term_w, term_h);
-	rt->camera = camera_create();
-	rt->axis_helper = obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){10*SCALE,0,0}));
-	obj_merge_and_free(rt->axis_helper, obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){0,6*SCALE,0})));
-	obj_merge_and_free(rt->axis_helper, obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){0,0,3*SCALE})));
-	if (!rt->backend || !rt->camera || !rt->axis_helper) {
-		cleanup(rt);
-		return false;
+	int term_w = get_winsize_col() - 0;
+	int term_h = get_winsize_row() - 1;
+	if (!rt->backend) {
+		rt->backend = backend_create_utf8_256bit(term_w, term_h);
+		rt->camera = camera_create();
+		rt->axis_helper = obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){10*SCALE,0,0}));
+		obj_merge_and_free(rt->axis_helper, obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){0,6*SCALE,0})));
+		obj_merge_and_free(rt->axis_helper, obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){0,0,3*SCALE})));
+
+		if (!rt->backend || !rt->camera || !rt->axis_helper) {
+			cleanup(rt);
+			return false;
+		}
+		rt->camera->width = term_w;
+		rt->camera->height = term_h*2;
+		rt->camera->position = (Vec_t){0, 0, 20*SCALE};
+		rt->camera->dept = 100*SCALE;
+		rt->active_cam = rt->camera;
+		return true;
 	}
-	rt->camera->width = term_w;
-	rt->camera->height = term_h*2;
-	rt->camera->position = (Vec_t){0, 0, 20*SCALE};
-	rt->camera->dept = 100*SCALE;
-	rt->active_cam = rt->camera;
+#define BACKEND(name) backend_create_##name,
+	static RenderBackend_t *(*backend_list[])(int width, int height) = {BACKEND_LIST};
+#undef BACKEND
+	enum Backend_id id = rt->backend->id;
+	id = (id+1) % countof(backend_list);
+	rt->backend->destroy(rt->backend);
+	rt->backend = backend_list[id%countof(backend_list)](term_w, term_h);
+	if (rt->backend->get_size) {
+		rt->backend->get_size(rt->backend, &term_w, &term_h);
+	} else term_h *= 2;
+	if (rt->active_cam) {
+		rt->active_cam->width = term_w;
+		rt->active_cam->height = term_h;
+		rt->active_cam->scale = fmax(term_w, term_h) / 2;
+	}
 	return true;
 }
 
@@ -180,6 +197,16 @@ static void voyage_helper(Runtimedata_t *rt)
 	return;
 }
 
+static void switch_camera(Runtimedata_t *rt, Camera_t *ca)
+{
+	if (!rt || !ca) return;
+	ca->width = rt->active_cam->width;
+	ca->height = rt->active_cam->height;
+	ca->scale = rt->active_cam->scale;
+	rt->active_cam = ca;
+	return;
+}
+
 static bool input_handle(Runtimedata_t *rt)
 {
 	if (!rt) return false;
@@ -189,6 +216,7 @@ static bool input_handle(Runtimedata_t *rt)
 #define v_up      vec_direct(rt->active_cam->up)
 #define v_right   vec_direct(vec_cross_product(rt->active_cam->forward, rt->active_cam->up))
 	switch (rt->inp) {
+	case '\t': setup(rt); break;
 	case '[': TIME_SCALE/=2; break;
 	case ']': TIME_SCALE*=2; break;
 	case '{': TIME_SCALE=1./FPS; break;
@@ -196,10 +224,10 @@ static bool input_handle(Runtimedata_t *rt)
 	case 'f':
 		rt->follow = choose_star(rt, "跟随", rt->follow);
 		if (!rt->follow) {
-			rt->active_cam = rt->camera;
+			switch_camera(rt, rt->camera);
 			break;
 		}
-		rt->active_cam = &rt->follow->cam;
+		switch_camera(rt, &rt->follow->cam);
 		rt->active_cam->position = 
 			vec_add(rt->follow->obj->center,
 				vec_mul(vec_direct(rt->follow->speed),

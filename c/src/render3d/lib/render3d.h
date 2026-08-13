@@ -161,7 +161,8 @@ void camera_look_no_hold(Camera_t *camera, Point_t point);
 	BACKEND(ascii_grey) \
 	BACKEND(utf8) \
 	BACKEND(utf8_8bit) \
-	BACKEND(utf8_256bit)
+	BACKEND(utf8_256bit) \
+	BACKEND(fb0)
 #endif
 
 #define BACKEND(name) RDBK_##name,
@@ -173,6 +174,7 @@ struct RenderBackend_t {
 	void (*render)(RenderBackend_t *backend);             /* 输出一帧 */
 	void (*clean)(RenderBackend_t *backend);              /* 清理上一帧的数据 */
 	void (*destroy)(RenderBackend_t *backend);            /* 释放内存 */
+	void (*get_size)(RenderBackend_t *backend, int *w, int *h);    /* 获取实际宽高(可选) */
 	void *data;
 	enum Backend_id id;
 };

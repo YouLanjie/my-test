@@ -358,11 +358,17 @@ NODE_PRINT_DEF(meta)
 	return;
 }
 
+enum node_block_type {
+	NODE_BLK_UNKNOW,
+	NODE_BLK_SRC,
+	NODE_BLK_QUOTE,
+};
 struct node_t_block {
 	struct node base;
 	/* 在base.content存储begin_xxx类型 */
 	SV_t opt;    /* begin_xxx opt跟随的选项 */
 	SV_t origin;    /* 块内原始内容 */
+	enum node_block_type type;
 };
 NODE_CREATE_DEF(block)
 {
@@ -381,11 +387,24 @@ NODE_CREATE_DEF(block)
 	sv_trim_left_by_type(&opt, isspace);
 	line.len = i;
 
+	enum node_block_type type = NODE_BLK_UNKNOW;
+	static const char *type_name[] = {
+		[NODE_BLK_SRC] = "src",
+		[NODE_BLK_QUOTE] = "quote",
+	};
+	for (; type < countof(type_name); type++) {
+		if (!type_name[type]) continue;
+		if (sv_case_cmp(line, sv_from_cstr(type_name[type])) == 0)
+			break;
+	}
+	if (type >= countof(type_name)) type = NODE_BLK_UNKNOW;
+
 	struct node_t_block *p = malloc(sizeof(*p));
 	if (!p) return NULL;
 	*p = (struct node_t_block){
 		.base = NODE_INIT(block),
 		.opt = opt,
+		.type = type,
 	};
 	return &p->base;
 }
