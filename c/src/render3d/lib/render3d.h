@@ -182,6 +182,12 @@ struct RenderBackend_t {
 #define BACKEND(name) RenderBackend_t *backend_create_##name(int width, int height);
 BACKEND_LIST
 #undef BACKEND
+void backend_draw_line(RenderBackend_t *backend, Camera_t *camera,
+		       Point_t p1, Point_t p2,
+		       Color_t c1, Color_t c2);
+void backend_draw_surface(RenderBackend_t *backend, Camera_t *camera,
+			  Point_t p1, Point_t p2, Point_t p3,
+			  Color_t c1, Color_t c2, Color_t c3);
 
 
 /* 线引用id */

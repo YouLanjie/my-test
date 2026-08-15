@@ -341,72 +341,6 @@ Obj_t *obj_create_image_from_str(Point_t center, double k, const char *p, char c
 	return obj;
 }
 
-static bool triangle_check_in(Point_t p1, Point_t p2, Point_t p3, Point_t check_point, Vec_t *result)
-{
-	double total = vec2d_area(p1, p2, p3);
-	if (fabs(total) < 1e-5) return false;
-	Vec_t ret = {};
-	ret.x = vec2d_area(p2, p3, check_point)/total;
-	ret.y = vec2d_area(p3, p1, check_point)/total;
-	ret.z = vec2d_area(p1, p2, check_point)/total;
-	if (!(ret.x>0 && ret.y>0 && ret.z>0)) return false;
-	if (result) *result = ret;
-	return true;
-}
-
-static void draw_surface(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend,
-			 Point_t p1, Point_t p2, Point_t p3,
-			 size_t surface_id)
-{
-	if (!obj || !camera || !backend) return;
-	Color_t color[3] = {};
-	memset(color, -1, sizeof(color));
-	if (surface_id < obj->count_surface) {
-		color[0] = obj->colors[obj->surfaces[surface_id][0]];
-		color[1] = obj->colors[obj->surfaces[surface_id][1]];
-		color[2] = obj->colors[obj->surfaces[surface_id][2]];
-	}
-	Point2d_t p[3] = {p1, p2, p3};
-	double x_min = camera->width/2;
-	double x_max = camera->width/-2;
-	double y_min = camera->height/2;
-	double y_max = camera->height/-2;
-	for (int j = 0; j < 3; j++) {
-		x_min = fmin(x_min, p[j].x);
-		x_max = fmax(x_max, p[j].x);
-		y_min = fmin(y_min, p[j].y);
-		y_max = fmax(y_max, p[j].y);
-	}
-	x_min = fmax(camera->width/-2, x_min);
-	x_max = fmin(camera->width/2, x_max);
-	y_min = fmax(camera->height/-2, y_min);
-	y_max = fmin(camera->height/2 +1, y_max);
-	Point_t ret;
-	double z = 0;
-	Color_t rgb;
-	// printf("[%.2f,%.2f,%.2f,%.2f]", x_min, x_max, y_min, y_max);
-	for (int j = x_min; j < x_max; j++) {
-		for (int k = y_min; k < y_max; k++) {
-			if (!triangle_check_in(p[0], p[1], p[2], (Vec_t){j, k, 0}, &ret))
-				continue;
-#define interpolation(var, field) (1./(ret.x*(1./var[0].field) + ret.y*(1./var[1].field) + ret.z*(1./var[2].field)))
-			z = interpolation(p, z);
-			rgb.r = interpolation(color, r);
-			rgb.g = interpolation(color, g);
-			rgb.b = interpolation(color, b);
-			rgb.a = interpolation(color, a);
-			if (z < 0 || (camera->dept > 0 && z > camera->dept))
-				continue;
-			// assert(z <= 10);
-			backend->draw(backend, (Point2d_t){
-				      j, k,
-				      z/fabs(camera->dept)},
-				      rgb);
-		}
-	}
-	return;
-}
-
 /* 投影物体 */
 void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 {
@@ -421,36 +355,15 @@ void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 			      obj->colors[i]);
 	}
 
-	double dx, dy, dz;
-	int8_t step = 0;
 	for (i = 0; i < obj->count_line; i++) {
 		if (camera_cast_line(camera,
 				     vec_add(obj->center, obj->points[obj->lines[i][0]]),
-				     vec_add(obj->center, obj->points[obj->lines[i][1]]), p, p+1) < 0)
+				     vec_add(obj->center, obj->points[obj->lines[i][1]]),
+				     p, p+1) < 0)
 			continue;
-		Color_t color = obj->colors[obj->lines[i][0]];
-		color.r = (color.r + obj->colors[obj->lines[i][1]].r) / 2;
-		color.g = (color.g + obj->colors[obj->lines[i][1]].g) / 2;
-		color.b = (color.b + obj->colors[obj->lines[i][1]].b) / 2;
-		if (p[0].z <= 0 || p[1].z <= 0) continue;
-		dx = p[1].x-p[0].x, dy = p[1].y-p[0].y, dz = p[1].z-p[0].z;
-		if (fabs(dx) >= fabs(dy)) {
-			step = dx < 0 ? -1 : 1;
-			for (int x = p[0].x; (x-p[1].x)*step <= 0; x+=step) {
-				backend->draw(backend, (Point2d_t){
-					      x, p[0].y+(x-p[0].x)*dy/dx,
-					      (p[0].z+(x-p[0].x)*dz/dx)/fabs(camera->dept)
-					      }, color);
-			}
-		} else {
-			step = dy < 0 ? -1 : 1;
-			for (int y = p[0].y; (y-p[1].y)*step <= 0; y+=step) {
-				backend->draw(backend, (Point2d_t){
-					      p[0].x+(y-p[0].y)*dx/dy, y,
-					      (p[0].z+(y-p[0].y)*dz/dy)/fabs(camera->dept)
-					      }, color);
-			}
-		}
+		backend_draw_line(backend, camera, p[0], p[1],
+				  obj->colors[obj->lines[i][0]],
+				  obj->colors[obj->lines[i][1]]);
 		p[0] = (Point_t){0, 0, 0}, p[1] = (Point2d_t){0, 0, 0};
 	}
 
@@ -461,7 +374,11 @@ void obj_cast(Obj_t *obj, Camera_t *camera, RenderBackend_t *backend)
 		}
 		count = camera_cast_surface(camera, p+0, p+1, p+2, p+3, p+4, p+5);
 		for (int j = 0; j < count && j*3+2 < (int)countof(p); j++) {
-			draw_surface(obj, camera, backend, p[j*3], p[j*3+1], p[j*3+2], i);
+			backend_draw_surface(backend, camera,
+					     p[j*3], p[j*3+1], p[j*3+2],
+					     obj->colors[obj->surfaces[i][0]],
+					     obj->colors[obj->surfaces[i][1]],
+					     obj->colors[obj->surfaces[i][2]]);
 		}
 	}
 	camera_unlock(camera);
