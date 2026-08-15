@@ -83,7 +83,8 @@ bool sv_issame(SV_t s1, SV_t s2)
 #define max(var1, var2) ((var1)>=(var2) ? (var1) : (var2))
 int sv_cmp(SV_t s1, SV_t s2)
 {
-	if (memcmp(&s1, &s2, sizeof(s1)) == 0) return 0;
+	if (s1.p == s2.p && s1.len == s2.len) return 0;
+	if (!s1.p || !s2.p) return s1.p ? 1 : 0;
 	if (!s1.len && !s2.len) return 0;
 	size_t len = min(s1.len, s2.len);
 	int ret = memcmp(s1.p, s2.p, len);
@@ -93,7 +94,8 @@ int sv_cmp(SV_t s1, SV_t s2)
 
 int sv_case_cmp(SV_t s1, SV_t s2)
 {
-	if (memcmp(&s1, &s2, sizeof(s1)) == 0) return 0;
+	if (s1.p == s2.p && s1.len == s2.len) return 0;
+	if (!s1.p || !s2.p) return s1.p ? 1 : 0;
 	if (!s1.len && !s2.len) return 0;
 	size_t len = min(s1.len, s2.len);
 	int ret = strncasecmp(s1.p, s2.p, len);

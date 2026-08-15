@@ -162,7 +162,8 @@ void camera_look_no_hold(Camera_t *camera, Point_t point);
 	BACKEND(utf8) \
 	BACKEND(utf8_8bit) \
 	BACKEND(utf8_256bit) \
-	BACKEND(fb0)
+	BACKEND(fb0) \
+	BACKEND(sdl2)
 #endif
 
 #define BACKEND(name) RDBK_##name,

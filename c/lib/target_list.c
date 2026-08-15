@@ -115,6 +115,7 @@ void target_build(Target_t *target)
 		case TS_WORKING:
 			need_wait = true;
 			break;
+		case TS_SKIP:
 		case TS_SUCCESS:
 			if (target->type == TY_PHONY)
 				need_build = true;
@@ -229,21 +230,23 @@ void target_buildlist_for_pthread(Target_t *list, int8_t ptr_max)
  * 0: TS_NOCHECK (ON)
  * 1: TS_WORKING
  * 2: TS_SUCCESS
- * 3: TS_FAILD   (ON)
- * 4: TY_NORM    (ON)
- * 5: TY_PHONY   (ON)
- * 6: TY_DEP     (ON)
- * 7: 仅有已更新项目
+ * 3: TS_SKIP    (ON)
+ * 4: TS_FAILD   (ON)
+ * 5: TY_NORM    (ON)
+ * 6: TY_PHONY   (ON)
+ * 7: TY_DEP     (ON)
+ * 8: 仅有已更新项目
  */
-void target_printlist(Target_t *list, uint8_t mode)
+void target_printlist(Target_t *list, uint16_t mode)
 {
 	if (!list) return;
-	mode ^= 0b01111001;    /* 切换默认模式 */
+	mode ^= 0b011111001;    /* 切换默认模式 */
 	static const char *statusstr[] = {
 		[TS_NOCHECK] = "",
 		[TS_WORKING] = "\e[33m<WORKING>\e[0m",
 		[TS_SUCCESS] = "\e[32m<DONE>\e[0m",
 		[TS_FAILD] = "\e[31m<FAILD>\e[0m",
+		[TS_SKIP] = "\e[33m<SKIP>\e[0m",
 	};
 	static const char *typestr[] = {
 		[TY_NORM] = "",
@@ -251,8 +254,8 @@ void target_printlist(Target_t *list, uint8_t mode)
 		[TY_DEP] = "\e[2m(DEP)\e[0m",
 	};
 	for (Target_t *p = list; p; p = p->next) {
-		if (!(mode&(1<<p->status) && mode&(1<<(p->type+4)))) continue;
-		if (mode&(1<<7) && !p->isupdated) continue;
+		if (!(mode&(1<<p->status) && mode&(1<<(p->type+5)))) continue;
+		if (mode&(1<<8) && !p->isupdated) continue;
 		printf("[\e[2m%p\e[0m] %s%s'\e[32m%.*s\e[0m'",
 		       p, statusstr[p->status%countof(statusstr)],
 		       typestr[p->type%countof(typestr)],

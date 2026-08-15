@@ -20,7 +20,7 @@ typedef struct Target_t {
 
 	bool isupdated;
 	enum {TY_NORM = 0, TY_PHONY, TY_DEP} type;
-	enum {TS_NOCHECK = 0, TS_WORKING, TS_SUCCESS, TS_FAILD} status;
+	enum {TS_NOCHECK = 0, TS_WORKING, TS_SUCCESS, TS_FAILD, TS_SKIP} status;
 
 	size_t depend_len;
 	struct Target_t **dependencies;
@@ -39,7 +39,7 @@ void target_build(Target_t *target);
 void target_buildlist(Target_t *list);
 void *target_build_for_pthread(void *target);
 void target_buildlist_for_pthread(Target_t *list, int8_t ptr_max);
-void target_printlist(Target_t *list, uint8_t mode);
+void target_printlist(Target_t *list, uint16_t mode);
 
 #endif //TARGET_LIST_H
 

@@ -35,6 +35,7 @@ typedef struct {
 	const char *flg_link;
 	const char *libs;
 	const char *deps;
+	uint64_t disable_opt_libs;
 	const bool no_elf;
 } CFLAGS_t;
 
@@ -47,6 +48,7 @@ typedef struct {
 #define COMPILOR   "gcc"
 #define CCOMFLAGS  "-Wall -Wextra -O2 -g"
 #define CLINKFLAGS "-L"BUILD_DIR
+#define OPTPREFIX  "optional:" 
 
 #define LIB(l, h, ...) (CLIBS_t){.libname=l, .header=h, .sources={__VA_ARGS__}}
 CLIBS_t CLIBS[] = {
@@ -64,8 +66,8 @@ CFLAGS_t CFILEFLAGS[] = {
 	FLG("musicSynth/music_synth.c", "m",),
 	FLG("musicSynth/txt2midi.c", "m",),
 
-	FLG("render3d/render3d.c",   "m"),
-	FLG("render3d/r3d_rotate.c", "m"),
+	FLG("render3d/render3d.c",   "m "OPTPREFIX"SDL2"),
+	FLG("render3d/r3d_rotate.c", "m "OPTPREFIX"SDL2"),
 
 	FLG("tests/libav_test.c", "avformat avcodec avutil swresample m"),
 	FLG("tests/try_iconv.c",  "iconv"),
@@ -172,12 +174,20 @@ static bool build_obj2elf(Target_t *target)
 	/* 加载链接库 */
 	SV_t deps = sv_from_cstr(flag->libs), left;
 	sva_sprintfcat(&cmd, " %s", CLINKFLAGS);
-	while (deps.len > 0) {
+	size_t count = 0;
+	bool optional = false;
+	while (deps.len > 0 && count < sizeof(flag->disable_opt_libs)*8) {
 		sv_trim_left_by_type(&deps, isspace);
 		if (deps.len <= 0) break;
 		left = sv_chop_by_type(&deps, isspace);
-		if(left.len <= 0) break;
+		if (left.len <= 0) break;
+
+		if (flag->disable_opt_libs & (1<<count)) continue;
+		optional = sv_begin_with(left, sv_from_lstr(OPTPREFIX));
+		if (optional) sv_chop_left(&left, 9);
+
 		sva_sprintfcat(&cmd, " -l%.*s", (int)left.len, left.p);
+		count++;
 	}
 	if (obj.p && obj.len) {
 		sva_sprintfcat(&cmd, "%.*s", (int)obj.len, obj.p);
@@ -470,7 +480,7 @@ static Target_t *action_c_elf(Target_t *list, SV_t full_path)
 	/* 自动导入 */
 	autoimport_by_header(list, target_elf, target_c);
 	/* 查找显式要求的库 */
-	const CFLAGS_t *flag = NULL;
+	CFLAGS_t *flag = NULL;
 	for (uint64_t i = 0; i < countof(CFILEFLAGS); i++) {
 		if (!CFILEFLAGS[i].filename) continue;
 		path_normalize(sva_from_cstr(&tmp, CFILEFLAGS[i].filename));
@@ -487,16 +497,27 @@ static Target_t *action_c_elf(Target_t *list, SV_t full_path)
 	if (target_elf) target_elf->cfgdata = (void*)flag;    /* 为elf添加cfg */
 	SV_t deps = sv_from_cstr(flag->deps), left;
 	deps = sv_from_cstr(flag->libs);
-	while (target_elf && deps.len > 0) {
+	size_t count = 0;
+	bool optional = false;
+	while (target_elf && deps.len > 0 && count < sizeof(flag->disable_opt_libs)*8) {
 		sv_trim_left_by_type(&deps, isspace);
 		if (deps.len <= 0) break;
 		left = sv_chop_by_type(&deps, isspace);
 		if(left.len <= 0) break;
 
+		optional = sv_begin_with(left, sv_from_lstr(OPTPREFIX));
+		if (optional) sv_chop_left(&left, 9);
 		target_lib = get_target_by_libname(list, left);
 		if (!target_lib) target_elf->status = TS_FAILD;
-		else target_lib->build = build_obj2alib;
+		else {
+			target_lib->build = build_obj2alib;
+			if (target_lib->status == TS_FAILD && optional) {
+				target_lib->status = TS_SKIP;
+				flag->disable_opt_libs |= 1<<count;
+			}
+		}
 		target_depend_append(target_elf, target_lib);  // elf 依赖 libs
+		count++;
 	}
 	sva_free(&tmp);
 	return list;
