@@ -175,8 +175,10 @@ static void render_256bit(RenderBackend_t *backend)
 	// fputs("\033[H", stdout);    /* puts自带换行符不可用 */
 	for (size_t i = 0; i < s->h; ++i) {
 		for (size_t j = 0; j < s->w; ++j) {
-			t = s->scr[i*2*s->w+j] ? 1-s->scr[i*2*s->w+j] : 1;
-			b = s->scr[(i*2+1)*s->w+j] ? 1-s->scr[(i*2+1)*s->w+j] : 1;
+			t = s->scr[i*2*s->w+j] ? s->scr[i*2*s->w+j] : 1;
+			b = s->scr[(i*2+1)*s->w+j] ? s->scr[(i*2+1)*s->w+j] : 1;
+			t = pow(fmax(1 - t, 1e-8), 1/2.2);
+			b = pow(fmax(1 - b, 1e-8), 1/2.2);
 			color_top = s->scr[i*2*s->w+j] ? s->color[i*2*s->w+j] : COLOR_BLACK;
 			color_bottom = s->scr[(i*2+1)*s->w+j] ? s->color[(i*2+1)*s->w+j] : COLOR_BLACK;
 

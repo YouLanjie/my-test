@@ -35,8 +35,12 @@ typedef struct {
 } Scr_t;
 
 /* 将 Color_t 转换为 SDL 像素格式（这里按 ARGB 顺序，可根据系统调整） */
-static inline uint32_t color_to_pixel(Color_t c, uint32_t format)
+static inline uint32_t color_to_pixel(Color_t c, double z)
 {
+	z = pow(fmax(1 - z, 1e-8), 1/2.2);
+	c.r *= z;
+	c.g *= z;
+	c.b *= z;
 	/* 简单假设为 ARGB8888 或 ABGR8888，但为通用，直接按字节组装 */
 	/* 实际 SDL 纹理可使用 SDL_PIXELFORMAT_ARGB8888，我们按该顺序填充 */
 	return (uint32_t) ((c.a << 24) | (c.r << 16) | (c.g << 8) | c.b);
@@ -153,7 +157,7 @@ static void draw(RenderBackend_t *backend, Point2d_t point, Color_t rgb)
 	/* 深度测试：更近（z更小）则更新 */
 	if (z < s->depth[index]) {
 		s->depth[index] = z;
-		s->pixels[index] = color_to_pixel(rgb, s->format);
+		s->pixels[index] = color_to_pixel(rgb, z);
 	}
 }
 

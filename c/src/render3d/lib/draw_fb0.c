@@ -98,17 +98,19 @@ static void render(RenderBackend_t *backend)
 	Scr_t *s = backend->data;
 	if (!s) return;
 	Color_t color = COLOR_BLACK;
+	double dept;
 	uint8_t *p = NULL;
 	// fputs("\033[H", stdout);    /* puts自带换行符不可用 */
 	for (size_t i = 0; i < s->h; ++i) {
 		for (size_t j = 0; j < s->w; ++j) {
-			// dept = s->scr[i*s->w+j] ? 1-s->scr[i*s->w+j] : 1;
+			dept = s->scr[i*s->w+j] ? s->scr[i*s->w+j] : 1;
 			color = s->scr[i*s->w+j] ? s->color[i*s->w+j] : COLOR_BLACK;
 			p = s->fbp + s->line_length*i + j*4;
-			p[0] = color.b;
-			p[1] = color.g;
-			p[2] = color.r;
-			p[3] = color.a;
+			dept = pow(fmax(1 - dept, 1e-8), 1/2.2);
+			p[0] = color.b*dept;
+			p[1] = color.g*dept;
+			p[2] = color.r*dept;
+			p[3] = color.a*dept;
 		}
 	}
 	printf("\033[%zuH", s->term_h);
