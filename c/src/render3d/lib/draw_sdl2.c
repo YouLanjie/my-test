@@ -21,6 +21,7 @@ RenderBackend_t *backend_create_sdl2(int width, int height)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 /* 屏幕数据结构 */
 typedef struct {
@@ -95,7 +96,7 @@ static Scr_t *scr_create(int width, int height)
 	}
 
 	/* 分配像素缓冲区（与纹理格式匹配） */
-	int pitch;
+	// int pitch;
 	SDL_QueryTexture(s->texture, NULL, NULL, NULL, NULL);
 	s->pixels = malloc(s->w * s->h * sizeof(uint32_t));
 	s->depth = malloc(s->w * s->h * sizeof(double));
@@ -134,6 +135,54 @@ static void scr_getsize(RenderBackend_t *backend, int *w, int *h)
 	*h = s->h;
 }
 
+static int scr_resize(Scr_t *s, int new_w, int new_h)
+{
+	if (!s || new_w <= 0 || new_h <= 0)
+		return -1;
+
+	/* 释放旧的纹理、像素和深度缓冲 */
+	if (s->texture) {
+		SDL_DestroyTexture(s->texture);
+		s->texture = NULL;
+	}
+	if (s->pixels) {
+		free(s->pixels);
+		s->pixels = NULL;
+	}
+	if (s->depth) {
+		free(s->depth);
+		s->depth = NULL;
+	}
+
+	/* 更新宽高 */
+	s->w = new_w;
+	s->h = new_h;
+
+	/* 重新创建纹理（保持原有格式） */
+	s->texture = SDL_CreateTexture(s->renderer, s->format,
+				       SDL_TEXTUREACCESS_STREAMING, s->w, s->h);
+	if (!s->texture) {
+		fprintf(stderr, "SDL_CreateTexture (resize) Error: %s\n",
+			SDL_GetError());
+		return -1;
+	}
+
+	/* 重新分配像素缓冲和深度缓冲 */
+	s->pixels = malloc(s->w * s->h * sizeof(uint32_t));
+	s->depth = malloc(s->w * s->h * sizeof(double));
+	if (!s->pixels || !s->depth) {
+		fprintf(stderr, "malloc failed during resize\n");
+		return -1;
+	}
+
+	/* 清空为新缓冲区（黑屏，深度置最远） */
+	memset(s->pixels, 0, s->w * s->h * sizeof(uint32_t));
+	for (int i = 0; i < s->w * s->h; ++i)
+		s->depth[i] = 1.0;
+
+	return 0;
+}
+
 /* 绘制一个点（带深度和颜色） */
 static void draw(RenderBackend_t *backend, Point2d_t point, Color_t rgb)
 {
@@ -168,31 +217,36 @@ static void render(RenderBackend_t *backend)
 		return;
 	Scr_t *s = backend->data;
 
-	/* 更新纹理数据 */
-	SDL_UpdateTexture(s->texture, NULL, s->pixels, s->w * sizeof(uint32_t));
-
-	/* 清屏并绘制纹理 */
-	SDL_RenderClear(s->renderer);
-	SDL_RenderCopy(s->renderer, s->texture, NULL, NULL);
-	SDL_RenderPresent(s->renderer);
-
-	/* 处理事件（保持窗口响应，如关闭、调整大小等） */
+	/* 处理事件（保持窗口响应） */
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {
 		switch (e.type) {
 		case SDL_QUIT:
-			/* 可以设置全局退出标志，但这里不处理，由外部循环检测窗口是否关闭 */
+			/* 可由外部检测窗口关闭 */
 			break;
 		case SDL_WINDOWEVENT:
 			if (e.window.event == SDL_WINDOWEVENT_RESIZED) {
-				/* 窗口大小改变时，重新获取尺寸并调整纹理？这里简化处理，不自动调整 */
-				/* 如有需要可在此重新分配缓冲，但为保持简单，忽略 resize */
+				int new_w = e.window.data1;
+				int new_h = e.window.data2;
+				if (scr_resize(s, new_w, new_h) == 0) {
+					/* 尺寸调整成功，后续纹理和缓冲已经是新尺寸 */
+				} else {
+					fprintf(stderr,
+						"Failed to resize SDL2 backend\n");
+					assert(false && "Failed to resize SDL2 backend");
+				}
 			}
 			break;
 		default:
 			break;
 		}
 	}
+
+	/* 更新纹理并绘制 */
+	SDL_UpdateTexture(s->texture, NULL, s->pixels, s->w * sizeof(uint32_t));
+	SDL_RenderClear(s->renderer);
+	SDL_RenderCopy(s->renderer, s->texture, NULL, NULL);
+	SDL_RenderPresent(s->renderer);
 }
 
 /* 清空深度和颜色缓冲 */
