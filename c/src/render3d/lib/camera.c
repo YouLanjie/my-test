@@ -175,30 +175,37 @@ int camera_cast_surface(Camera_t *camera,
 	size_t count = 0;
 	for (size_t i = 0; i < countof(points); i++) {
 		*points[i] = camera_world2camera(camera, *points[i]);
-		if (points[i]->z == 0) points[i]->z = 1e-9;
 		if (points[i]->z > camera->z_near) {
 			positive[count] = points[i];
 			count++;
 		} else {
 			nagative[i-count] = points[i];
 		}
-		points[i]->x = camera->scale*points[i]->x/fabs(points[i]->z) - camera->offset_x;
-		points[i]->y = camera->scale*points[i]->y/fabs(points[i]->z) - camera->offset_y;
 	}
 	if (count == 0) return 0;
-	if (count == 3) return 1;
-	if (count == 2) {
+	switch (count) {
+	case 2:
 		*p4 = *positive[0];
 		*p5 = *positive[1];
 		*p6 = vec_add(*p4, vec_mul(vec_sub(*nagative[0], *p4), (p4->z-camera->z_near)/(p4->z-nagative[0]->z)));
 		*positive[0] = *p6;
 		*nagative[0] = vec_add(*p5, vec_mul(vec_sub(*nagative[0], *p5), (p5->z-camera->z_near)/(p5->z-nagative[0]->z)));
-		return 2;
+		count = 6;
+		break;
+	case 1:
+		p4 = positive[0];
+		*nagative[0] = vec_add(*p4, vec_mul(vec_sub(*nagative[0], *p4), (p4->z-camera->z_near)/(p4->z-nagative[0]->z)));
+		*nagative[1] = vec_add(*p4, vec_mul(vec_sub(*nagative[1], *p4), (p4->z-camera->z_near)/(p4->z-nagative[1]->z)));
+		count = 3;
+		break;
 	}
-	p4 = positive[0];
-	*nagative[0] = vec_add(*p4, vec_mul(vec_sub(*nagative[0], *p4), (p4->z-camera->z_near)/(p4->z-nagative[0]->z)));
-	*nagative[1] = vec_add(*p4, vec_mul(vec_sub(*nagative[1], *p4), (p4->z-camera->z_near)/(p4->z-nagative[1]->z)));
-	return 1;
+	Point_t *p[6] = {p1, p2, p3, p4, p5, p6};
+	for (size_t i = 0; i < countof(p) && i < count; i++) {
+		if (p[i]->z == 0) p[i]->z = 1e-9;
+		p[i]->x = camera->scale*p[i]->x/fabs(p[i]->z) - camera->offset_x;
+		p[i]->y = camera->scale*p[i]->y/fabs(p[i]->z) - camera->offset_y;
+	}
+	return count / 3;
 }
 
 void camera_shift(Camera_t *camera, Vec_t direction)

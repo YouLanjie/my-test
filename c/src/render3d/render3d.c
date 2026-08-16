@@ -236,8 +236,7 @@ int main(int argc, char *argv[])
 "###########.########\n"
 "####################\n", '.');
 	obj_set_color(block, (Color_t){10,255,40,-1});
-	obj_merge_and_free(block, obj_set_color(obj_create_box_from_point((Point_t[]){
-{-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1},{-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1} }), (Color_t){220,255,30,-1}));
+	obj_merge_and_free(block, obj_set_color(obj_create_cube_with_surface(2), (Color_t){0,0,-1,-1}));
 	obj_transform_shift(block, (Vec_t){.x=0,.y=1,.z=0});    /* 让参考中心点下移一格 */
 	/*obj_rotate(block, (Vec_t){0, 1, 0}, M_PI*5);*/
 	data.obj = block;

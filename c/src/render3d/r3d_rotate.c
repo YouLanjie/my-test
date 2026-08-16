@@ -68,9 +68,13 @@ static bool setup(Runtimedata_t *rt)
 	if (!rt->backend) {
 		rt->backend = backend_create_utf8_256bit(term_w, term_h);
 		rt->camera = camera_create();
-		rt->axis_helper = obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){10*SCALE,0,0}));
-		obj_merge_and_free(rt->axis_helper, obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){0,6*SCALE,0})));
-		obj_merge_and_free(rt->axis_helper, obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){0,0,3*SCALE})));
+		/* SKY RGB: 40, 90, 220 */
+		/* GROUND RGB: 130, 90, 40 */
+#define CREATE_LINE(x,y,z, r,g,b) obj_set_color(obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){x,y,z})), (Color_t){r,g,b,200})
+		rt->axis_helper = CREATE_LINE(10*SCALE,0,0, -1,0,0);
+		obj_merge_and_free(rt->axis_helper, CREATE_LINE(0,6*SCALE,0, 0,-1,0));
+		obj_merge_and_free(rt->axis_helper, CREATE_LINE(0,0,3*SCALE, 0,0,-1));
+#undef CREATE_LINE
 
 		if (!rt->backend || !rt->camera || !rt->axis_helper) {
 			cleanup(rt);
@@ -169,6 +173,35 @@ static Star_t *choose_star(Runtimedata_t *rt, const char *hint, Star_t *old)
 	return rt->objs+choice;
 }
 
+/* 根据引力影响范围自动获取速度参考系星体 */
+static Star_t *get_about_point(Runtimedata_t *rt)
+{
+	static Obj_t base_obj = {};
+	static Star_t base = {
+		.obj = &base_obj,
+		.name = "绝对坐标",
+	};
+	if (!rt || !rt->follow || !rt->objs) return &base;
+	Star_t *objs = rt->objs;
+	Star_t *about_point = &base;
+	Vec_t diff;
+	double max_acc = 0;
+	double r2 = 0, a = 0;
+	for (size_t j = 0; j < rt->obj_count; j++) {
+		if (!objs[j].obj || objs+j == rt->follow) continue;
+		diff = vec_sub(rt->follow->obj->center, objs[j].obj->center);
+		r2 = (pow2(diff.x) + pow2(diff.y) + pow2(diff.z)) * pow2(SCALE);
+		if (r2 > 0) a = G/fmax(r2, 1e-9)/SCALE;
+		a *= objs[j].mass;
+		if (a > max_acc) {
+			max_acc = a;
+			about_point = objs+j;
+		}
+	}
+	return about_point;
+}
+
+
 static void voyage_helper(Runtimedata_t *rt)
 {
 	if (!rt) return;
@@ -191,6 +224,26 @@ static void voyage_helper(Runtimedata_t *rt)
 	printf("航向：{%.1f, %.1f, %.1f}\n", direct.x, direct.y, direct.z);
 	printf("目标线速度：%g km/s, 角速度：%g rad/s\n", speed, speed/distance);
 	printf("周期：%.1f s | %.1f d\n", 2*M_PI/(speed/distance), 2*M_PI/(speed/distance)/(24*60*60));
+
+	const Vec_t v = vec_sub(from->speed, to->speed);
+	const Vec_t r = vec_sub(from->obj->center, to->obj->center);
+	const double mu = to->mass*G;
+	/* 比机械能 */
+	const double epsilon = vec_point_product(r, r)/2 - mu/distance;
+	/* 半长轴 */
+	const double a = -mu / (2*epsilon);
+	const Vec_t e = vec_mul(vec_sub(vec_mul(r, vec_point_product(v,v)-mu/vec_len(r)), vec_mul(v, vec_point_product(r, v))), 1/mu);
+	const double rp = a*(1-vec_len(e));
+	const double ra = a*(1+vec_len(e));
+	const char *typ = "椭圆轨道";
+	if (vec_len(e) > 1) typ = "双曲线轨道";
+	else if (vec_len(e) == 1) typ = "抛物线轨道";
+	else if (vec_len(e) == 0) typ = "圆轨道";
+	printf("====== 当前轨道情况 ======\n");
+	printf("轨道类型: %s\n", typ);
+	printf("近地点: %.1f km | 远地点: %.1f\n", rp, ra);
+	printf("距离近地点: %.1f km\n", vec_len(vec_sub(vec_add(vec_mul(vec_direct(e), rp), to->obj->center), from->obj->center)));
+	printf("距离远地点: %.1f km\n", vec_len(vec_sub(vec_add(vec_mul(vec_direct(e), ra), to->obj->center), from->obj->center)));
 	printf("（回车返回）\n");
 	kbhitGetchar();
 	_getch();
@@ -442,7 +495,7 @@ int main(void)
 		if (!rt.pause) rt.gtime += physics_update(&rt);
 		if (rt.look_to) {
 			Vec_t direct = rt.look_to == rt.follow ? \
-				       (rt.destination_to ? vec_sub(rt.follow->speed, rt.destination_to->speed) : rt.follow->speed) : \
+				       vec_sub(rt.follow->speed, get_about_point(&rt)->speed) : \
 				       vec_sub(rt.look_to->obj->center, rt.follow->obj->center);
 			double dist = vec_len(vec_sub(rt.follow->obj->center,
 						      rt.active_cam->position));
@@ -455,16 +508,30 @@ int main(void)
 		if (rt.axis && rt.follow) {
 			rt.axis_helper->center = rt.follow->obj->center;
 			obj_cast(rt.axis_helper, rt.active_cam, rt.backend);
+
+			Point_t p1, p2;
+			camera_cast_line(rt.active_cam,
+					 rt.follow->obj->center,
+					 vec_add(rt.follow->obj->center,
+						 vec_sub(rt.follow->speed, get_about_point(&rt)->speed)),
+					 &p1, &p2);
+			backend_draw_line(rt.backend, rt.active_cam, p1, p2,
+					  (Color_t){-1,-1,0,-1},
+					  (Color_t){-1,-1,0,-1});
 		}
 		for (size_t i = 0; i < countof(objs); i++) {
 			if (!objs[i].obj) continue;
 			obj_cast(objs[i].obj, rt.active_cam, rt.backend);
 		}
 		if (rt.guidline && rt.follow && rt.destination_to) {
-			/* 似乎有点浪费性能（全是syscall） */
-			Obj_t *guidline = obj_create_line_from_point(rt.follow->obj->center, rt.destination_to->obj->center);
-			obj_cast(guidline, rt.active_cam, rt.backend);
-			obj_free(guidline);
+			Point_t p1, p2;
+			camera_cast_line(rt.active_cam,
+					 rt.follow->obj->center,
+					 rt.destination_to->obj->center,
+					 &p1, &p2);
+			backend_draw_line(rt.backend, rt.active_cam, p1, p2,
+					  (Color_t){0,-1,-1,-1},
+					  (Color_t){0,-1,-1,-1});
 		}
 		printf("\e[H");
 		rt.backend->render(rt.backend);
@@ -475,9 +542,11 @@ int main(void)
 		       rt.follow?vec_len(vec_sub(rt.active_cam->position,
 						 rt.follow->obj->center)):0);
 		if (rt.follow) {
-			printf(" | %s (%g km/s)",
+			Star_t *about_point = get_about_point(&rt);
+			printf(" | %s[%s] (%g km/s)",
 			       rt.follow->name ? rt.follow->name : "Unknow",
-			       rt.destination_to ? vec_len(vec_sub(rt.follow->speed, rt.destination_to->speed)) : vec_len(rt.follow->speed));
+			       about_point->name ? about_point->name : "Unknow",
+			       vec_len(vec_sub(rt.follow->speed, about_point->speed)));
 		}
 		if (rt.follow && rt.destination_to) {
 			const Vec_t dist = vec_sub(rt.destination_to->obj->center, rt.follow->obj->center);
@@ -486,7 +555,7 @@ int main(void)
 			printf(" 距离'%s'还有 %.1f km (%g km/s)",
 			       rt.destination_to->name ? rt.destination_to->name : "Unknow",
 			       vec_len(dist),
-			       (vec_point_product(dist, dv)>=0?-1:1)*vec_len(dv));
+			       -vec_point_product(vec_direct(dist), dv));
 		}
 		sleep_fixed_step(1./FPS);
 	}
