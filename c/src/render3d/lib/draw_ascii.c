@@ -12,6 +12,7 @@ typedef struct Scr_t {
 	size_t w;
 	size_t size;
 	double *scr;    /* 屏幕 */
+	Color_t *color;
 	char *pixels;
 } Scr_t;
 
@@ -30,41 +31,32 @@ static Scr_t *scr_create(size_t width, size_t height)
 	*p = (Scr_t){
 		.scr = malloc(size*sizeof(*p->scr)),
 		.pixels = malloc(size),
+		.color = malloc(sizeof(*p->color)*width*height),
 		.h = height,
 		.w = width,
 		.size = size,
 	};
 	memset(p->pixels, MAXCHR, p->size);
 	memset(p->scr, 0, p->size*sizeof(*p->scr));
+	memset(p->color, 0, sizeof(*p->color)*width*height);
 	return p;
-}
-
-/* x,y : [0, MAX)
- * return: 屏幕字符指针或NULL */
-static inline double *scr_p(Scr_t *s, double x, double y)
-{
-	if (!s) return NULL;
-	if (x < 0 || x >= (int)s->w || y < 0 || y >= (int)s->h) return NULL;
-	return s->scr + (int)y*s->w + (int)x;
-}
-/* 中央原点屏幕坐标系 转换成 左上角原点屏幕坐标系 */
-static inline double *scr_c(Scr_t *s, int x, int y)
-{
-	if (!s) return NULL;
-	return scr_p(s, s->w/2.+x, s->h/2.-y);
 }
 
 /* 绘制 */
 static void draw(RenderBackend_t *backend, Point2d_t p, Color_t rgb)
 {
-	(void)rgb;
 	if (!backend || !backend->data) return;
-	Scr_t *scr = backend->data;
-	double *i = scr_c(scr, p.x, p.y/2);
-	if (!i) return;
-	if (*i > 1) return;
-	/* p.z => (0, 1] */
-	if (*i == 0 || *i > p.z) *i = p.z;    /* 若原本该处的距离远于新点的距离 */
+	Scr_t *s = backend->data;
+	if (p.x < -(double)s->w/2 || p.x > (double)s->w/2) return;
+	if (p.y < -(double)s->h/1 || p.y > (double)s->h/1) return;
+	size_t ind = (int)(s->h/2.-p.y/2)*s->w + (int)(s->w/2.)+p.x;
+	if (ind >= s->w*s->h) return;
+	if (s->scr[ind]==0 || s->scr[ind] > p.z) {
+		s->scr[ind] = p.z;    /* [0.0, 1.0] */
+		if (s->color) {
+			s->color[ind] = rgb;
+		}
+	}
 }
 /* 输出一帧
  * 灰度映射 打印前安全处理 打印 重置屏幕 */
@@ -94,6 +86,7 @@ static void destroy(RenderBackend_t *backend)
 {
 	if (!backend || !backend->data) return;
 	Scr_t *p = backend->data;
+	free(p->scr);
 	free(p->scr);
 	free(p->pixels);
 	free(p);
@@ -192,6 +185,54 @@ RenderBackend_t *backend_create_ascii_grey(int width, int height)
 		.destroy = destroy,
 		.data = scr_create(width, height),
 		.id = RDBK_ascii_grey,
+	};
+	if (!p->data) {
+		free(p);
+		return NULL;
+	}
+	return p;
+}
+
+
+/* 256bit专门函数 */
+static void render_256bit(RenderBackend_t *backend)
+{
+	if (!backend || !backend->data) return;
+	Scr_t *s = backend->data;
+	double c = 0;
+	Color_t color = COLOR_BLACK;
+	Color_t lcolor = COLOR_WHITE;
+	// fputs("\033[H", stdout);    /* puts自带换行符不可用 */
+	for (size_t i = 0; i < s->h; ++i) {
+		for (size_t j = 0; j < s->w; ++j) {
+			c = pow(fmax(1 - s->scr[i*s->w+j], 1e-8), 1/2.2);
+			color = s->scr[i*s->w+j] ? s->color[i*s->w+j] : COLOR_BLACK;
+			color = color_mul(color, c);
+			if (memcmp(&lcolor, &color, sizeof(Color_t)) != 0) {
+				lcolor = color;
+				printf("\033[48;2;%d;%d;%dm",
+				       (int)(color.r*c),
+				       (int)(color.g*c),
+				       (int)(color.b*c));
+			}
+			putc(' ', stdout);
+		}
+		putc('\n', stdout);
+	}
+	fputs("\033[0m", stdout);
+}
+
+RenderBackend_t *backend_create_ascii_256bit(int width, int height)
+{
+	RenderBackend_t *p = malloc(sizeof(*p));
+	if (!p) return NULL;
+	*p = (RenderBackend_t){
+		.draw = draw,
+		.render = render_256bit,
+		.clean = clean,
+		.destroy = destroy,
+		.data = scr_create(width, height),
+		.id = RDBK_ascii_256bit,
 	};
 	if (!p->data) {
 		free(p);

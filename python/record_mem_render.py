@@ -14,11 +14,15 @@ import numpy as np
 import pandas as pd
 
 def get_mem_by_free() -> tuple[float,float]:
+    if not psutil:
+        return (0, 0)
     vm_rss = psutil.virtual_memory().used
     vm_swap = psutil.swap_memory().used
     return (vm_rss/1024/1024, vm_swap/1024/1024)
 
 def get_mem_by_grep(grep:str) -> tuple[float, float]:
+    if not psutil:
+        return (0, 0)
     count = {"RSS":0, "Swap":0}
     for pid in psutil.pids():
         try:

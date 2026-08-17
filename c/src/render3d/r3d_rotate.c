@@ -65,7 +65,7 @@ static void sync_cam_size_scale(Runtimedata_t *rt)
 {
 	if (!rt || !rt->active_cam) return;
 	int term_w = get_winsize_col() - 0;
-	int term_h = get_winsize_row() - 1;
+	int term_h = get_winsize_row() - 2;
 	if (rt->backend->get_size) {
 		rt->backend->get_size(rt->backend, &term_w, &term_h);
 	} else term_h *= 2;
@@ -78,7 +78,7 @@ static bool setup(Runtimedata_t *rt)
 {
 	if (!rt) return false;
 	int term_w = get_winsize_col() - 0;
-	int term_h = get_winsize_row() - 1;
+	int term_h = get_winsize_row() - 2;
 	if (!rt->backend) {
 		rt->backend = backend_create_utf8_256bit(term_w, term_h);
 		rt->camera = camera_create();
@@ -468,7 +468,7 @@ int main(void)
 	Star_t objs[] = {
 		(Star_t){
 			.name = "地球",
-			.obj = obj_set_color(obj_rotate(obj_shift(obj_create_cube_with_surface(6371*2),
+			.obj = obj_set_color(obj_rotate(obj_shift(obj_create_cube/*_with_surface*/(6371*2),
 								  (Vec_t){Dx_SE, 0, 0}),
 							(Vec_t){1, 1, -1}, M_PI/3.8), (Color_t){29,153,243,-1}),
 			.mass = 5.965e24,

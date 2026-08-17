@@ -38,6 +38,15 @@ Color_t color_mix(Color_t c1, Color_t c2, double k)
 	return c1;
 }
 
+Color_t color_mul(Color_t c, double k)
+{
+	c.a *= k;
+	c.r *= k;
+	c.g *= k;
+	c.b *= k;
+	return c;
+}
+
 void backend_draw_line(RenderBackend_t *backend, Camera_t *camera,
 		       Point_t p1, Point_t p2,
 		       Color_t c1, Color_t c2)
