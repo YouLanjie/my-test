@@ -196,19 +196,22 @@ static Star_t *choose_star(Runtimedata_t *rt, const char *hint, Star_t *old)
 /* 根据引力影响范围自动获取速度参考系星体
  * (ai生成)
  * 根据潮汐摄动比自动获取速度参考系星体 */
-static Star_t *get_about_point(Runtimedata_t *rt)
+static Star_t *get_about_point(Runtimedata_t *rt, Star_t *follow)
 {
 	static Obj_t base_obj = { };
 	static Star_t base = {
 		.obj = &base_obj,
 		.name = "绝对坐标",
 	};
-	if (!rt || !rt->follow || !rt->objs || rt->obj_count < 2)
+	if (!rt || !rt->objs || rt->obj_count < 2)
+		return &base;
+	if (!follow) follow = rt->follow;
+	if (!follow || (size_t)(follow-rt->objs) > rt->obj_count)
 		return &base;
 
 	Star_t *objs = rt->objs;
 	size_t n = rt->obj_count;
-	size_t idx_follow = rt->follow - objs;	// 目标索引
+	size_t idx_follow = follow - objs;	// 目标索引
 
 	// 1. 预先计算每个天体受到的总引力加速度（矢量）
 	const size_t len = rt->obj_count % 1024;
@@ -240,12 +243,12 @@ static Star_t *get_about_point(Runtimedata_t *rt)
 	Star_t *best = &base;
 
 	for (size_t j = 0; j < n; j++) {
-		if (j == idx_follow || !objs[j].obj)
+		if (objs+j == follow || !objs[j].obj)
 			continue;
 
 		// 候选天体 j 对 follow 的引力加速度
 		Vec_t diff =
-		    vec_sub(objs[j].obj->center, rt->follow->obj->center);
+		    vec_sub(objs[j].obj->center, follow->obj->center);
 		double r2 =
 		    (pow2(diff.x) + pow2(diff.y) + pow2(diff.z)) * pow2(SCALE);
 		if (r2 < 1e-18)
@@ -278,17 +281,19 @@ static Star_t *get_about_point(Runtimedata_t *rt)
 }
 
 struct orbital_parameters {
+	char *typ;    /* 轨道类型字符串 */
 	double a;    /* 半轴长 */
 	double e;    /* 偏心率 */
 	double rp;    /* 近地点 */
 	double ra;    /* 远地点 */
 	Vec_t point_rp;
 	Vec_t point_ra;
+	Vec_t u;    /* 轨道平面法向量(r * v) */
 };
 
 static struct orbital_parameters get_orbital_parameters(Star_t *ship, Star_t *center)
 {
-	struct orbital_parameters dat = {};
+	struct orbital_parameters dat = {.typ="NULL"};
 	if (!ship || !center || !ship->obj || !center->obj) return dat;
 
 	const Vec_t v = vec_sub(ship->speed, center->speed);
@@ -306,7 +311,25 @@ static struct orbital_parameters get_orbital_parameters(Star_t *ship, Star_t *ce
 	dat.ra = dat.a*(1+dat.e);
 	dat.point_rp = vec_add(vec_mul(vec_direct(e), dat.rp), center->obj->center);
 	dat.point_ra = vec_add(vec_mul(vec_direct(e), dat.ra), center->obj->center);
+	dat.u = vec_direct(vec_cross_product(r, v));
+
+	char *typ = "椭圆轨道";
+	if (dat.e > 1) typ = "双曲线轨道";
+	else if (fabs(dat.e - 1) < 1e-5) typ = "抛物线轨道";
+	else if (dat.e < 1e-5) typ = "圆轨道";
+	dat.typ = typ;
 	return dat;
+}
+
+static void print_starinfo(Star_t *star, struct orbital_parameters dat)
+{
+	if (!star || !star->obj) return;
+	printf("围绕天体: %s\n", star->name);
+	printf("轨道类型: %s (%.3f)\n", dat.typ, dat.e);
+	printf("近地点: %.1f km | 远地点: %.1f km\n", dat.rp, dat.ra);
+	printf("距离近地点: %.1f km\n", vec_len(vec_sub(dat.point_rp, star->obj->center)));
+	printf("距离远地点: %.1f km\n", vec_len(vec_sub(dat.point_ra, star->obj->center)));
+	printf("倾角: %.1f\n", acos(vec_point_product(dat.u, (Vec_t){0,0,1})));
 }
 
 static void voyage_helper(Runtimedata_t *rt)
@@ -332,17 +355,25 @@ static void voyage_helper(Runtimedata_t *rt)
 	printf("目标线速度：%g km/s, 角速度：%g rad/s\n", speed, speed/distance);
 	printf("周期：%.1f s | %.1f d\n", 2*M_PI/(speed/distance), 2*M_PI/(speed/distance)/(24*60*60));
 
+	Star_t *s1 = get_about_point(rt, from);
+	if (!s1) s1 = to;
 	struct orbital_parameters dat = get_orbital_parameters(from, to);
-	const char *typ = "椭圆轨道";
-	if (dat.e > 1) typ = "双曲线轨道";
-	else if (fabs(dat.e - 1) < 1e-5) typ = "抛物线轨道";
-	else if (dat.e < 1e-5) typ = "圆轨道";
+	if (s1 != to) {
+		printf("====== 假设(%s -> %s)轨道情况 ======\n", from->name, to->name);
+		print_starinfo(to, dat);
+		dat = get_orbital_parameters(from, s1);
+	}
+	printf("====== 当前(%s)轨道情况 ======\n", from->name);
+	print_starinfo(s1, dat);
 
-	printf("====== 当前轨道情况 ======\n");
-	printf("轨道类型: %s (%.3f)\n", typ, dat.e);
-	printf("近地点: %.1f km | 远地点: %.1f km\n", dat.rp, dat.ra);
-	printf("距离近地点: %.1f km\n", vec_len(vec_sub(dat.point_rp, to->obj->center)));
-	printf("距离远地点: %.1f km\n", vec_len(vec_sub(dat.point_ra, to->obj->center)));
+	Star_t *s2 = get_about_point(rt, to);
+	if (s1 == s2 && s1 != to && s2 != from) {
+		struct orbital_parameters dat2 = get_orbital_parameters(to, s2);
+		printf("====== 目标(%s)共轨情况 ======\n", to->name);
+		print_starinfo(s2, dat2);
+		printf("相对倾角: %.1f\n", acos(vec_point_product(dat2.u, dat.u)));
+	}
+
 	printf("（回车返回）\n");
 	kbhitGetchar();
 	_getch();
@@ -594,7 +625,7 @@ int main(void)
 		if ((rt.inp = kbhitGetchar()))
 			if (!input_handle(&rt)) break;
 		if (!rt.pause) rt.gtime += physics_update(&rt);
-		about_point = get_about_point(&rt);
+		about_point = get_about_point(&rt, NULL);
 		if (rt.look_to) {
 			Vec_t direct = rt.look_to == rt.follow ? \
 				       vec_sub(rt.follow->speed, about_point->speed) : \
@@ -627,6 +658,7 @@ int main(void)
 		}
 		if (rt.guidline && rt.follow && rt.destination_to) {
 			Point_t p1, p2;
+			/* 目的地方向 */
 			camera_cast_line(rt.active_cam,
 					 rt.follow->obj->center,
 					 rt.destination_to->obj->center,
@@ -634,6 +666,14 @@ int main(void)
 			backend_draw_line(rt.backend, rt.active_cam, p1, p2,
 					  (Color_t){0,-1,-1,-1},
 					  (Color_t){0,-1,-1,-1});
+			/* 当前环绕中心方向 */
+			camera_cast_line(rt.active_cam,
+					 rt.follow->obj->center,
+					 about_point->obj->center,
+					 &p1, &p2);
+			backend_draw_line(rt.backend, rt.active_cam, p1, p2,
+					  (Color_t){-1,-1,-1,0.3*225},
+					  (Color_t){-1,-1,-1,0.3*225});
 		}
 		printf("\e[H");
 		rt.backend->render(rt.backend);

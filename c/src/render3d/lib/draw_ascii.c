@@ -87,7 +87,7 @@ static void destroy(RenderBackend_t *backend)
 	if (!backend || !backend->data) return;
 	Scr_t *p = backend->data;
 	free(p->scr);
-	free(p->scr);
+	free(p->color);
 	free(p->pixels);
 	free(p);
 	free(backend);

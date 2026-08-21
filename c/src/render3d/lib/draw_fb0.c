@@ -113,7 +113,7 @@ static void render(RenderBackend_t *backend)
 			p[3] = color.a*dept;
 		}
 	}
-	printf("\033[%zuH", s->term_h);
+	printf("\033[%zuH", s->term_h+1);
 }
 
 static void clean(RenderBackend_t *backend)

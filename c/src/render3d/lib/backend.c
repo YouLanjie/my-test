@@ -22,9 +22,10 @@ static bool triangle_check_in(Point_t p1, Point_t p2, Point_t p3, Point_t check_
 
 Color_t color_add(Color_t dest, Color_t src)
 {
-	dest.r = dest.r*(1-src.a) + src.r*src.a;
-	dest.g = dest.g*(1-src.a) + src.g*src.a;
-	dest.b = dest.b*(1-src.a) + src.b*src.a;
+	double k = src.a/(double)UINT8_MAX;
+	dest.r = dest.r*(1-k) + src.r*k;
+	dest.g = dest.g*(1-k) + src.g*k;
+	dest.b = dest.b*(1-k) + src.b*k;
 	return dest;
 }
 

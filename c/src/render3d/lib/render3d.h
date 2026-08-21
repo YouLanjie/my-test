@@ -189,6 +189,7 @@ void backend_draw_line(RenderBackend_t *backend, Camera_t *camera,
 void backend_draw_surface(RenderBackend_t *backend, Camera_t *camera,
 			  Point_t p1, Point_t p2, Point_t p3,
 			  Color_t c1, Color_t c2, Color_t c3);
+/* dest:旧颜色，src:新颜色 */
 Color_t color_add(Color_t dest, Color_t src);
 Color_t color_mix(Color_t c1, Color_t c2, double k);
 Color_t color_mul(Color_t c, double k);
