@@ -533,7 +533,10 @@ int main(void)
 			.self_omiga = 2*M_PI/(24*60*60),
 		}, (Star_t){
 			.name = "月球",
-			.obj = obj_shift(obj_create_cube(1737.4*2), (Vec_t){0+Dx_SE, 384400, 0}),
+			.obj = obj_shift(obj_create_cube(1737.4*2),
+					 vec_add((Vec_t){Dx_SE, 0, 0},
+						 (vec_rotate((Vec_t){0, 384400, 0},
+							     (Vec_t){1,0,0}, 5.14*M_PI/180)))),
 			.mass = 7.342e22,
 			.speed = vec_add(vec_mul(vec_direct((Vec_t){-1, 0, 0}), 1.022), (Vec_t){0, Vy_SE, 0}),
 			.self_rotate = (Vec_t){0, 0, 1},
@@ -615,12 +618,14 @@ int main(void)
 	       "WASD 控制镜头平移 -=_+ 控制镜头远近\n"
 	       "hjkl 控制镜头方向 JK 控制镜头旋转\n"
 	       "7/8 控制焦距 9/0 控制可视距离\n"
-	       "f 跟随  F 看向某物体  t 测距\n"
+	       "f 跟随  F 看向某物体  t 设定目标\n"
 	       "[]{} 控制时间流速\n"
 	       "? 进行数学辅助计算\n"
 	       "f跟随时视角会调整方向为绝对速度\n"
 	       "F选择看向自身视角会追踪该速度方向\n"
-	       "使用t进行测距视角可以追踪相对速度方向\n");
+	       "i打开绝对坐标轴(红绿蓝)+相对速度矢量显示(黄)\n"
+	       "I打开目标参考线（青）和环绕天体方向参考线（灰）\n"
+	       );
 	rt.inp = 'f';
 	input_handle(&rt);
 
@@ -684,9 +689,9 @@ int main(void)
 		printf("\e[H");
 		rt.backend->render(rt.backend);
 		rt.backend->clean(rt.backend);
-		printf("\e[0m\e[2K\r[TS:%g, GT:%.1fd, E:%gJ C:%gkm]",
-		       TIME_SCALE*FPS, rt.gtime/(24.*60*60),
-		       rt.fuel_consumption,
+		printf("\e[0m\e[2K\r[T+%.1fd, x%g, E:%.3gkJ C:%.3gkm]",
+		       rt.gtime/(24.*60*60), TIME_SCALE*FPS,
+		       rt.fuel_consumption/1e3,
 		       rt.follow?vec_len(vec_sub(rt.active_cam->position,
 						 rt.follow->obj->center)):0);
 		if (rt.follow) {
@@ -711,11 +716,12 @@ int main(void)
 				Vec_t u = vec_direct(vec_cross_product(ret.u, ret2.u));
 				double deg = vec_point_product(vec_direct(vec_sub(rt.follow->speed, about_point->speed)), u);
 				deg = 90 - acos(deg)/M_PI*180.;
-				printf(" %.1f(%.1f)° ",
+				printf(" %.1f(%.1f)°",
 				       acos(vec_point_product(ret.u, ret2.u))/(2*M_PI)*360.,
 				       deg);
 			}
 		}
+		if (rt.pause) printf(" [已暂停]");
 		sleep_fixed_step(1./FPS);
 	}
 
