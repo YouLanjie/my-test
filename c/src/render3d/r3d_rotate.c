@@ -286,6 +286,7 @@ struct orbital_parameters {
 	double e;    /* 偏心率 */
 	double rp;    /* 近地点 */
 	double ra;    /* 远地点 */
+	double r;    /* 当前半径 */
 	Vec_t point_rp;
 	Vec_t point_ra;
 	Vec_t u;    /* 轨道平面法向量(r * v) */
@@ -305,7 +306,8 @@ static struct orbital_parameters get_orbital_parameters(Star_t *ship, Star_t *ce
 	/* 偏心率 */
 	const Vec_t e = vec_mul(vec_sub(vec_mul(r, vec_point_product(v,v)-mu/vec_len(r)), vec_mul(v, vec_point_product(r, v))), 1/mu);
 	/* 半长轴 */
-	dat.a = 1 / (2/vec_len(r) - vec_point_product(v, v)/mu);
+	dat.r = vec_len(r);
+	dat.a = 1 / (2/dat.r - vec_point_product(v, v)/mu);
 	dat.e = vec_len(e);
 	dat.rp = dat.a*(1-dat.e);
 	dat.ra = dat.a*(1+dat.e);
@@ -326,10 +328,11 @@ static void print_starinfo(Star_t *star, struct orbital_parameters dat)
 	if (!star || !star->obj) return;
 	printf("围绕天体: %s\n", star->name);
 	printf("轨道类型: %s (%.3f)\n", dat.typ, dat.e);
+	printf("当前高度: %.1f km\n", dat.r);
 	printf("近地点: %.1f km | 远地点: %.1f km\n", dat.rp, dat.ra);
 	printf("距离近地点: %.1f km\n", vec_len(vec_sub(dat.point_rp, star->obj->center)));
 	printf("距离远地点: %.1f km\n", vec_len(vec_sub(dat.point_ra, star->obj->center)));
-	printf("倾角: %.1f\n", acos(vec_point_product(dat.u, (Vec_t){0,0,1})));
+	printf("倾角: %.3f deg\n", acos(vec_point_product(dat.u, (Vec_t){0,0,1}))/(2*M_PI)*360.);
 }
 
 static void voyage_helper(Runtimedata_t *rt)
@@ -371,7 +374,7 @@ static void voyage_helper(Runtimedata_t *rt)
 		struct orbital_parameters dat2 = get_orbital_parameters(to, s2);
 		printf("====== 目标(%s)共轨情况 ======\n", to->name);
 		print_starinfo(s2, dat2);
-		printf("相对倾角: %.1f\n", acos(vec_point_product(dat2.u, dat.u)));
+		printf("相对倾角: %.4f deg\n", acos(vec_point_product(dat2.u, dat.u))/(2*M_PI)*360.);
 	}
 
 	printf("（回车返回）\n");
@@ -434,6 +437,9 @@ static bool input_handle(Runtimedata_t *rt)
 	case '.':
 		rt->pause = true;
 		rt->gtime += physics_update(rt);
+		break;
+	case 'c':
+		printf("\e[2J");
 		break;
 	case 'q':
 	case 'Q':
@@ -697,9 +703,17 @@ int main(void)
 			       rt.destination_to->name ? rt.destination_to->name : "Unknow",
 			       vec_len(dist),
 			       -vec_point_product(vec_direct(dist), dv));
+			struct orbital_parameters ret = get_orbital_parameters(rt.follow, about_point);
 			if (about_point == rt.destination_to) {
-				struct orbital_parameters ret = get_orbital_parameters(rt.follow, about_point);
 				printf(" Rp:%.1fkm Ra:%.1fkm", ret.rp, ret.ra);
+			} else if (get_about_point(&rt, rt.destination_to) == about_point) {
+				struct orbital_parameters ret2 = get_orbital_parameters(rt.destination_to, about_point);
+				Vec_t u = vec_direct(vec_cross_product(ret.u, ret2.u));
+				double deg = vec_point_product(vec_direct(vec_sub(rt.follow->speed, about_point->speed)), u);
+				deg = 90 - acos(deg)/M_PI*180.;
+				printf(" %.1f(%.1f)° ",
+				       acos(vec_point_product(ret.u, ret2.u))/(2*M_PI)*360.,
+				       deg);
 			}
 		}
 		sleep_fixed_step(1./FPS);
