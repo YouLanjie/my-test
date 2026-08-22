@@ -287,6 +287,9 @@ struct orbital_parameters {
 	double rp;    /* 近地点 */
 	double ra;    /* 远地点 */
 	double r;    /* 当前半径 */
+	double d_rp;    /* 距近地点 */
+	double d_ra;    /* 距远地点 */
+	double T;    /* 周期(秒) */
 	Vec_t point_rp;
 	Vec_t point_ra;
 	Vec_t u;    /* 轨道平面法向量(r * v) */
@@ -312,8 +315,11 @@ static struct orbital_parameters get_orbital_parameters(Star_t *ship, Star_t *ce
 	dat.rp = dat.a*(1-dat.e);
 	dat.ra = dat.a*(1+dat.e);
 	dat.point_rp = vec_add(vec_mul(vec_direct(e), dat.rp), center->obj->center);
-	dat.point_ra = vec_add(vec_mul(vec_direct(e), dat.ra), center->obj->center);
+	dat.point_ra = vec_add(vec_mul(vec_direct(e), -dat.ra), center->obj->center);
+	dat.d_rp = vec_len(vec_sub(dat.point_rp, ship->obj->center));
+	dat.d_ra = vec_len(vec_sub(dat.point_ra, ship->obj->center));
 	dat.u = vec_direct(vec_cross_product(r, v));
+	dat.T = 2*M_PI*(dat.a*SCALE)*sqrt(dat.a*SCALE/(G*(ship->mass+center->mass)));
 
 	char *typ = "椭圆轨道";
 	if (dat.e > 1) typ = "双曲线轨道";
@@ -327,11 +333,11 @@ static void print_starinfo(Star_t *star, struct orbital_parameters dat)
 {
 	if (!star || !star->obj) return;
 	printf("围绕天体: %s\n", star->name);
-	printf("轨道类型: %s (%.3f)\n", dat.typ, dat.e);
-	printf("当前高度: %.1f km\n", dat.r);
-	printf("近地点: %.1f km | 远地点: %.1f km\n", dat.rp, dat.ra);
-	printf("距离近地点: %.1f km\n", vec_len(vec_sub(dat.point_rp, star->obj->center)));
-	printf("距离远地点: %.1f km\n", vec_len(vec_sub(dat.point_ra, star->obj->center)));
+	printf("轨道类型: %s (%.3f) \t| 周期: %.1f d\n", dat.typ, dat.e, dat.T/(24*60*60));
+	printf("当前高度: %.1f km \t| 半长轴: %.1f km\n", dat.r, dat.a);
+	printf("近地点: %.1f km \t| 远地点: %.1f km\n", dat.rp, dat.ra);
+	printf("距离近地点: %.1f km\n", dat.d_rp);
+	printf("距离远地点: %.1f km\n", dat.d_ra);
 	printf("倾角: %.3f deg\n", acos(vec_point_product(dat.u, (Vec_t){0,0,1}))/(2*M_PI)*360.);
 }
 
@@ -349,14 +355,14 @@ static void voyage_helper(Runtimedata_t *rt)
 	double distance = vec_len(direct);
 	if (distance <= 0) distance = 1e-20;
 	const double speed = sqrt(G*to->mass/(distance*SCALE)) / SCALE;
-	printf("========== 结果 ==========\n");
+	printf("========== 基础信息 ==========\n");
 	printf("'%s' -> '%s'\n",
 	       from->name ? from->name : "Unknow",
 	       to->name ? to->name : "Unknow");
 	printf("距离：%.1f km\n", distance);
 	printf("航向：{%.1f, %.1f, %.1f}\n", direct.x, direct.y, direct.z);
-	printf("目标线速度：%g km/s, 角速度：%g rad/s\n", speed, speed/distance);
-	printf("周期：%.1f s | %.1f d\n", 2*M_PI/(speed/distance), 2*M_PI/(speed/distance)/(24*60*60));
+	printf("理想圆轨线速度：%g km/s, 角速度：%g rad/s\n", speed, speed/distance);
+	printf("理想圆轨周期：%.1f s | %.1f d\n", 2*M_PI/(speed/distance), 2*M_PI/(speed/distance)/(24*60*60));
 
 	Star_t *s1 = get_about_point(rt, from);
 	if (!s1) s1 = to;

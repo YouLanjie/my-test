@@ -47,6 +47,16 @@ static inline uint32_t color_to_pixel(Color_t c, double z)
 	return (uint32_t) ((c.a << 24) | (c.r << 16) | (c.g << 8) | c.b);
 }
 
+static inline Color_t pixel_to_color(uint32_t c)
+{
+	return (Color_t){
+		.r = (c>>16) & UINT8_MAX,
+		.g = (c>>8) & UINT8_MAX,
+		.b = c & UINT8_MAX,
+		.a = (c>>24) & UINT8_MAX,
+	};
+}
+
 /* 创建屏幕数据 */
 static Scr_t *scr_create(int width, int height)
 {
@@ -206,7 +216,7 @@ static void draw(RenderBackend_t *backend, Point2d_t point, Color_t rgb)
 	/* 深度测试：更近（z更小）则更新 */
 	if (z < s->depth[index]) {
 		s->depth[index] = z;
-		s->pixels[index] = color_to_pixel(rgb, z);
+		s->pixels[index] = color_to_pixel(color_add(pixel_to_color(s->pixels[index]), rgb), z);
 	}
 }
 

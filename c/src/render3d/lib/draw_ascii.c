@@ -54,7 +54,7 @@ static void draw(RenderBackend_t *backend, Point2d_t p, Color_t rgb)
 	if (s->scr[ind]==0 || s->scr[ind] > p.z) {
 		s->scr[ind] = p.z;    /* [0.0, 1.0] */
 		if (s->color) {
-			s->color[ind] = rgb;
+			s->color[ind] = color_add(s->color[ind], rgb);
 		}
 	}
 }
