@@ -38,7 +38,7 @@ typedef struct {
 	Star_t *look_to;
 	Star_t *follow;
 	Obj_t  *axis_helper;
-	double fuel_consumption;
+	double dv;
 	double gtime;
 	int  inp;
 	bool axis;
@@ -329,6 +329,31 @@ static struct orbital_parameters get_orbital_parameters(Star_t *ship, Star_t *ce
 	return dat;
 }
 
+struct hohmann_orbital_parameters {
+	double theta;    /* 剩余角度，为0时最佳(rad) */
+	double expect_theta;    /* 期望角度提前量(rad) */
+	double T;    /* 半周期 */
+};
+
+/* 计算距离霍曼转移点火点提前量角度 */
+static struct hohmann_orbital_parameters get_hohmann_orbit_theta(Star_t *follow, Star_t *destination_to, Star_t *about_point)
+{
+	if (!follow || !follow->obj || !destination_to || !destination_to->obj
+	    || !about_point || !about_point->obj) return (struct hohmann_orbital_parameters){};
+	const Vec_t r2 = vec_sub(destination_to->obj->center, about_point->obj->center);
+	const Vec_t r1 = vec_sub(follow->obj->center, about_point->obj->center);
+	const double r2f = vec_len(r2);
+	const double a = (vec_len(r1) + r2f) / 2;
+	const double T = 2*M_PI*(a*SCALE)*sqrt(a*SCALE/(G*(follow->mass+about_point->mass)));
+	const double omiga = sqrt(G*about_point->mass/(r2f*SCALE)) / SCALE / r2f;
+	const struct hohmann_orbital_parameters ret = {
+		.expect_theta = M_PI - omiga*T/2,
+		.theta = acos(vec_point_product(vec_direct(r1), vec_direct(r2))) - (M_PI - omiga*T/2),
+		.T = T,
+	};
+	return ret;
+}
+
 static void print_starinfo(Star_t *star, struct orbital_parameters dat)
 {
 	if (!star || !star->obj) return;
@@ -380,7 +405,10 @@ static void voyage_helper(Runtimedata_t *rt)
 		struct orbital_parameters dat2 = get_orbital_parameters(to, s2);
 		printf("====== 目标(%s)共轨情况 ======\n", to->name);
 		print_starinfo(s2, dat2);
-		printf("相对倾角: %.4f deg\n", acos(vec_point_product(dat2.u, dat.u))/(2*M_PI)*360.);
+		printf("相对倾角: %.4f deg\n", acos(vec_point_product(dat2.u, dat.u))/M_PI*180.);
+		struct hohmann_orbital_parameters ret = get_hohmann_orbit_theta(from, to, s2);
+		printf("霍曼转移轨半周期: %.1f d\n", ret.T/(24*60*60));
+		printf("霍曼转移角度提前: %.1f deg\n", ret.expect_theta/M_PI*180.);
 	}
 
 	printf("（回车返回）\n");
@@ -471,11 +499,15 @@ static bool input_handle(Runtimedata_t *rt)
 	case 'l': cam_rotate(v_up, -M_PI/180);break;
 	case 'J': cam_rotate(v_forward, M_PI/180);break;
 	case 'K': cam_rotate(v_forward, -M_PI/180);break;
+	case 'H': cam_rotate(v_forward, M_PI/4);break;
+	case 'L': cam_rotate(v_forward, -M_PI/4);break;
+	case '<': cam_rotate(v_up, M_PI/4);break;
+	case '>': cam_rotate(v_up, -M_PI/4);break;
 #undef cam_rotate
 	}
 	if (!rt->follow) return true;
 
-	const double speed1 = vec_len(rt->follow->speed) * SCALE;
+	const double speed1 = vec_len(rt->follow->speed);
 #define accelerate(var, k) rt->follow->speed = vec_add(rt->follow->speed, vec_mul((var), (k))), accel = k
 	switch (rt->inp) {
 	// case '_': rt->follow->speed = vec_mul(rt->follow->speed, 0.1); break;
@@ -489,9 +521,9 @@ static bool input_handle(Runtimedata_t *rt)
 	case 'd': accelerate(v_right, accel); break;
 #undef accelerate
 	}
-	const double speed2 = vec_len(rt->follow->speed) * SCALE;
-	// 计算能量损耗
-	rt->fuel_consumption += rt->follow->mass * fabs(pow2(speed2) - pow2(speed1)) / 2;
+	const double speed2 = vec_len(rt->follow->speed);
+	// 计算操作dv
+	rt->dv += fabs(speed2 - speed1);
 #undef v_forward
 #undef v_up
 #undef v_right
@@ -695,9 +727,9 @@ int main(void)
 		printf("\e[H");
 		rt.backend->render(rt.backend);
 		rt.backend->clean(rt.backend);
-		printf("\e[0m\e[2K\r[T+%.1fd, x%g, E:%.3gkJ C:%.3gkm]",
+		printf("\e[0m\e[2K\r[T+%.1fd, x%g, dv:%.3gkm/s C:%.3gkm]",
 		       rt.gtime/(24.*60*60), TIME_SCALE*FPS,
-		       rt.fuel_consumption/1e3,
+		       rt.dv,
 		       rt.follow?vec_len(vec_sub(rt.active_cam->position,
 						 rt.follow->obj->center)):0);
 		if (rt.follow) {
@@ -716,15 +748,18 @@ int main(void)
 			       -vec_point_product(vec_direct(dist), dv));
 			struct orbital_parameters ret = get_orbital_parameters(rt.follow, about_point);
 			if (about_point == rt.destination_to) {
+				/* 环绕状态 */
 				printf(" Rp:%.1fkm Ra:%.1fkm", ret.rp, ret.ra);
 			} else if (get_about_point(&rt, rt.destination_to) == about_point) {
+				/* 共心状态 */
 				struct orbital_parameters ret2 = get_orbital_parameters(rt.destination_to, about_point);
 				Vec_t u = vec_direct(vec_cross_product(ret.u, ret2.u));
 				double deg = vec_point_product(vec_direct(vec_sub(rt.follow->speed, about_point->speed)), u);
 				deg = 90 - acos(deg)/M_PI*180.;
-				printf(" %.1f(%.1f)°",
-				       acos(vec_point_product(ret.u, ret2.u))/(2*M_PI)*360.,
-				       deg);
+				printf(" %.1f(%.1f)°/%.1f",
+				       acos(vec_point_product(ret.u, ret2.u))/(M_PI)*180.,
+				       deg,
+				       get_hohmann_orbit_theta(rt.follow, rt.destination_to, about_point).theta/M_PI*180.);
 			}
 		}
 		if (rt.pause) printf(" [已暂停]");
