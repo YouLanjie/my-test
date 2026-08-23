@@ -2,7 +2,8 @@
  * @file        r3d_rotate.c
  * @author      Chglish
  * @date        2026-07-12
- * @brief       空观旋转.elf
+ * @brief       一个简单的3d N体运动模拟程序，
+ * 可任意选择天体跟踪操纵，内置仿真简易太阳系
  */
 
 #include "lib/render3d.h"
@@ -10,8 +11,8 @@
 
 #define MAX_FRAME INT64_MAX
 #define FPS 40
-/* 时间缩放倍率，一秒等于1h */
-double TIME_SCALE = 60.*60/FPS;
+/* 时间缩放倍率，默认x1 */
+double TIME_SCALE = 1./FPS;
 
 typedef struct {
 	const char *name;
@@ -41,6 +42,8 @@ typedef struct {
 	double dv;
 	double gtime;
 	int  inp;
+	uint8_t throttle;    /* 1% = 0.1m/s^2 */
+	int8_t throttle_on;
 	bool axis;
 	bool guidline;
 	bool pause;
@@ -141,6 +144,12 @@ static void physics_update_step(Runtimedata_t *rt, double time_scale)
 		obj_shift(objs[i].obj, diff);
 		objs[i].cam.position = vec_add(objs[i].cam.position, diff);
 		obj_rotate(objs[i].obj, objs[i].self_rotate, objs[i].self_omiga*time_scale);
+	}
+	if (rt->throttle_on&1 && rt->throttle && rt->follow) {
+		/* throttle_on<0时朝反方向推力 */
+		double accel = rt->throttle * 0.1 / SCALE * time_scale * (rt->throttle_on<0?-1:1);
+		rt->follow->speed = vec_add(rt->follow->speed, vec_mul(vec_direct(rt->active_cam->forward), accel));
+		rt->dv += fabs(accel);
 	}
 }
 
@@ -376,6 +385,8 @@ static void voyage_helper(Runtimedata_t *rt)
 		printf("重试...\n");
 	if (from->mass > to->mass)
 		printf("[TIPS] from比to重，结果可能不正确\n");
+	if (from == to)
+		printf("[WARN] 怎么选了个一样的？\n");
 	const Vec_t direct = vec_sub(to->obj->center, from->obj->center);
 	double distance = vec_len(direct);
 	if (distance <= 0) distance = 1e-20;
@@ -409,12 +420,77 @@ static void voyage_helper(Runtimedata_t *rt)
 		struct hohmann_orbital_parameters ret = get_hohmann_orbit_theta(from, to, s2);
 		printf("霍曼转移轨半周期: %.1f d\n", ret.T/(24*60*60));
 		printf("霍曼转移角度提前: %.1f deg\n", ret.expect_theta/M_PI*180.);
+		printf("距霍曼转移点火点: %.1f deg\n", ret.theta/M_PI*180.);
 	}
 
 	printf("（回车返回）\n");
 	kbhitGetchar();
 	_getch();
 	return;
+}
+
+static void dump_stars(Runtimedata_t *rt)
+{
+	if (!rt || !rt->objs) return;
+	printf("\e[0m\n\e[2K===== 数据导出：各星体基本参数 =====\n");
+	for (size_t i = 0; i < rt->obj_count; i++) {
+		if (!rt->objs[i].obj) continue;
+		printf(" [%lu] %s (%gkg) 位置(km): {%.3f,%.3f,%.3f} 速度(km/s): {%.3f,%.3f,%.3f}\n", i+1,
+		       rt->objs[i].name ? rt->objs[i].name : "{未命名星体}",
+		       rt->objs[i].mass,
+		       rt->objs[i].obj->center.x,
+		       rt->objs[i].obj->center.y,
+		       rt->objs[i].obj->center.z,
+		       rt->objs[i].speed.x,
+		       rt->objs[i].speed.y,
+		       rt->objs[i].speed.z);
+	}
+	printf("游戏时间: T+%.1f s, 折合约 T+%.1f d\n", rt->gtime, rt->gtime/(24*60*60));
+	printf("操作累计dv: %.3f km/s\n", rt->dv);
+	printf("（回车返回）\n");
+	kbhitGetchar();
+	_getch();
+}
+
+static void print_qrh()
+{
+	printf("\e[0m\n\e[2K这里是高级操作教程，下面是一些常见操作方法\n"
+	       "1. 改变轨道倾角：使用f,t设置目标后，若目标与操纵天体围绕同一天体\n"
+	       "公转，则会在状态栏右端显示形如`0.7(-21)°/11.4`的数据，最左边显示\n"
+	       "的是操纵天体与目标天体的轨道倾角。当括号内的角度读数接近0时表明\n"
+	       "你运行到了两个轨道平面的升/降交点。此时先使用p暂停，使用I打开参\n"
+	       "考线，转动相机使中心天体-自己-目标天体的连线（青线和灰线）处于同\n"
+	       "一条直线。观察黄色矢量方向（如果看不见就用+放大），旋转相机使得\n"
+	       "黄线基本竖直于屏幕，连续按两次>或者<以朝着黄线相对于青灰线的一侧\n"
+	       "旋转。使用zx设定推力并按下空格启动引擎，还有要记得取消暂停。等待\n"
+	       "引擎加速改变速度方向。角度每改变10°左右就需要反方向两次<或>让黄\n"
+	       "线重新竖直。重复该动作并持续观察轨道相差角度直到接近0。但由于误\n"
+	       "差很多时候数值无法完全归零，精度又不足以观察最小值，可在在临界范\n"
+	       "围内改为观察括号内数值，其值最大时一般轨道夹角最小。\n"
+	       "2. 变轨操作：使用f,t设置目标后，若目标为自身环绕天体，则会显示近\n"
+	       "地点(Rp)和远地点(Ra)高度。一般而言，近地点降低远地点高度或者是在\n"
+	       "远地点抬升近地点最省dv。若远地点值为负数则说明当前天体未能被目标\n"
+	       "天体捕获需要在近地点附近进行减速。加速减速都需要带有一定提前量以\n"
+	       "免错过最佳点火点。\n"
+	       "3. 霍曼转移：霍曼转移的逻辑就是预估好目标天体在转移之后的预期位\n"
+	       "置（点火位置与中心天体的连线方向上）并反推当前位置判断点火时机，\n"
+	       "然后点火加速减速改变近远地点高度使其中一个达到或略微超过目标天体\n"
+	       "轨道高度，途中些许修正轨道并在最后减速泊入目标天体。比方说拖地球\n"
+	       "到木星。首先t设定好目标（木星），此时应当会出现第一点提到的仪表\n"
+	       "信息。(如果目标中心天体不同请先变轨脱离或者f到中心天体代为观察)\n"
+	       "第三个数就是距离最佳点火点的角度，值越接近0位置越好（但是需要值\n"
+	       "从正值变为负值否则不是正确位置）。等待读数接近0后t改变目标为中心\n"
+	       "天体（太阳）以观察Ra,Rp。使用?查询木星的轨道高度自己记下来。按下\n"
+	       "F选择和f相同的天体（地球）以锁定当前的速度方向（减速需要使用r改\n"
+	       "为减速）。设定好油门并空格启动引擎变轨，观察近地点（减速）或远地\n"
+	       "点（加速）直到达到目标轨道高度。然后就是等待天体移动靠近。接近目\n"
+	       "标天体时记得观察中心天体是否有改变为目标天体改变后降低倍速等待到\n"
+	       "近地点进行减速入轨（入轨时若远地点为负数时绝对值越大则越接近入轨\n"
+	       "状态）\n"
+	       );
+	printf("（回车返回）\n");
+	kbhitGetchar();
+	_getch();
 }
 
 static void switch_camera(Runtimedata_t *rt, Camera_t *ca)
@@ -431,8 +507,6 @@ static void switch_camera(Runtimedata_t *rt, Camera_t *ca)
 static bool input_handle(Runtimedata_t *rt)
 {
 	if (!rt) return false;
-	double accel = 10/pow2(SCALE)*TIME_SCALE;
-
 #define v_forward vec_direct(rt->active_cam->forward)
 #define v_up      vec_direct(rt->active_cam->up)
 #define v_right   vec_direct(vec_cross_product(rt->active_cam->forward, rt->active_cam->up))
@@ -460,7 +534,9 @@ static bool input_handle(Runtimedata_t *rt)
 		break;
 	case 'F': rt->look_to = choose_star(rt, "看向", rt->look_to); break;
 	case 't': rt->destination_to = choose_star(rt, "测距", rt->destination_to); break;
+	case '|': dump_stars(rt); break;
 	case '?': voyage_helper(rt); break;
+	case 'M': print_qrh(); break;
 	case 'i': rt->axis = !rt->axis; break;
 	case 'I': rt->guidline = !rt->guidline; break;
 	case 'p': rt->pause = !rt->pause; break;
@@ -468,6 +544,10 @@ static bool input_handle(Runtimedata_t *rt)
 	case '8': rt->active_cam->scale+=1; break;
 	case '9': rt->active_cam->dept/=2; break;
 	case '0': rt->active_cam->dept*=2; break;
+	case ' ': rt->throttle_on ^= 1; break;
+	case 'r': rt->throttle_on^=1<<7; break;
+	case 'z': rt->throttle++; break;
+	case 'x': rt->throttle--; break;
 	case '.':
 		rt->pause = true;
 		rt->gtime += physics_update(rt);
@@ -507,11 +587,11 @@ static bool input_handle(Runtimedata_t *rt)
 	}
 	if (!rt->follow) return true;
 
-	const double speed1 = vec_len(rt->follow->speed);
-#define accelerate(var, k) rt->follow->speed = vec_add(rt->follow->speed, vec_mul((var), (k))), accel = k
+	/* 手动加速,并记录操作dv(禁止暂停加速) */
+	const double accel = !rt->pause ? rt->throttle/SCALE*TIME_SCALE : 0;
+#define accelerate(var, k) rt->follow->speed = vec_add(rt->follow->speed, vec_mul((var), (k))), rt->dv += accel
 	switch (rt->inp) {
-	// case '_': rt->follow->speed = vec_mul(rt->follow->speed, 0.1); break;
-	case ' ': accelerate(v_forward, 5*accel); break;
+	case 'n': accelerate(v_forward, 5*accel); break;
 	case 'N': accelerate(v_forward, 50*accel); break;
 	case 'b': accelerate(v_forward, -5*accel); break;
 	case 'B': accelerate(v_forward, -50*accel); break;
@@ -521,13 +601,10 @@ static bool input_handle(Runtimedata_t *rt)
 	case 'd': accelerate(v_right, accel); break;
 #undef accelerate
 	}
-	const double speed2 = vec_len(rt->follow->speed);
-	// 计算操作dv
-	rt->dv += fabs(speed2 - speed1);
 #undef v_forward
 #undef v_up
 #undef v_right
-	return fabs(accel);
+	return true;
 }
 
 int main(void)
@@ -555,18 +632,18 @@ int main(void)
 			// 7.9km/s  11.2km/s
 		}, (Star_t){
 			.name = "地球小卫星",
-			.obj = obj_set_color(obj_shift(obj_create_cube(1), (Vec_t){7000+Dx_SE, 0, 0}),
+			.obj = obj_set_color(obj_shift(obj_create_cube(1), (Vec_t){12000+Dx_SE, 0, 0}),
 					     (Color_t){-1,30,30,-1}),
 			.mass = 1,
-			.speed = vec_add(vec_mul(vec_direct((Vec_t){0, 1, 0.8}), 7.9), (Vec_t){0, Vy_SE, 0}),
+			.speed = vec_add(vec_mul(vec_direct((Vec_t){0, 1, 0.8}), 5.75993), (Vec_t){0, Vy_SE, 0}),
 		}, (Star_t){
 			.name = "地球大卫星",
-			.obj = obj_shift(obj_create_cube(900), (Vec_t){-11000+Dx_SE, 0, 0}),
+			.obj = obj_shift(obj_create_cube(900), (Vec_t){-42164+Dx_SE, 0, 0}),
 			.mass = 1e10,
 			// GM = Rv^2
 			// > sqrt((6.67*10^-11) * (5.965*10^24) / (11000*1000))/1000
 			// 6.0141159707
-			.speed = vec_add(vec_mul(vec_direct((Vec_t){0, -1, 0.1}), 6.0141159707), (Vec_t){0, Vy_SE, 0}),
+			.speed = vec_add(vec_mul(vec_direct((Vec_t){0, -1, 0.1}), 3.07282), (Vec_t){0, Vy_SE, 0}),
 			.self_rotate = (Vec_t){1, 1, -1},
 			.self_omiga = 2*M_PI/(24*60*60),
 		}, (Star_t){
@@ -596,14 +673,14 @@ int main(void)
 		}, (Star_t){
 			.name = "火星",
 			.mass = 6.417e23,
-			.obj = obj_shift(obj_create_cube(3389.5*2), (Vec_t){227.94e6, 0, 0}),
+			.obj = obj_set_color(obj_shift(obj_create_cube(3389.5*2), (Vec_t){227.94e6, 0, 0}), (Color_t){227,124,93,-1}),
 			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 24.07),
 			.self_rotate = (Vec_t){0, 0, 1},
 			.self_omiga = 2*M_PI/(24.6*60*60),
 		}, (Star_t){
 			.name = "木星",
 			.mass = 1.898e27,
-			.obj = obj_shift(obj_create_cube(69911*2), (Vec_t){778.57e6, 0, 0}),
+			.obj = obj_set_color(obj_shift(obj_create_cube(69911*2), (Vec_t){778.57e6, 0, 0}), (Color_t){169,105,49,-1}),
 			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 13.07),
 			.self_rotate = (Vec_t){0, 0, 1},
 			.self_omiga = 2*M_PI/(9.93*60*60),
@@ -617,14 +694,14 @@ int main(void)
 		}, (Star_t){
 			.name = "天王星",
 			.mass = 8.681e25,
-			.obj = obj_shift(obj_create_cube(25362*2), (Vec_t){2872.46e6, 0, 0}),
+			.obj = obj_set_color(obj_shift(obj_create_cube(25362*2), (Vec_t){2872.46e6, 0, 0}), (Color_t){190,227,230,-1}),
 			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 6.81),
 			.self_rotate = (Vec_t){0, 0, -1},
 			.self_omiga = 2*M_PI/(17.24*60*60),
 		}, (Star_t){
 			.name = "海王星",
 			.mass = 1.024e26,
-			.obj = obj_shift(obj_create_cube(24622*2), (Vec_t){4495.06e6, 0, 0}),
+			.obj = obj_set_color(obj_shift(obj_create_cube(24622*2), (Vec_t){4495.06e6, 0, 0}), (Color_t){45,55,140,-1}),
 			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 5.43),
 			.self_rotate = (Vec_t){0, 0, 1},
 			.self_omiga = 2*M_PI/(16.11*60*60),
@@ -651,18 +728,22 @@ int main(void)
 	rt.camera->position = (Vec_t){0, 0, 1e6*SCALE};
 	rt.camera->dept = 1e8*SCALE;
 
-	printf("按键说明：\nwasd 控制偏转\n"
-	       "bB 减速 空格或N加速\n"
+	printf("按键说明：\n"
+	       "zx 增减推力 空格开关油门（固定朝视线方向加速）\n"
+	       "(每1%%推力每秒提供0.1m/s的dv)\n"
+	       "bB 减速 Nn加速 wasd偏转加速\n"
 	       "WASD 控制镜头平移 -=_+ 控制镜头远近\n"
-	       "hjkl 控制镜头方向 JK 控制镜头旋转\n"
+	       "hjkl 控制镜头摇头抬头 <>左右大摇(45°)\n"
+	       "HJKL 控制镜头歪头 JK小转 HL大转(45°)\n"
 	       "7/8 控制焦距 9/0 控制可视距离\n"
 	       "f 跟随  F 看向某物体  t 设定目标\n"
-	       "[]{} 控制时间流速\n"
+	       "[]{} 控制时间流速 p暂停 .逐帧运行\n"
 	       "? 进行数学辅助计算\n"
 	       "f跟随时视角会调整方向为绝对速度\n"
 	       "F选择看向自身视角会追踪该速度方向\n"
 	       "i打开绝对坐标轴(红绿蓝)+相对速度矢量显示(黄)\n"
-	       "I打开目标参考线（青）和环绕天体方向参考线（灰）\n"
+	       "I打开目标参考线（青）+环绕天体方向参考线（灰）\n"
+	       " 以及相对速度矢量显示(黄)\n"
 	       );
 	rt.inp = 'f';
 	input_handle(&rt);
@@ -690,7 +771,8 @@ int main(void)
 		if (rt.axis && rt.follow) {
 			rt.axis_helper->center = rt.follow->obj->center;
 			obj_cast(rt.axis_helper, rt.active_cam, rt.backend);
-
+		}
+		if ((rt.guidline || rt.axis) && rt.follow) {
 			Point_t p1, p2;
 			camera_cast_line(rt.active_cam,
 					 rt.follow->obj->center,
@@ -700,10 +782,6 @@ int main(void)
 			backend_draw_line(rt.backend, rt.active_cam, p1, p2,
 					  (Color_t){-1,-1,0,-1},
 					  (Color_t){-1,-1,0,-1});
-		}
-		for (size_t i = 0; i < countof(objs); i++) {
-			if (!objs[i].obj) continue;
-			obj_cast(objs[i].obj, rt.active_cam, rt.backend);
 		}
 		if (rt.guidline && rt.follow && rt.destination_to) {
 			Point_t p1, p2;
@@ -724,14 +802,19 @@ int main(void)
 					  (Color_t){-1,-1,-1,0.3*225},
 					  (Color_t){-1,-1,-1,0.3*225});
 		}
+		for (size_t i = 0; i < countof(objs); i++) {
+			if (!objs[i].obj) continue;
+			obj_cast(objs[i].obj, rt.active_cam, rt.backend);
+		}
 		printf("\e[H");
 		rt.backend->render(rt.backend);
 		rt.backend->clean(rt.backend);
-		printf("\e[0m\e[2K\r[T+%.1fd, x%g, dv:%.3gkm/s C:%.3gkm]",
+		printf("\e[0m\e[2K\r[T+%.1fd, x%g, %c%d%%%c, dv:%.3gkm/s]",
 		       rt.gtime/(24.*60*60), TIME_SCALE*FPS,
-		       rt.dv,
-		       rt.follow?vec_len(vec_sub(rt.active_cam->position,
-						 rt.follow->obj->center)):0);
+		       rt.throttle_on&1?'[':':',
+		       rt.throttle*(rt.throttle_on>=0?1:-1),
+		       rt.throttle_on&1?']':':',
+		       rt.dv);
 		if (rt.follow) {
 			printf(" | %s[%s] (%.3f km/s)",
 			       rt.follow->name ? rt.follow->name : "Unknow",
