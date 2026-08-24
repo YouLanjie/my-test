@@ -78,6 +78,7 @@ Vec_t vec_addn_(Vec_t vecs[], size_t size);
 /* 求同处xOy平面的AB与AC的叉乘的z轴值（无检查,预期叉乘结果x,y为零） */
 #define vec2d_area(A, B, C) \
 	(((B).x-(A).x)*((C).y-(A).y) - ((B).y-(A).y)*((C).x-(A).x))
+#define vec_xyzl(x,y,z,l) vec_mul(vec_direct((Vec_t){(x), (y), (z)}), (l))
 
 
 /* 相机 */
@@ -220,7 +221,7 @@ Obj_t *obj_shift(Obj_t *obj, Vec_t v);
 /* 将物体的各点相对于中心点沿给定的Vec方向移动(点多时耗性能) */
 Obj_t *obj_transform_shift(Obj_t *obj, Vec_t v);
 /* 应用移动(将物体原点搬回(0,0,0)但形状留在那个位置) */
-#define obj_apply_shift(obj) obj_shift(obj_transform_shift((obj), (obj)->center), vec_mul((obj)->center, -1))
+Obj_t *obj_apply_shift(Obj_t *obj);
 /* 绕指定轴旋转 */
 Obj_t *obj_rotate(Obj_t *obj, Vec_t direction, double theta);
 /* 对所有点应用向量乘法（缩放） */

@@ -93,6 +93,12 @@ Obj_t *obj_transform_shift(Obj_t *obj, Vec_t v)
 	return obj;
 }
 
+Obj_t *obj_apply_shift(Obj_t *obj)
+{
+	if (!obj) return NULL;
+	return obj_shift(obj_transform_shift(obj, obj->center), vec_mul(obj->center, -1));
+}
+
 /* 绕指定轴旋转 */
 Obj_t *obj_rotate(Obj_t *obj, Vec_t direction, double theta)
 {
@@ -231,10 +237,11 @@ bool obj_merge(Obj_t *obj, Obj_t *from)
  */
 bool obj_merge_and_free(Obj_t *obj, Obj_t *from)
 {
-	if (!obj || !from) return false;
-	if (!obj_merge(obj, from)) return false;
+	if (!from) return false;
+	bool ret = false;
+	if (obj && obj_merge(obj, from)) ret = true;
 	obj_free(from);
-	return true;
+	return ret;
 }
 
 Obj_t *obj_create_line_from_point(Point_t p1, Point_t p2)

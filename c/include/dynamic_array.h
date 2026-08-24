@@ -14,9 +14,9 @@
 
 typedef struct {
 	void  *ptr;
-	size_t cap;
-	size_t len;
-	const size_t size;
+	size_t cap;    /* 数组容量 */
+	size_t len;    /* 数组长度 */
+	size_t size;    /* 每个元素大小(不应被运行时改变) */
 } DA_t;
 
 /* 需要提前初始化好.size字段

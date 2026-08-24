@@ -8,22 +8,9 @@
 
 #include "lib/render3d.h"
 #include "../../include/tools.h"
+#include "../../include/string_view.h"
+#include "../../include/dynamic_array.h"
 #include <time.h>
-
-#define MAX_FRAME INT64_MAX
-#define FPS 40
-/* 时间缩放倍率，默认x1 */
-double TIME_SCALE = 1./FPS;
-
-typedef struct {
-	const char *name;
-	Obj_t *obj;
-	double mass;          /* 质量(kg) */
-	double self_omiga;    /* 自转速度(rad/s) */
-	Vec_t self_rotate;    /* 自转方向 */
-	Vec_t speed;          /* 速度(km/s) */
-	Camera_t cam;         /* 随身相机 */
-} Star_t;
 
 /* 引力常量 N*(m^2)/(kg^2) || (m^3)/(kg*s^2) */
 const double G = 6.6743e-11;
@@ -31,20 +18,55 @@ const double SCALE = 1e3;    /* 将距离换算成 1单位 = 1km */
 #define pow2(x) ((x)*(x))
 
 typedef struct {
+	const char *name;
+	Obj_t *obj;
+	double radius;
+	double mass;          /* 质量(kg) */
+	double self_omiga;    /* 自转速度(rad/s) */
+	Vec_t self_rotate;    /* 自转方向 */
+	Vec_t speed;          /* 速度(km/s) */
+	Camera_t cam;         /* 随身相机 */
+} Star_t;
+
+Star_t star_create(char *name, double mass, double radius, Vec_t position, Vec_t speed, Star_t *about_point)
+{
+	Point_t center = about_point&&about_point->obj ? about_point->obj->center : (Vec_t){};
+	Star_t star = {
+		.obj = obj_shift(obj_create_cube(2*radius), vec_add(center, position)),
+		.speed = vec_add(about_point ? about_point->speed : (Vec_t){}, speed),
+		.mass = mass > 1e-4 ? mass : 1e-4,    /* 负质量是非法的！ */
+		.radius = radius,
+		.name = name ? name : "UNKNOW",
+	};
+	return star;
+}
+
+void star_free(void *p)
+{
+	Star_t *star = p;
+	if (!star) return;
+	if (!star->obj) return;
+	obj_free(star->obj);
+	star->obj = NULL;
+}
+
+typedef struct {
 	RenderBackend_t *backend;
 	Camera_t *camera;
 	Camera_t *active_cam;
-	size_t obj_count;
-	Star_t *objs;
+	DA_t objs;
 	Star_t *destination_to;
 	Star_t *look_to;
 	Star_t *follow;
 	Obj_t  *axis_helper;
 	double dv;
 	double gtime;
+	double time_scale;
+	double time_scale_limit;
 	int  inp;
 	uint8_t throttle;    /* 1% = 0.1m/s^2 */
 	int8_t throttle_on;
+	uint8_t fps;
 	bool axis;
 	bool guidline;
 	bool pause;
@@ -59,10 +81,7 @@ static void cleanup(Runtimedata_t *rt)
 	if (rt->axis_helper) obj_free(rt->axis_helper);
 	rt->backend = NULL;
 	rt->camera  = NULL;
-	if (!rt->objs) return;
-	for (size_t i = 0; i < rt->obj_count; i++) {
-		if (rt->objs[i].obj) obj_free(rt->objs[i].obj);
-	}
+	da_free(&rt->objs, star_free);
 }
 
 static void sync_cam_size_scale(Runtimedata_t *rt)
@@ -83,42 +102,49 @@ static bool setup(Runtimedata_t *rt)
 	if (!rt) return false;
 	int term_w = get_winsize_col() - 0;
 	int term_h = get_winsize_row() - 2;
-	if (!rt->backend) {
-		rt->backend = backend_create_utf8_256bit(term_w, term_h);
-		rt->camera = camera_create();
-#define CREATE_LINE(x,y,z, r,g,b) obj_set_color(obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){x,y,z})), (Color_t){r,g,b,200})
-		rt->axis_helper = CREATE_LINE(10*SCALE,0,0, -1,0,0);
-		obj_merge_and_free(rt->axis_helper, CREATE_LINE(0,6*SCALE,0, 0,-1,0));
-		obj_merge_and_free(rt->axis_helper, CREATE_LINE(0,0,3*SCALE, 0,0,-1));
-#undef CREATE_LINE
-
-		if (!rt->backend || !rt->camera || !rt->axis_helper) {
-			cleanup(rt);
-			return false;
-		}
-		rt->camera->width = term_w;
-		rt->camera->height = term_h*2;
-		rt->camera->position = (Vec_t){0, 0, 20*SCALE};
-		rt->camera->dept = 100*SCALE;
-		rt->active_cam = rt->camera;
+	if (rt->backend) {
+		/* 轮换后端 */
+#define BACKEND(name) backend_create_##name,
+		static RenderBackend_t *(*backend_list[])(int width, int height) = {BACKEND_LIST};
+#undef BACKEND
+		enum Backend_id id = rt->backend->id;
+		id = (id+1) % countof(backend_list);
+		rt->backend->destroy(rt->backend);
+		rt->backend = backend_list[id%countof(backend_list)](term_w, term_h);
+		sync_cam_size_scale(rt);
 		return true;
 	}
-#define BACKEND(name) backend_create_##name,
-	static RenderBackend_t *(*backend_list[])(int width, int height) = {BACKEND_LIST};
-#undef BACKEND
-	enum Backend_id id = rt->backend->id;
-	id = (id+1) % countof(backend_list);
-	rt->backend->destroy(rt->backend);
-	rt->backend = backend_list[id%countof(backend_list)](term_w, term_h);
-	sync_cam_size_scale(rt);
+	rt->backend = backend_create_utf8_256bit(term_w, term_h);
+	rt->camera = camera_create();
+#define CREATE_LINE(x,y,z, r,g,b) obj_set_color(obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){x,y,z})), (Color_t){r,g,b,200})
+	rt->axis_helper = CREATE_LINE(10*SCALE,0,0, -1,0,0);
+	obj_merge_and_free(rt->axis_helper, CREATE_LINE(0,6*SCALE,0, 0,-1,0));
+	obj_merge_and_free(rt->axis_helper, CREATE_LINE(0,0,3*SCALE, 0,0,-1));
+#undef CREATE_LINE
+
+	if (!rt->backend || !rt->camera || !rt->axis_helper) {
+		cleanup(rt);
+		return false;
+	}
+	rt->camera->width = term_w;
+	rt->camera->height = term_h*2;
+	rt->camera->position = (Vec_t){0, 0, 20*SCALE};
+	rt->camera->dept = 100*SCALE;
+	rt->active_cam = rt->camera;
+	rt->objs.size = sizeof(Star_t);
+	/* 设置帧率、运行倍率 */
+	rt->fps = 40;
+	rt->time_scale_limit = 1024;
+	rt->time_scale = 1;
 	return true;
 }
 
 static void physics_update_step(Runtimedata_t *rt, double time_scale)
 {
-	if (!rt || rt->obj_count == 0 || time_scale == 0) return;
-	Star_t *objs = rt->objs;
-	const size_t len = rt->obj_count % 1024;
+	if (!rt || rt->objs.len == 0 || time_scale == 0) return;
+	time_scale /= rt->fps;
+	Star_t *objs = rt->objs.ptr;
+	const size_t len = rt->objs.len % 1024;
 	Vec_t acc[len] = {};
 	Vec_t diff;
 	double r2 = 0;
@@ -156,36 +182,33 @@ static void physics_update_step(Runtimedata_t *rt, double time_scale)
 
 static double physics_update(Runtimedata_t *rt)
 {
-	if (!rt || rt->obj_count == 0) return 0;
-	const double ts_limit = 10;
-	if (TIME_SCALE <= ts_limit) {
-		physics_update_step(rt, TIME_SCALE);
-		return TIME_SCALE;
+	if (!rt || rt->objs.len == 0) return 0;
+	if (rt->time_scale <= rt->time_scale_limit) {
+		physics_update_step(rt, rt->time_scale);
+		return rt->time_scale;
 	}
-	double time_scale = TIME_SCALE;
-	while ((time_scale-=ts_limit) > 0) {
-		physics_update_step(rt, ts_limit);
+	double time_scale = rt->time_scale;
+	while ((time_scale-=rt->time_scale_limit) > 0) {
+		physics_update_step(rt, rt->time_scale_limit);
 	}
-	physics_update_step(rt, time_scale+ts_limit);
-	return TIME_SCALE;
+	physics_update_step(rt, time_scale+rt->time_scale_limit);
+	return rt->time_scale;
 }
 
 static Star_t *choose_star(Runtimedata_t *rt, const char *hint, Star_t *old)
 {
 	if (!rt) return NULL;
 	printf("\e[0m\n可选天体：\n [0] 空选择\n");
-	size_t len = 0;
 	int choice = 0;
-	for (size_t i = 0; i < rt->obj_count; i++) {
-		len = i;
-		if (!rt->objs[i].obj) break;
-		printf(" [%lu] %s (%gkg)\n", i+1,
-		       rt->objs[i].name ? rt->objs[i].name : "{未命名星体}",
-		       rt->objs[i].mass);
-		if (rt->objs+i == old) choice = i;
+	Star_t *objs = rt->objs.ptr;
+	for (size_t i = 0; i < rt->objs.len; i++) {
+		printf(" [%lu] %s (%g kg/%g km)%s\n", i+1,
+		       objs[i].name ? objs[i].name : "{未命名星体}",
+		       objs[i].mass, objs[i].radius, !objs[i].obj?"(不可用)":"");
+		if (objs+i == old) choice = i;
 	}
 	printf("(当前：%d)请输入要%s物体的id[0~%lu]：",
-	       choice + 1, hint ? hint : "选择", len);
+	       choice + 1, hint ? hint : "选择", rt->objs.len);
 	if (scanf("%d", &choice) == 0) {
 		kbhitGetchar();
 		printf("输入错误，未作任何更改(回车返回)\n");
@@ -194,13 +217,14 @@ static Star_t *choose_star(Runtimedata_t *rt, const char *hint, Star_t *old)
 	}
 	choice--;
 	if (choice == -1) return NULL;
-	if (choice < 0 || (size_t)choice >= len) {
+	objs = da_get(&rt->objs, choice);
+	if (choice < 0 || (size_t)choice >= rt->objs.len || !objs || !objs->obj) {
 		printf("选择非法（回车返回）\n");
 		kbhitGetchar();
 		_getch();
 		return NULL;
 	}
-	return rt->objs+choice;
+	return objs;
 }
 
 /* 根据引力影响范围自动获取速度参考系星体
@@ -213,18 +237,18 @@ static Star_t *get_about_point(Runtimedata_t *rt, Star_t *follow)
 		.obj = &base_obj,
 		.name = "绝对坐标",
 	};
-	if (!rt || !rt->objs || rt->obj_count < 2)
+	Star_t *objs = rt->objs.ptr;
+	if (!rt || !objs || rt->objs.len < 2)
 		return &base;
 	if (!follow) follow = rt->follow;
-	if (!follow || (size_t)(follow-rt->objs) > rt->obj_count)
+	if (!follow || (size_t)(follow-objs) > rt->objs.len)
 		return &base;
 
-	Star_t *objs = rt->objs;
-	size_t n = rt->obj_count;
+	size_t n = rt->objs.len;
 	size_t idx_follow = follow - objs;	// 目标索引
 
 	// 1. 预先计算每个天体受到的总引力加速度（矢量）
-	const size_t len = rt->obj_count % 1024;
+	const size_t len = rt->objs.len % 1024;
 	Vec_t acc_total[len] = {};
 
 	for (size_t i = 0; i < n; i++) {
@@ -435,19 +459,20 @@ static void voyage_helper(Runtimedata_t *rt)
 
 static void dump_stars(Runtimedata_t *rt)
 {
-	if (!rt || !rt->objs) return;
+	if (!rt || !rt->objs.ptr) return;
+	Star_t *objs = rt->objs.ptr;
 	printf("\e[0m\n\e[2K===== 数据导出：各星体基本参数 =====\n");
-	for (size_t i = 0; i < rt->obj_count; i++) {
-		if (!rt->objs[i].obj) continue;
+	for (size_t i = 0; i < rt->objs.len; i++) {
+		if (!objs[i].obj) continue;
 		printf(" [%lu] %s (%gkg) 位置(km): {%.3f,%.3f,%.3f} 速度(km/s): {%.3f,%.3f,%.3f}\n", i+1,
-		       rt->objs[i].name ? rt->objs[i].name : "{未命名星体}",
-		       rt->objs[i].mass,
-		       rt->objs[i].obj->center.x,
-		       rt->objs[i].obj->center.y,
-		       rt->objs[i].obj->center.z,
-		       rt->objs[i].speed.x,
-		       rt->objs[i].speed.y,
-		       rt->objs[i].speed.z);
+		       objs[i].name ? objs[i].name : "{未命名星体}",
+		       objs[i].mass,
+		       objs[i].obj->center.x,
+		       objs[i].obj->center.y,
+		       objs[i].obj->center.z,
+		       objs[i].speed.x,
+		       objs[i].speed.y,
+		       objs[i].speed.z);
 	}
 	printf("游戏时间: T+%.1f s, 折合约 T+%.1f d\n", rt->gtime, rt->gtime/(24*60*60));
 	printf("操作累计dv: %.3f km/s\n", rt->dv);
@@ -538,10 +563,10 @@ static bool input_handle(Runtimedata_t *rt)
 	case '8': rt->active_cam->scale+=1; break;
 	case '9': rt->active_cam->dept/=2; break;
 	case '0': rt->active_cam->dept*=2; break;
-	case '{': TIME_SCALE=1./FPS; break;
-	case '}': TIME_SCALE=(60.*60/FPS); break;
-	case '[': TIME_SCALE/=2; break;
-	case ']': TIME_SCALE*=2; break;
+	case '{': rt->time_scale=1.; break;
+	case '}': rt->time_scale=(60.*60); break;
+	case '[': rt->time_scale/=2; break;
+	case ']': rt->time_scale*=2; break;
 	case 'Z': rt->throttle=255; break;
 	case 'X': rt->throttle=0; break;
 	case 'z': rt->throttle+= rt->throttle<255?1:0; break;
@@ -549,8 +574,8 @@ static bool input_handle(Runtimedata_t *rt)
 	case 'r': rt->throttle_on^=1<<7; break;
 	case ' ':
 		rt->throttle_on ^= 1;
-		if (rt->throttle_on&1 && TIME_SCALE*FPS >= 32) {
-			TIME_SCALE = 1./FPS;
+		if (rt->throttle_on&1 && rt->time_scale >= 32) {
+			rt->time_scale = 1.;
 		}
 		break;
 	case '.':
@@ -561,7 +586,7 @@ static bool input_handle(Runtimedata_t *rt)
 	case 'p':
 		rt->pause = !rt->pause;
 		/* 意外油门保护 */
-		if (!rt->pause && rt->throttle_on&1 && TIME_SCALE*FPS >= 32) {
+		if (!rt->pause && rt->throttle_on&1 && rt->time_scale >= 32) {
 			rt->pause = true;
 			rt->throttle_on &= ~1;
 		}
@@ -602,7 +627,7 @@ static bool input_handle(Runtimedata_t *rt)
 	if (!rt->follow) return true;
 
 	/* 手动加速,并记录操作dv(禁止暂停加速) */
-	const double accel = !rt->pause ? rt->throttle/SCALE*TIME_SCALE : 0;
+	const double accel = !rt->pause ? rt->throttle/SCALE*rt->time_scale/rt->fps : 0;
 #define accelerate(var, k) rt->follow->speed = vec_add(rt->follow->speed, vec_mul((var), (k))), rt->dv += accel
 	switch (rt->inp) {
 	case 'n': accelerate(v_forward, 5*accel); break;
@@ -621,6 +646,123 @@ static bool input_handle(Runtimedata_t *rt)
 	return true;
 }
 
+void scene_init(Runtimedata_t *rt)
+{
+	if (!rt) return;
+	Star_t star = {};
+
+// #define THREE_BODY
+#ifndef THREE_BODY
+	Star_t *center = NULL;
+	star = star_create("地球", 5.965e24, 6371, (Vec_t){-149.6e6,0,0}, (Vec_t){0,-29.78,0}, NULL);
+	star.self_rotate = (Vec_t){0, 0, 1};
+	star.self_omiga = 2*M_PI/(24*60*60);
+	obj_rotate(obj_set_color(star.obj, (Color_t){29,153,243,-1}), (Vec_t){1, 1, -1}, M_PI/3.8);
+	da_append(&rt->objs, &star);
+	center = da_get(&rt->objs, rt->objs.len-1);
+
+	star = star_create("地球小卫星", 1, 0.5, (Vec_t){12000,0,0}, vec_xyzl(0, 1, 0.8, 5.75993), center);
+	obj_set_color(star.obj, (Color_t){-1,30,30,-1});
+	da_append(&rt->objs, &star);
+
+	// GM = Rv^2
+	// > sqrt((6.67*10^-11) * (5.965*10^24) / (11000*1000))/1000
+	// 6.0141159707
+	star = star_create("地球大卫星", 1e10, 450, (Vec_t){-42164,0,0}, vec_xyzl(0, -1, 0.1, 3.07282), center);
+	da_append(&rt->objs, &star);
+
+	star = star_create("月球", 7.342e22, 1737.4,
+			   vec_rotate((Vec_t){0, 384400, 0}, (Vec_t){1,0,0}, 5.14*M_PI/180),
+			   vec_xyzl(-1, 0, 0, 1.022), center);
+	star.self_rotate = (Vec_t){0, 0, 1};
+	star.self_omiga = 2*M_PI/(30.5*24*60*60);
+	da_append(&rt->objs, &star);
+
+	star = star_create("水星", 3.301e23, 2439.7, (Vec_t){57.91e6,0,0}, (Vec_t){0,47.87,0}, NULL);
+	star.self_rotate = (Vec_t){0, 0, 1};
+	star.self_omiga = 2*M_PI/(1407.6*60*60);
+	da_append(&rt->objs, &star);
+
+	star = star_create("金星", 4.867e24, 6051.8, (Vec_t){108.21e6,0,0}, (Vec_t){0,35.02,0}, NULL);
+	star.self_rotate = (Vec_t){0, 0, -1};
+	star.self_omiga = 2*M_PI/(5832.6*60*60);
+	da_append(&rt->objs, &star);
+
+	star = star_create("火星", 6.417e23, 3389.5, (Vec_t){227.94e6,0,0}, (Vec_t){0,24.07,0}, NULL);
+	star.self_rotate = (Vec_t){0, 0, 1};
+	star.self_omiga = 2*M_PI/(24.6*60*60);
+	obj_set_color(star.obj, (Color_t){227,124,93,-1});
+	da_append(&rt->objs, &star);
+
+	star = star_create("木星", 1.898e27, 69911, (Vec_t){778.57e6,0,0}, (Vec_t){0,13.07,0}, NULL);
+	star.self_rotate = (Vec_t){0, 0, 1};
+	star.self_omiga = 2*M_PI/(9.93*60*60);
+	obj_set_color(star.obj, (Color_t){169,105,49,-1});
+	da_append(&rt->objs, &star);
+
+	star = star_create("土星", 5.683e26, 58232, (Vec_t){1433.53e6,0,0}, (Vec_t){0,9.69,0}, NULL);
+	star.self_rotate = (Vec_t){0, 0, 1};
+	star.self_omiga = 2*M_PI/(10.66*60*60);
+	da_append(&rt->objs, &star);
+
+	star = star_create("天王星", 8.681e25, 25362, (Vec_t){2872.46e6,0,0}, (Vec_t){0,6.81,0}, NULL);
+	star.self_rotate = vec_rotate((Vec_t){0, 0, 1}, (Vec_t){0, -1, 0}, 97.77);
+	star.self_omiga = 2*M_PI/(17.24*60*60);
+	obj_set_color(star.obj, (Color_t){190,227,230,-1});
+	da_append(&rt->objs, &star);
+
+	star = star_create("海王星", 1.024e26, 24622, (Vec_t){4495.06e6,0,0}, (Vec_t){0,5.43,0}, NULL);
+	star.self_rotate = (Vec_t){0, 0, 1};
+	star.self_omiga = 2*M_PI/(16.11*60*60);
+	obj_set_color(star.obj, (Color_t){45,55,140,-1});
+	da_append(&rt->objs, &star);
+
+	star = star_create("太阳", 1.989e30, 695700, (Vec_t){0,0,0}, (Vec_t){0,0,0}, NULL);
+	star.self_rotate = (Vec_t){0, 0, 1};
+	star.self_omiga = 2*M_PI/(25.4*60*60);
+	obj_set_color(star.obj, (Color_t){-1,-1,0,-1});
+	da_append(&rt->objs, &star);
+#else
+#define RAND01 ((double)rand()/RAND_MAX)
+#define RAND12 (1+RAND01)
+#define RAND_VEC(k) vec_mul((Vec_t){1-2*RAND01, 1-2*RAND01, 1-2*RAND01}, RAND12*(k))
+#define RAND_COLOR ((Color_t){100+RAND01*155,100+RAND01*155,100+RAND01*155,-1})
+	star = star_create("sun1", 1e31*(RAND12 - 0.5), RAND12*7e5, RAND_VEC(RAND12*1e8), RAND_VEC(5), NULL);
+	star.self_rotate = vec_direct(RAND_VEC(1));
+	star.self_omiga = 2*M_PI/(100*RAND12*60*60);
+	obj_set_color(star.obj, RAND_COLOR);
+	da_append(&rt->objs, &star);
+
+	star = star_create("sun2", 5e31*(RAND12 - 0.5), RAND12*7e5, RAND_VEC(RAND12*1e8), RAND_VEC(5), NULL);
+	star.self_rotate = vec_direct(RAND_VEC(1));
+	star.self_omiga = 2*M_PI/(100*RAND12*60*60);
+	obj_set_color(star.obj, RAND_COLOR);
+	da_append(&rt->objs, &star);
+
+	star = star_create("sun3", 1e32*(RAND12 - 0.5), RAND12*7e5, RAND_VEC(RAND12*1e8), RAND_VEC(5), NULL);
+	star.self_rotate = vec_direct(RAND_VEC(1));
+	star.self_omiga = 2*M_PI/(100*RAND12*60*60);
+	obj_set_color(star.obj, RAND_COLOR);
+	da_append(&rt->objs, &star);
+
+	star = star_create("!?强强?!", 5.965e24*(10*RAND01+0.3), 6371*RAND12, (Vec_t){}, RAND_VEC(5), NULL);
+	star.self_rotate = vec_direct(RAND_VEC(1));
+	star.self_omiga = 2*M_PI/(24*RAND12*60*60);
+	obj_set_color(star.obj, RAND_COLOR);
+	da_append(&rt->objs, &star);
+#undef RAND_VEC
+#undef RAND12
+#undef RAND01
+#endif
+	Star_t *objs = rt->objs.ptr;
+	for (size_t i = 0; i < rt->objs.len; i++) {
+		if (!objs[i].obj) continue;
+		objs[i].cam = *rt->camera;    /* 同步相机配置 */
+		objs[i].cam.position = vec_add(objs[i].obj->center,
+					       rt->camera->position);
+	}
+}
+
 int main(void)
 {
 	Runtimedata_t rt = {0};
@@ -628,158 +770,7 @@ int main(void)
 		return EXIT_FAILURE;
 	}
 	srand(time(NULL));
-	/* 日地距离 */
-	const double Dx_SE = -149.6e6;
-	/* 地月系相对太阳速度 */
-	const double Vy_SE = -29.78;
-	Star_t objs[] = {
-// #define THREE_BODY
-#ifdef THREE_BODY
-#define RAND01 ((double)rand()/RAND_MAX)
-#define RAND12 (1+RAND01)
-#define RAND_VEC(k) vec_mul((Vec_t){1-2*RAND01, 1-2*RAND01, 1-2*RAND01}, RAND12*(k))
-#define RAND_COLOR ((Color_t){100+RAND01*155,100+RAND01*155,100+RAND01*155,-1})
-		(Star_t){
-			.name = "日1",
-			.obj = obj_set_color(obj_shift(obj_create_cube(RAND12*7e5*2), RAND_VEC(RAND12*1e8)), RAND_COLOR),
-			.mass = 1e30*(1+10*RAND01),
-			.speed = RAND_VEC(5),
-			.self_rotate = vec_direct(RAND_VEC(1)),
-			.self_omiga = RAND01*2*M_PI/(24*60*60),
-		}, (Star_t){
-			.name = "日2",
-			.obj = obj_set_color(obj_shift(obj_create_cube(RAND12*7e5*2), RAND_VEC(RAND12*1e8)), RAND_COLOR),
-			.mass = 1e30*(1+10*RAND01),
-			.speed = RAND_VEC(5),
-			.self_rotate = vec_direct(RAND_VEC(1)),
-			.self_omiga = RAND01*2*M_PI/(24*60*60),
-		}, (Star_t){
-			.name = "日3",
-			.obj = obj_set_color(obj_shift(obj_create_cube(RAND12*7e5*2), RAND_VEC(RAND12*1e8)), RAND_COLOR),
-			.mass = 1e30*(1+10*RAND01),
-			.speed = RAND_VEC(5),
-			.self_rotate = vec_direct(RAND_VEC(1)),
-			.self_omiga = RAND01*2*M_PI/(24*60*60),
-		}, (Star_t){
-			.name = "!?小小?!",
-			.obj = obj_set_color(obj_create_cube(6371*2), RAND_COLOR),
-			.mass = ((void)Dx_SE, (void)Vy_SE, 5.965e24*(RAND01+0.5)),
-			.speed = RAND_VEC(5),
-			.self_rotate = vec_direct(RAND_VEC(1)),
-			.self_omiga = RAND01*2*M_PI/(24*60*60),
-		}, (Star_t){ .name = "列表结束", },
-#undef RAND_VEC
-#undef RAND12
-#undef RAND01
-#else
-		(Star_t){
-			.name = "地球",
-			.obj = obj_set_color(obj_rotate(obj_shift(obj_create_cube/*_with_surface*/(6371*2),
-								  (Vec_t){Dx_SE, 0, 0}),
-							(Vec_t){1, 1, -1}, M_PI/3.8), (Color_t){29,153,243,-1}),
-			.mass = 5.965e24,
-			.speed = (Vec_t){0, Vy_SE, 0},
-			.self_rotate = (Vec_t){0, 0, 1},
-			.self_omiga = 2*M_PI/(24*60*60),
-			// 主星（地球）
-			// 逃逸速度：
-			// 7.9km/s  11.2km/s
-		}, (Star_t){
-			.name = "地球小卫星",
-			.obj = obj_set_color(obj_shift(obj_create_cube(1), (Vec_t){12000+Dx_SE, 0, 0}),
-					     (Color_t){-1,30,30,-1}),
-			.mass = 1,
-			.speed = vec_add(vec_mul(vec_direct((Vec_t){0, 1, 0.8}), 5.75993), (Vec_t){0, Vy_SE, 0}),
-		}, (Star_t){
-			.name = "地球大卫星",
-			.obj = obj_shift(obj_create_cube(900), (Vec_t){-42164+Dx_SE, 0, 0}),
-			.mass = 1e10,
-			// GM = Rv^2
-			// > sqrt((6.67*10^-11) * (5.965*10^24) / (11000*1000))/1000
-			// 6.0141159707
-			.speed = vec_add(vec_mul(vec_direct((Vec_t){0, -1, 0.1}), 3.07282), (Vec_t){0, Vy_SE, 0}),
-			.self_rotate = (Vec_t){1, 1, -1},
-			.self_omiga = 2*M_PI/(24*60*60),
-		}, (Star_t){
-			.name = "月球",
-			.obj = obj_shift(obj_create_cube(1737.4*2),
-					 vec_add((Vec_t){Dx_SE, 0, 0},
-						 (vec_rotate((Vec_t){0, 384400, 0},
-							     (Vec_t){1,0,0}, 5.14*M_PI/180)))),
-			.mass = 7.342e22,
-			.speed = vec_add(vec_mul(vec_direct((Vec_t){-1, 0, 0}), 1.022), (Vec_t){0, Vy_SE, 0}),
-			.self_rotate = (Vec_t){0, 0, 1},
-			.self_omiga = 2*M_PI/(30.5*24*60*60),
-		}, (Star_t){
-			.name = "水星",
-			.mass = 3.301e23,
-			.obj = obj_shift(obj_create_cube(2439.7*2), (Vec_t){57.91e6, 0, 0}),
-			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 47.87),
-			.self_rotate = (Vec_t){0, 0, 1},
-			.self_omiga = 2*M_PI/(1407.6*60*60),
-		}, (Star_t){
-			.name = "金星",
-			.mass = 4.867e24,
-			.obj = obj_shift(obj_create_cube(6051.8*2), (Vec_t){108.21e6, 0, 0}),
-			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 35.02),
-			.self_rotate = (Vec_t){0, 0, -1},
-			.self_omiga = 2*M_PI/(5832.6*60*60),
-		}, (Star_t){
-			.name = "火星",
-			.mass = 6.417e23,
-			.obj = obj_set_color(obj_shift(obj_create_cube(3389.5*2), (Vec_t){227.94e6, 0, 0}), (Color_t){227,124,93,-1}),
-			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 24.07),
-			.self_rotate = (Vec_t){0, 0, 1},
-			.self_omiga = 2*M_PI/(24.6*60*60),
-		}, (Star_t){
-			.name = "木星",
-			.mass = 1.898e27,
-			.obj = obj_set_color(obj_shift(obj_create_cube(69911*2), (Vec_t){778.57e6, 0, 0}), (Color_t){169,105,49,-1}),
-			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 13.07),
-			.self_rotate = (Vec_t){0, 0, 1},
-			.self_omiga = 2*M_PI/(9.93*60*60),
-		}, (Star_t){
-			.name = "土星",
-			.mass = 5.683e26,
-			.obj = obj_shift(obj_create_cube(58232*2), (Vec_t){1433.53e6, 0, 0}),
-			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 9.69),
-			.self_rotate = (Vec_t){0, 0, 1},
-			.self_omiga = 2*M_PI/(10.66*60*60),
-		}, (Star_t){
-			.name = "天王星",
-			.mass = 8.681e25,
-			.obj = obj_set_color(obj_shift(obj_create_cube(25362*2), (Vec_t){2872.46e6, 0, 0}), (Color_t){190,227,230,-1}),
-			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 6.81),
-			.self_rotate = (Vec_t){0, 0, -1},
-			.self_omiga = 2*M_PI/(17.24*60*60),
-		}, (Star_t){
-			.name = "海王星",
-			.mass = 1.024e26,
-			.obj = obj_set_color(obj_shift(obj_create_cube(24622*2), (Vec_t){4495.06e6, 0, 0}), (Color_t){45,55,140,-1}),
-			.speed = vec_mul(vec_direct((Vec_t){0, 1, 0}), 5.43),
-			.self_rotate = (Vec_t){0, 0, 1},
-			.self_omiga = 2*M_PI/(16.11*60*60),
-		}, (Star_t){
-			.name = "太阳",
-			.obj = obj_set_color(obj_shift(obj_create_cube(695700*2), (Vec_t){0, 384400, 0}),
-					     (Color_t){-1,-1,0,-1}),
-			.mass = 1.989e30,
-			.speed = vec_mul(vec_direct((Vec_t){0, 0, 0}), 1.022),
-			.self_rotate = (Vec_t){0, 0, 1},
-			.self_omiga = 2*M_PI/(25.4*60*60),
-		}, (Star_t){ .name = "列表结束", },
-#endif
-	};
-
-	for (size_t i = 0; i < countof(objs); i++) {
-		if (!objs[i].obj) continue;
-		objs[i].cam = *rt.camera;    /* 同步相机配置 */
-		objs[i].cam.position = vec_add(objs[i].obj->center,
-					       rt.camera->position);
-	}
-	rt.objs = objs;
-	rt.obj_count = countof(objs);
-	rt.follow = objs;
+	scene_init(&rt);
 	rt.camera->position = (Vec_t){0, 0, 1e6*SCALE};
 	rt.camera->dept = 1e8*SCALE;
 
@@ -806,7 +797,7 @@ int main(void)
 	printf("\e[2J");
 	size_t i = 0;
 	Star_t *about_point;
-	for (i = 0; i < MAX_FRAME; ++i) {
+	for (i = 0; i < INT64_MAX; ++i) {
 		if ((rt.inp = kbhitGetchar()))
 			if (!input_handle(&rt)) break;
 		if (!rt.pause) rt.gtime += physics_update(&rt);
@@ -857,15 +848,16 @@ int main(void)
 					  (Color_t){-1,-1,-1,0.3*225},
 					  (Color_t){-1,-1,-1,0.3*225});
 		}
-		for (size_t i = 0; i < countof(objs); i++) {
-			if (!objs[i].obj) continue;
-			obj_cast(objs[i].obj, rt.active_cam, rt.backend);
+		for (size_t i = 0; i < rt.objs.len; i++) {
+			Star_t *star = da_get(&rt.objs, i);
+			if (!star->obj) continue;
+			obj_cast(star->obj, rt.active_cam, rt.backend);
 		}
 		printf("\e[H");
 		rt.backend->render(rt.backend);
 		rt.backend->clean(rt.backend);
 		printf("\e[0m\e[2K\r[T+%.1fd, x%g, %c%s%d%%%c, dv:%.3gkm/s]",
-		       rt.gtime/(24.*60*60), TIME_SCALE*FPS,
+		       rt.gtime/(24.*60*60), rt.time_scale,
 		       rt.throttle_on&1?'[':':',
 		       rt.throttle_on>=0?"":"-",
 		       rt.throttle,
@@ -902,7 +894,7 @@ int main(void)
 			}
 		}
 		if (rt.pause) printf(" [已暂停]");
-		sleep_fixed_step(1./FPS);
+		sleep_fixed_step(1./rt.fps);
 	}
 
 	cleanup(&rt);
