@@ -8,6 +8,7 @@
 
 #include "lib/render3d.h"
 #include "../../include/tools.h"
+#include <time.h>
 
 #define MAX_FRAME INT64_MAX
 #define FPS 40
@@ -510,10 +511,6 @@ static bool input_handle(Runtimedata_t *rt)
 #define v_right   vec_direct(vec_cross_product(rt->active_cam->forward, rt->active_cam->up))
 	switch (rt->inp) {
 	case '\t': setup(rt); break;
-	case '[': TIME_SCALE/=2; break;
-	case ']': TIME_SCALE*=2; break;
-	case '{': TIME_SCALE=1./FPS; break;
-	case '}': TIME_SCALE=(60.*60/FPS); break;
 	case 'f':
 		rt->follow = choose_star(rt, "跟随", rt->follow);
 		if (!rt->follow) {
@@ -537,18 +534,37 @@ static bool input_handle(Runtimedata_t *rt)
 	case 'M': print_qrh(); break;
 	case 'i': rt->axis = !rt->axis; break;
 	case 'I': rt->guidline = !rt->guidline; break;
-	case 'p': rt->pause = !rt->pause; break;
 	case '7': rt->active_cam->scale-=1; break;
 	case '8': rt->active_cam->scale+=1; break;
 	case '9': rt->active_cam->dept/=2; break;
 	case '0': rt->active_cam->dept*=2; break;
-	case ' ': rt->throttle_on ^= 1; break;
+	case '{': TIME_SCALE=1./FPS; break;
+	case '}': TIME_SCALE=(60.*60/FPS); break;
+	case '[': TIME_SCALE/=2; break;
+	case ']': TIME_SCALE*=2; break;
+	case 'Z': rt->throttle=255; break;
+	case 'X': rt->throttle=0; break;
+	case 'z': rt->throttle+= rt->throttle<255?1:0; break;
+	case 'x': rt->throttle-= rt->throttle>0?1:0; break;
 	case 'r': rt->throttle_on^=1<<7; break;
-	case 'z': rt->throttle++; break;
-	case 'x': rt->throttle--; break;
+	case ' ':
+		rt->throttle_on ^= 1;
+		if (rt->throttle_on&1 && TIME_SCALE*FPS >= 32) {
+			TIME_SCALE = 1./FPS;
+		}
+		break;
 	case '.':
 		rt->pause = true;
 		rt->gtime += physics_update(rt);
+		break;
+	case 'P':
+	case 'p':
+		rt->pause = !rt->pause;
+		/* 意外油门保护 */
+		if (!rt->pause && rt->throttle_on&1 && TIME_SCALE*FPS >= 32) {
+			rt->pause = true;
+			rt->throttle_on &= ~1;
+		}
 		break;
 	case 'c':
 		printf("\e[2J");
@@ -611,11 +627,51 @@ int main(void)
 	if (!setup(&rt)) {
 		return EXIT_FAILURE;
 	}
+	srand(time(NULL));
 	/* 日地距离 */
 	const double Dx_SE = -149.6e6;
-	/* 日月系相对太阳距离 */
+	/* 地月系相对太阳速度 */
 	const double Vy_SE = -29.78;
 	Star_t objs[] = {
+// #define THREE_BODY
+#ifdef THREE_BODY
+#define RAND01 ((double)rand()/RAND_MAX)
+#define RAND12 (1+RAND01)
+#define RAND_VEC(k) vec_mul((Vec_t){1-2*RAND01, 1-2*RAND01, 1-2*RAND01}, RAND12*(k))
+#define RAND_COLOR ((Color_t){100+RAND01*155,100+RAND01*155,100+RAND01*155,-1})
+		(Star_t){
+			.name = "日1",
+			.obj = obj_set_color(obj_shift(obj_create_cube(RAND12*7e5*2), RAND_VEC(RAND12*1e8)), RAND_COLOR),
+			.mass = 1e30*(1+10*RAND01),
+			.speed = RAND_VEC(5),
+			.self_rotate = vec_direct(RAND_VEC(1)),
+			.self_omiga = RAND01*2*M_PI/(24*60*60),
+		}, (Star_t){
+			.name = "日2",
+			.obj = obj_set_color(obj_shift(obj_create_cube(RAND12*7e5*2), RAND_VEC(RAND12*1e8)), RAND_COLOR),
+			.mass = 1e30*(1+10*RAND01),
+			.speed = RAND_VEC(5),
+			.self_rotate = vec_direct(RAND_VEC(1)),
+			.self_omiga = RAND01*2*M_PI/(24*60*60),
+		}, (Star_t){
+			.name = "日3",
+			.obj = obj_set_color(obj_shift(obj_create_cube(RAND12*7e5*2), RAND_VEC(RAND12*1e8)), RAND_COLOR),
+			.mass = 1e30*(1+10*RAND01),
+			.speed = RAND_VEC(5),
+			.self_rotate = vec_direct(RAND_VEC(1)),
+			.self_omiga = RAND01*2*M_PI/(24*60*60),
+		}, (Star_t){
+			.name = "!?小小?!",
+			.obj = obj_set_color(obj_create_cube(6371*2), RAND_COLOR),
+			.mass = ((void)Dx_SE, (void)Vy_SE, 5.965e24*(RAND01+0.5)),
+			.speed = RAND_VEC(5),
+			.self_rotate = vec_direct(RAND_VEC(1)),
+			.self_omiga = RAND01*2*M_PI/(24*60*60),
+		}, (Star_t){ .name = "列表结束", },
+#undef RAND_VEC
+#undef RAND12
+#undef RAND01
+#else
 		(Star_t){
 			.name = "地球",
 			.obj = obj_set_color(obj_rotate(obj_shift(obj_create_cube/*_with_surface*/(6371*2),
@@ -712,6 +768,7 @@ int main(void)
 			.self_rotate = (Vec_t){0, 0, 1},
 			.self_omiga = 2*M_PI/(25.4*60*60),
 		}, (Star_t){ .name = "列表结束", },
+#endif
 	};
 
 	for (size_t i = 0; i < countof(objs); i++) {
@@ -807,10 +864,11 @@ int main(void)
 		printf("\e[H");
 		rt.backend->render(rt.backend);
 		rt.backend->clean(rt.backend);
-		printf("\e[0m\e[2K\r[T+%.1fd, x%g, %c%d%%%c, dv:%.3gkm/s]",
+		printf("\e[0m\e[2K\r[T+%.1fd, x%g, %c%s%d%%%c, dv:%.3gkm/s]",
 		       rt.gtime/(24.*60*60), TIME_SCALE*FPS,
 		       rt.throttle_on&1?'[':':',
-		       rt.throttle*(rt.throttle_on>=0?1:-1),
+		       rt.throttle_on>=0?"":"-",
+		       rt.throttle,
 		       rt.throttle_on&1?']':':',
 		       rt.dv);
 		if (rt.follow) {
