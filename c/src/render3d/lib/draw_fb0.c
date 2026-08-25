@@ -21,6 +21,7 @@ typedef struct {
 	uint8_t *fbp;
 	uint32_t line_length;
 	int fd;
+	int count;
 } Scr_t;
 
 static Scr_t *scr_create(int width, int height)
@@ -89,7 +90,10 @@ static void draw(RenderBackend_t *backend, Point2d_t point, Color_t rgb)
 		if (s->color) {
 			s->color[ind] = color_add(s->color[ind], rgb);
 		}
+	} else if (s->color && s->color[ind].a < (uint8_t)-1) {
+		s->color[ind] = color_add(rgb, s->color[ind]);
 	}
+	s->count++;
 }
 
 static void render(RenderBackend_t *backend)
@@ -124,6 +128,7 @@ static void clean(RenderBackend_t *backend)
 	for (size_t i = 0; i < s->w*s->h; i++) {
 		s->color[i] = COLOR_BLACK;
 	}
+	s->count = 0;
 }
 
 static void destroy(RenderBackend_t *backend)

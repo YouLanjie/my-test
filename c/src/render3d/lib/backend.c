@@ -7,6 +7,7 @@
 
 #include "render3d.h"
 
+#ifdef TRIANGLE_CHECK_IN
 static bool triangle_check_in(Point_t p1, Point_t p2, Point_t p3, Point_t check_point, Vec_t *result)
 {
 	double total = vec2d_area(p1, p2, p3);
@@ -19,6 +20,7 @@ static bool triangle_check_in(Point_t p1, Point_t p2, Point_t p3, Point_t check_
 	if (result) *result = ret;
 	return true;
 }
+#endif
 
 Color_t color_add(Color_t dest, Color_t src)
 {
@@ -26,6 +28,7 @@ Color_t color_add(Color_t dest, Color_t src)
 	dest.r = dest.r*(1-k) + src.r*k;
 	dest.g = dest.g*(1-k) + src.g*k;
 	dest.b = dest.b*(1-k) + src.b*k;
+	dest.a = src.a;
 	return dest;
 }
 
@@ -86,6 +89,21 @@ void backend_draw_surface(RenderBackend_t *backend, Camera_t *camera,
 	Color_t color[3] = {c1, c2, c3};
 	Point2d_t p[3] = {p1, p2, p3};
 
+	/* 冒泡排序 */
+	for (size_t i = 0; i < countof(p); i++) {
+		for (size_t j = 0; j < countof(p)-1; j++) {
+			if (p[j].y <= p[j+1].y) continue;
+			Point2d_t tmp_p = p[j+1];
+			p[j+1] = p[j];
+			p[j] = tmp_p;
+			Color_t tmp_c = color[j+1];
+			color[j+1] = color[j];
+			color[j] = tmp_c;
+		}
+	}
+	if (p[0].y >= p[2].y) return;
+
+	/* 边缘裁切 */
 	double x_min = camera->width/2;
 	double x_max = camera->width/-2;
 	double y_min = camera->height/2;
@@ -101,14 +119,36 @@ void backend_draw_surface(RenderBackend_t *backend, Camera_t *camera,
 	y_min = fmax(camera->height/-2, y_min);
 	y_max = fmin(camera->height/2 +1, y_max);
 
-	Point_t ret;
 	double z = 0;
 	Color_t rgb;
-	// printf("[%.2f,%.2f,%.2f,%.2f]", x_min, x_max, y_min, y_max);
-	for (int j = x_min; j < x_max; j++) {
-		for (int k = y_min; k < y_max; k++) {
-			if (!triangle_check_in(p[0], p[1], p[2], (Vec_t){j, k, 0}, &ret))
-				continue;
+	Point_t ret;
+#define LERP(start, end, k) ((start) + (k) * ((end) - (start)))
+	for (int y = y_min; y < y_max; y++) {
+		double dy[2] = {
+			(y-p[0].y)/(p[2].y-p[0].y),
+			p[1].y-p[0].y ? (y-p[0].y)/(p[1].y-p[0].y) : 0,
+		};
+		double x_range[2] = {
+			LERP(p[0].x, p[2].x, dy[0]),
+			y < p[1].y && p[1].y > p[0].y ?
+				LERP(p[0].x, p[1].x, dy[1]):
+				LERP(p[1].x, p[2].x, (y-p[1].y)/(p[2].y-p[1].y))
+
+		};
+		int x_left = x_range[0];
+		int x_right = x_range[1];
+		if (x_left > x_right) {
+			x_left ^= x_right;
+			x_right ^= x_left;
+			x_left ^= x_right;
+		}
+		for (int x = fmax(x_left, x_min); x < fmin(x_right, x_max); x++) {
+			/* 向量法计算重心坐标 */
+			z = (x-x_range[1])/(x_range[0]-x_range[1]);
+			ret.x = 1+dy[1]*z-z*dy[0]-dy[1];
+			ret.y = (1-z)*dy[1];
+			ret.z = z*dy[0];
+			/* 透视插值 */
 #define interpolation(var, field) (1./(ret.x*(1./var[0].field) + ret.y*(1./var[1].field) + ret.z*(1./var[2].field)))
 			z = interpolation(p, z);
 			rgb.r = interpolation(color, r);
@@ -117,9 +157,8 @@ void backend_draw_surface(RenderBackend_t *backend, Camera_t *camera,
 			rgb.a = interpolation(color, a);
 			if (z < 0 || (camera->dept > 0 && z > camera->dept))
 				continue;
-			// assert(z <= 10);
 			backend->draw(backend, (Point2d_t){
-				      j, k,
+				      x, y,
 				      z/fabs(camera->dept)},
 				      rgb);
 		}

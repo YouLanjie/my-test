@@ -26,7 +26,9 @@ static Scr_t *scr_create(int width, int height)
 		.color = malloc(sizeof(*p->color)*width*height*2),
 	};
 	memset(p->scr, 0, sizeof(*p->scr)*width*height*2);
-	memset(p->color, 0, sizeof(*p->color)*width*height*2);
+	for (size_t i = 0; i < p->w*p->h*2; i++) {
+		p->color[i] = COLOR_BLACK;
+	}
 	return p;
 }
 
@@ -38,7 +40,7 @@ static void draw(RenderBackend_t *backend, Point2d_t point, Color_t rgb)
 	if (point.y < (double)s->h/-0.5 || point.y > (double)s->h/0.5) return;
 	size_t ind = (int)(s->h-point.y)*s->w + (int)(s->w/2.)+point.x;
 	if (ind >= s->w*s->h*2) return;
-	if (s->scr[ind]==0 || s->scr[ind] > point.z) {
+	if (s->scr[ind]==0 || s->scr[ind] > point.z || (s->color && s->color[ind].a < (uint8_t)-1)) {
 		s->scr[ind] = point.z;    /* [0.0, 1.0] */
 		if (s->color) {
 			s->color[ind] = color_add(s->color[ind], rgb);
@@ -200,7 +202,10 @@ static void render_256bit(RenderBackend_t *backend)
 			}
 			fputs("▀", stdout); // 上半块字符
 		}
+		fputs("\033[0m", stdout);
 		putc('\n', stdout);
+		lcolor_top = COLOR_WHITE;
+		lcolor_bottom = COLOR_WHITE;
 	}
 	fputs("\033[0m", stdout);
 }
