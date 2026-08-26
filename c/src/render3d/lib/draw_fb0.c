@@ -10,6 +10,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <string.h>
 #include <linux/fb.h>
 
 typedef struct {
@@ -27,6 +28,12 @@ typedef struct {
 static Scr_t *scr_create(int width, int height)
 {
 	(void)width;
+
+	/* 非tty直接退出 */
+	char *name = ttyname(STDIN_FILENO);
+	if (name && strncmp(name, "/dev/tty", 8) != 0)
+		return NULL;
+
 	Scr_t scr = {
 		.fd = open("/dev/fb0", O_RDWR),
 		.term_h = height,
@@ -81,8 +88,8 @@ static void draw(RenderBackend_t *backend, Point2d_t point, Color_t rgb)
 {
 	if (!backend || !backend->data) return;
 	Scr_t *s = backend->data;
-	if (point.x < (double)s->w/-1 || point.x > (double)s->w/1) return;
-	if (point.y < (double)s->h/-1 || point.y > (double)s->h/1) return;
+	if (point.x < s->w/-2. || point.x > (s->w-1)/2.) return;
+	if (point.y < s->h/-1. || point.y > s->h/1.) return;
 	size_t ind = (int)(s->h/2.-point.y)*s->w + (int)(s->w/2.)+point.x;
 	if (ind >= s->w*s->h) return;
 	if (s->scr[ind]==0 || s->scr[ind] > point.z) {

@@ -21,6 +21,7 @@ RenderBackend_t *backend_create_sdl2(int width, int height)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <assert.h>
 
 /* 屏幕数据结构 */
@@ -61,6 +62,11 @@ static inline Color_t pixel_to_color(uint32_t c)
 static Scr_t *scr_create(int width, int height)
 {
 	if (width <= 0 || height <= 0)
+		return NULL;
+
+	/* 禁止在纯tty调用导致失去终端输入控制 */
+	char *name = ttyname(STDIN_FILENO);
+	if (name && strncmp(name, "/dev/tty", 8) == 0)
 		return NULL;
 
 	/* 初始化 SDL 视频子系统（若尚未初始化） */

@@ -184,6 +184,8 @@ struct RenderBackend_t {
 #define BACKEND(name) RenderBackend_t *backend_create_##name(int width, int height);
 BACKEND_LIST
 #undef BACKEND
+/* 检查点是否在三角形内(开销较大) */
+bool triangle_check_in(Point_t p1, Point_t p2, Point_t p3, Point_t check_point, Vec_t *result);
 void backend_draw_line(RenderBackend_t *backend, Camera_t *camera,
 		       Point_t p1, Point_t p2,
 		       Color_t c1, Color_t c2);

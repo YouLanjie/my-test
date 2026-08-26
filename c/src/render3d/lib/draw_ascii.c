@@ -47,8 +47,8 @@ static void draw(RenderBackend_t *backend, Point2d_t p, Color_t rgb)
 {
 	if (!backend || !backend->data) return;
 	Scr_t *s = backend->data;
-	if (p.x < -(double)s->w/2 || p.x > (double)s->w/2) return;
-	if (p.y < -(double)s->h/1 || p.y > (double)s->h/1) return;
+	if (p.x < s->w/-2. || p.x > (s->w-1)/2.) return;
+	if (p.y < s->h/-1. || p.y > s->h/1.) return;
 	size_t ind = (int)(s->h/2.-p.y/2)*s->w + (int)(s->w/2.)+p.x;
 	if (ind >= s->w*s->h) return;
 	if (s->scr[ind]==0 || s->scr[ind] > p.z) {

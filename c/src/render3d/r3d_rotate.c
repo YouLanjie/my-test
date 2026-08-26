@@ -55,7 +55,7 @@ static Star_t star_create(char *name, double mass, double radius, Vec_t position
 {
 	Point_t center = about_point&&about_point->obj ? about_point->obj->center : (Vec_t){};
 	Star_t star = {
-		.obj = obj_shift(obj_create_cube_with_surface(2*radius), vec_add(center, position)),
+		.obj = obj_shift(obj_create_cube/*_with_surface*/(2*radius), vec_add(center, position)),
 		.speed = vec_add(about_point ? about_point->speed : (Vec_t){}, speed),
 		.mass = mass > 1e-4 ? mass : 1e-4,    /* 负质量是非法的！ */
 		.radius = radius,
@@ -124,7 +124,7 @@ static void sync_cam_size_scale(Runtimedata_t *rt)
 	rt->active_cam->scale = fmax(term_w, term_h) / 2;
 }
 
-static bool setup(Runtimedata_t *rt)
+static bool setup(Runtimedata_t *rt, int mode)
 {
 	if (!rt) return false;
 	int term_w = get_winsize_col() - 0;
@@ -135,9 +135,10 @@ static bool setup(Runtimedata_t *rt)
 		static RenderBackend_t *(*backend_list[])(int width, int height) = {BACKEND_LIST};
 #undef BACKEND
 		enum Backend_id id = rt->backend->id;
-		id = (id+1) % countof(backend_list);
+		if (mode) id = (id+1) % countof(backend_list);
 		rt->backend->destroy(rt->backend);
-		rt->backend = backend_list[id%countof(backend_list)](term_w, term_h);
+		while (!(rt->backend = backend_list[id%countof(backend_list)](term_w, term_h)))
+			id++;
 		sync_cam_size_scale(rt);
 		return true;
 	}
@@ -611,7 +612,9 @@ static bool input_handle(Runtimedata_t *rt)
 #define v_up      vec_direct(rt->active_cam->up)
 #define v_right   vec_direct(vec_cross_product(rt->active_cam->forward, rt->active_cam->up))
 	switch (rt->inp) {
-	case '\t': setup(rt); break;
+	case '\t': setup(rt, 1); break;
+	case '~': setup(rt, 0); break;
+	case '`': sync_cam_size_scale(rt); break;
 	case 'f':
 		rt->follow = choose_star(rt, "跟随", rt->follow);
 		if (!rt->follow) {
@@ -856,7 +859,7 @@ void scene_init(Runtimedata_t *rt)
 int main(void)
 {
 	Runtimedata_t rt = {0};
-	if (!setup(&rt)) {
+	if (!setup(&rt, 0)) {
 		return EXIT_FAILURE;
 	}
 	srand(time(NULL));

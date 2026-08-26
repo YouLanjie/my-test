@@ -7,8 +7,7 @@
 
 #include "render3d.h"
 
-#ifdef TRIANGLE_CHECK_IN
-static bool triangle_check_in(Point_t p1, Point_t p2, Point_t p3, Point_t check_point, Vec_t *result)
+bool triangle_check_in(Point_t p1, Point_t p2, Point_t p3, Point_t check_point, Vec_t *result)
 {
 	double total = vec2d_area(p1, p2, p3);
 	if (fabs(total) < 1e-5) return false;
@@ -20,10 +19,11 @@ static bool triangle_check_in(Point_t p1, Point_t p2, Point_t p3, Point_t check_
 	if (result) *result = ret;
 	return true;
 }
-#endif
 
 Color_t color_add(Color_t dest, Color_t src)
 {
+	if (src.a == UINT8_MAX) return src;
+	if (src.a == 0) return dest;
 	double k = src.a/(double)UINT8_MAX;
 	dest.r = dest.r*(1-k) + src.r*k;
 	dest.g = dest.g*(1-k) + src.g*k;
@@ -86,6 +86,8 @@ void backend_draw_surface(RenderBackend_t *backend, Camera_t *camera,
 			  Color_t c1, Color_t c2, Color_t c3)
 {
 	if (!backend || !camera) return;
+	if (camera->dept > 0 && p1.z > camera->dept && p2.z > camera->dept && p3.z > camera->dept)
+		return;
 	Color_t color[3] = {c1, c2, c3};
 	Point2d_t p[3] = {p1, p2, p3};
 
@@ -126,13 +128,11 @@ void backend_draw_surface(RenderBackend_t *backend, Camera_t *camera,
 	for (int y = y_min; y < y_max; y++) {
 		double dy[2] = {
 			(y-p[0].y)/(p[2].y-p[0].y),
-			p[1].y-p[0].y ? (y-p[0].y)/(p[1].y-p[0].y) : 0,
+			y < p[1].y ? (y-p[0].y)/(p[1].y-p[0].y) : (y-p[1].y)/(p[2].y-p[1].y),
 		};
 		double x_range[2] = {
 			LERP(p[0].x, p[2].x, dy[0]),
-			y < p[1].y && p[1].y > p[0].y ?
-				LERP(p[0].x, p[1].x, dy[1]):
-				LERP(p[1].x, p[2].x, (y-p[1].y)/(p[2].y-p[1].y))
+			y < p[1].y ? LERP(p[0].x, p[1].x, dy[1]) : LERP(p[1].x, p[2].x, dy[1]),
 
 		};
 		int x_left = x_range[0];
@@ -144,13 +144,22 @@ void backend_draw_surface(RenderBackend_t *backend, Camera_t *camera,
 		}
 		for (int x = fmax(x_left, x_min); x < fmin(x_right, x_max); x++) {
 			/* 向量法计算重心坐标 */
+			/* 数学考虑：
+			 * 三角形ABC，动点D在射线AB上，动点E在线段AC上，动点P在线段DE上且在ABC内。
+			 * λ=|AD|/|AB|, μ=|AE|/|AC|, k=|DP|/|ED|，用OA,OB,OC表示OP
+			 * 特别的，额外考虑DE平行于AB时，另立解法如下：
+			 * 三角形ABC，动点D在线段AC上，动点E在线段BC上且满足ED//AB，动点P在线段DE上且在ABC内。
+			 * μ=|AD|/|AC|, k=|DP|/|DE|，用OA,OB,OC表示OP
+			 * */
 			z = (x-x_range[1])/(x_range[0]-x_range[1]);
-			ret.x = 1+dy[1]*z-z*dy[0]-dy[1];
-			ret.y = (1-z)*dy[1];
-			ret.z = z*dy[0];
+			ret.x = p[0].y<p[1].y ? 1+dy[1]*z-z*dy[0]-dy[1]	: (1-dy[0])*z;
+			ret.y = p[0].y<p[1].y ? (1-z)*dy[1]			: (1-dy[0])*(1-z);
+			ret.z = p[0].y<p[1].y ? z*dy[0]			: dy[0];
+			if (fabs(ret.x+ret.y+ret.z-1) > 1e-5) continue;
 			/* 透视插值 */
-#define interpolation(var, field) (1./(ret.x*(1./var[0].field) + ret.y*(1./var[1].field) + ret.z*(1./var[2].field)))
-			z = interpolation(p, z);
+			const double inv_z[4] = {1./p[0].z, 1./p[1].z, 1./p[2].z};
+			z = 1./(ret.x*inv_z[0] + ret.y*inv_z[1] + ret.z*inv_z[2]);
+#define interpolation(var, field) ((ret.x*inv_z[0]*var[0].field + ret.y*inv_z[1]*var[1].field + ret.z*inv_z[2]*var[2].field)*z)
 			rgb.r = interpolation(color, r);
 			rgb.g = interpolation(color, g);
 			rgb.b = interpolation(color, b);

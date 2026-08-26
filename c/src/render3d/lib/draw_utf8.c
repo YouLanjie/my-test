@@ -36,15 +36,17 @@ static void draw(RenderBackend_t *backend, Point2d_t point, Color_t rgb)
 {
 	if (!backend || !backend->data) return;
 	Scr_t *s = backend->data;
-	if (point.x < (double)s->w/-1 || point.x > (double)s->w/1) return;
-	if (point.y < (double)s->h/-0.5 || point.y > (double)s->h/0.5) return;
+	if (point.x < s->w/-2. || point.x > (s->w-1)/2.) return;
+	if (point.y < s->h/-1. || point.y > s->h/1.) return;
 	size_t ind = (int)(s->h-point.y)*s->w + (int)(s->w/2.)+point.x;
 	if (ind >= s->w*s->h*2) return;
-	if (s->scr[ind]==0 || s->scr[ind] > point.z || (s->color && s->color[ind].a < (uint8_t)-1)) {
+	if (s->scr[ind]==0 || s->scr[ind] > point.z) {
 		s->scr[ind] = point.z;    /* [0.0, 1.0] */
 		if (s->color) {
 			s->color[ind] = color_add(s->color[ind], rgb);
 		}
+	} else if (s->color && s->color[ind].a < (uint8_t)-1) {
+		s->color[ind] = color_add(rgb, s->color[ind]);
 	}
 }
 
