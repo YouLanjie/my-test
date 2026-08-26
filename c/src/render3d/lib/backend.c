@@ -66,14 +66,18 @@ void backend_draw_line(RenderBackend_t *backend, Camera_t *camera,
 	if (fabs(dx) >= fabs(dy)) {
 		if (dx == 0) return;
 		step = dx < 0 ? -1 : 1;
-		for (int x = p1.x; (x-p2.x)*step <= 0; x+=step) {
+		int x = fmin(fmax(p1.x, camera->width/-2), camera->width/2);
+		int x_stop = fmin(fmax(p2.x, camera->width/-2), camera->width/2);
+		for (; (x-x_stop)*step <= 0; x+=step) {
 			z = (dz? 1./(inv_z1+(inv_z2-inv_z1)*(x-p1.x)/dx) :p1.z)/fabs(camera->dept);
 			color = dz ? color_mix(c1, c2, (z-p1.z)/dz) : c1;
 			backend->draw(backend, (Point2d_t){x, p1.y+(x-p1.x)/dx*dy, z}, color);
 		}
 	} else {
 		step = dy < 0 ? -1 : 1;
-		for (int y = p1.y; (y-p2.y)*step <= 0; y+=step) {
+		int y = fmin(fmax(p1.y, camera->height/-2), camera->height/2);
+		int y_stop = fmin(fmax(p2.y, camera->height/-2), camera->height/2);
+		for (; (y-y_stop)*step <= 0; y+=step) {
 			z = (dz? 1./(inv_z1+(inv_z2-inv_z1)*(y-p1.y)/dy) :p1.z)/fabs(camera->dept);
 			color = dz ? color_mix(c1, c2, (z-p1.z)/dz) : c1;
 			backend->draw(backend, (Point2d_t){p1.x+(y-p1.y)/dy*dx, y, z}, color);

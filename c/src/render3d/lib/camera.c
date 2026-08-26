@@ -113,17 +113,22 @@ int camera_cast_line(Camera_t *camera, Point_t p1, Point_t p2, Point2d_t *ret_p1
 	p1 = camera_world2camera(camera, p1);
 	p2 = camera_world2camera(camera, p2);
 
+	if (camera->z_near < 0) camera->z_near = 1e-6;
 	/* 如果两端都同侧越界，则认为非法跳过(若dept小于零则忽略) */
-	if ((p1.z <= 0 && p2.z <= 0) || (camera->dept > 0 && p1.z > camera->dept && p2.z > camera->dept)) return -2;
-	if (p1.z < 0 || p2.z < 0) {    /* 确保深度都为正 */
-		Point_t *pp1 = p1.z < 0 ? &p1 : &p2,
-			*pp2 = p1.z > 0 ? &p1 : &p2;
-		*pp1 = vec_add(*pp1, vec_mul(vec_sub(*pp2, *pp1), (camera->z_near-pp1->z)/(pp2->z-pp1->z)));
+	if ((p1.z <= camera->z_near && p2.z <= camera->z_near) ||
+	    (camera->dept > 0 && p1.z > camera->dept && p2.z > camera->dept))
+		return -2;
+	if (p1.z <= camera->z_near || p2.z <= camera->z_near) {    /* 确保深度都为正(避免天文误差归0) */
+		Point_t *pp1 = fabs(p1.z) < fabs(p2.z) ? &p1 : &p2,
+			*pp2 = fabs(p1.z) < fabs(p2.z) ? &p2 : &p1;
+		*(p1.z <= camera->z_near ? &p1 : &p2) =
+			vec_add(*pp1, vec_mul(vec_sub(*pp2, *pp1), (camera->z_near-pp1->z)/(pp2->z-pp1->z)));
 	}
 	if (camera->dept > 0 && (p1.z > camera->dept || p2.z > camera->dept)) {    /* 确保深度不超纲 */
-		Point_t *pp1 = p1.z > camera->dept ? &p1 : &p2,
-			*pp2 = p1.z < camera->dept ? &p1 : &p2;
-		*pp1 = vec_add(*pp2, vec_mul(vec_sub(*pp1, *pp2), (camera->dept-pp2->z)/(pp1->z-pp2->z)));
+		Point_t *pp1 = fabs(p2.z-camera->dept) < fabs(p1.z-camera->dept) ? &p2 : &p1,
+			*pp2 = pp1==&p1 ? &p2 : &p1;
+		*(p1.z > camera->dept ? &p1 : &p2) =
+			vec_add(*pp2, vec_mul(vec_sub(*pp1, *pp2), (camera->dept-pp2->z)/(pp1->z-pp2->z)));
 	}
 	p1.x = camera->scale*p1.x/p1.z - camera->offset_x;
 	p1.y = camera->scale*p1.y/p1.z - camera->offset_y;
