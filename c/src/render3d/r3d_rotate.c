@@ -51,6 +51,7 @@ typedef struct {
 	bool axis;
 	bool guidline;
 	bool pause;
+	bool print_busy;
 } Runtimedata_t;
 
 /* 分页器 */
@@ -59,7 +60,7 @@ static void print_pager(const char *headline, SV_t content)
 	if (!content.len||!content.p) return;
 	SV_t line = {};
 	SV_t left = content;
-	printf("\e[0m\n==== %s ====\n", headline?headline:"请输入文本");
+	printf("\e[0m\e[2K\n==== %s ====\n", headline?headline:"请输入文本");
 	const int pager_lines = 20;
 	int count = 0;
 	while (sv_forline(&line, &left)) {
@@ -560,9 +561,9 @@ static void dump_stars(Runtimedata_t *rt)
 	printf("\e[0m\n\e[2K===== 数据导出：各星体基本参数 =====\n");
 	for (size_t i = 0; i < rt->objs.len; i++) {
 		if (!objs[i].obj) continue;
-		printf(" [%lu] %s (%gkg) 位置(km): {%.3f,%.3f,%.3f} 速度(km/s): {%.3f,%.3f,%.3f}\n", i+1,
+		printf(" [%lu] %s (%gkg/r=%gkm) 位置(km): {%.3f,%.3f,%.3f} 速度(km/s): {%.3f,%.3f,%.3f}\n", i+1,
 		       objs[i].name ? objs[i].name : "{未命名星体}",
-		       objs[i].mass,
+		       objs[i].mass, objs[i].radius,
 		       objs[i].obj->center.x,
 		       objs[i].obj->center.y,
 		       objs[i].obj->center.z,
@@ -656,6 +657,7 @@ static bool input_handle(Runtimedata_t *rt)
 	case '?': voyage_helper(rt); break;
 	case 'M': print_qrh(); break;
 	case '"': print_pager("航行日志", sv_from_sva(&rt->logs)); break;
+	case '\'': rt->print_busy = !rt->print_busy; break;
 	case 'i': rt->axis = !rt->axis; break;
 	case 'I': rt->guidline = !rt->guidline; break;
 	case '7': rt->active_cam->scale-=1; break;
@@ -910,9 +912,12 @@ int main(void)
 
 	printf("\e[2J");
 	size_t i = 0;
+	SVA_t buf = {};
+	double busy = 0;
+	struct orbital_parameters ret = {};
+	double last_e = 0;
 	Star_t *last_about_point = NULL,
 	       *last_follow = NULL;
-	SVA_t buf = {};
 	for (i = 0; i < INT64_MAX; ++i) {
 		last_about_point = rt.about_point;
 		last_follow = rt.follow;
@@ -920,12 +925,23 @@ int main(void)
 			if (!input_handle(&rt)) break;
 		if (!rt.pause) rt.gtime += physics_update(&rt);
 		if (!rt.about_point) break;
+		if (rt.follow) ret = get_orbital_parameters(rt.follow, rt.about_point);
 		if (rt.follow && last_follow == rt.follow && last_about_point && last_about_point != rt.about_point) {
-			sva_sprintfcat(&rt.logs, "[T+%8.3fd] 天体'%s'被'%s'捕获(原运行在'%s')\n",
+			sva_sprintfcat(&rt.logs, "[T+%8.3fd] 天体'%s'被'%s'捕获(原运行在'%s'),累计dv:%.3gkm/s\n",
 				       rt.gtime/(24.*60*60),
-				       rt.follow->name ? rt.follow->name : "未知天体",
-				       rt.about_point->name ? rt.about_point->name : "未知天体",
-				       last_about_point->name ? last_about_point->name : "未知天体");
+				       rt.follow->name, rt.about_point->name, last_about_point->name,
+				       rt.dv);
+		}
+		if (rt.follow && rt.about_point && fabs(last_e-ret.e)>0.05) {
+			const Vec_t dv = vec_sub(rt.follow->speed, rt.about_point->speed);
+			sva_sprintfcat(&rt.logs, "[T+%8.3fd] '%s'->'%s'变轨为'%s'(e=%g, a=%.3gkm, θ=%.3g, r=%.3gkm, v=%.3gkm/s, vh=%.3gkm/s),累计dv:%.3gkm/s\n",
+				       rt.gtime/(24.*60*60),
+				       rt.follow->name, rt.about_point->name,
+				       ret.typ, ret.e, ret.a, acos(vec_point_product(ret.u, (Vec_t){0,0,1}))/M_PI*180., ret.r,
+				       vec_len(dv),
+				       -vec_point_product(vec_direct(vec_sub(rt.about_point->obj->center, rt.follow->obj->center)), dv),
+				       rt.dv);
+			last_e = ret.e;
 		}
 
 		if (rt.follow && rt.look_to) {
@@ -1002,7 +1018,6 @@ int main(void)
 			       rt.destination_to->name ? rt.destination_to->name : "Unknow",
 			       vec_len(dist),
 			       -vec_point_product(vec_direct(dist), dv));
-			struct orbital_parameters ret = get_orbital_parameters(rt.follow, rt.about_point);
 			if (rt.about_point == rt.destination_to) {
 				/* 环绕状态 */
 				printf(" Rp:%.1fkm Ra:%.1fkm", ret.rp, ret.ra);
@@ -1019,7 +1034,8 @@ int main(void)
 			}
 		}
 		if (rt.pause) printf(" [已暂停]");
-		sleep_fixed_step(1./rt.fps);
+		if (rt.print_busy) printf(" (%5.1f%%/%dfps)", busy, (int)(busy<100?rt.fps:rt.fps*100/busy));
+		busy = (busy + (1-(sleep_fixed_step(1./rt.fps))/(1./rt.fps)) * 100)/2;
 	}
 
 	if (rt.logs.p)
