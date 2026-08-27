@@ -85,3 +85,24 @@ Vec_t vec_addn_(Vec_t vecs[], size_t size)
 	for (; i < size; ++i) v = vec_add(v, vecs[i]);
 	return v;
 }
+
+double vec_angle(Vec_t v1, Vec_t v2, Vec_t u)
+{
+	if (vec_len(v1) == 0 || vec_len(v2) == 0 || vec_len(u) == 0) return 0;
+	const double ret = vec_point_product(vec_direct(v1), vec_direct(v2));
+	const double theta = ret>1 ? 0 : (ret < -1 ? M_PI : acos(ret));
+	return vec_point_product(u, vec_cross_product(v1, v2)) >= 0 ? theta : 2*M_PI-theta;
+}
+
+double vec_angle2d(Vec_t v1, Vec_t v2, Vec_t v1_right)
+{
+	if (vec_len(v1) == 0 || vec_len(v2) == 0) return 0;
+	const Vec_t u = vec_direct(vec_cross_product(v1, v1_right));
+	if (vec_len(u) == 0) return 0;
+	/* 投影向量v2 */
+	v2 = vec_sub(v2, vec_mul(u, vec_point_product(v2, u)));
+	const double ret = vec_point_product(vec_direct(v1), vec_direct(v2));
+	const double theta = ret>1 ? 0 : (ret < -1 ? M_PI : acos(ret));
+	return vec_point_product(u, vec_cross_product(v1, v2)) >= 0 ? theta : 2*M_PI-theta;
+}
+

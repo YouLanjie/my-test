@@ -61,17 +61,19 @@ static void print_pager(const char *headline, SV_t content, int mode)
 	if (!content.len||!content.p) return;
 	SV_t line = {};
 	SV_t left = content;
-	printf("\e[0m\e[2K\n==== %s ====\n", headline?headline:"请输入文本");
-	const int pager_lines = 10;
+	headline = headline?headline:"请输入文本";
+	printf("\e[0m\n\e[2K==== %s ====\n", headline);
+	const int pager_lines = 25;
 	int total_lines = sv_countlines(content);
-	int count = 0;
+	int count = 0, start = 1;
 	while (sv_forline(&line, &left)) {
 		if (mode!=-1 || total_lines-count < pager_lines)
 			printf("> %.*s\n", (int)line.len, line.p);
 		count++;
 		if ((mode<0||count%pager_lines != 0) && left.len != 0) continue;
 		if (left.len == 0) printf("\e[32m-- 内容结束\e[0m\n");
-		printf("\e[2m-- [分页器] %d/%d 回车继续,c不翻页打印,p/u上翻,q退出\e[0m\n", count, total_lines);
+		printf("\e[2m-- [分页器] %d-%d/%d 回车继续,c不翻页打印,p/u上翻,q退出\e[0m\n",
+		       start, count, total_lines);
 		kbhitGetchar();
 		int ch = _getch();
 		if (ch == 'q') break;
@@ -83,9 +85,10 @@ static void print_pager(const char *headline, SV_t content, int mode)
 			if (count <= 0) {
 				left = content;
 				count = 0;
-				printf("\e[31m-- 已经到顶咯\e[0m\n");
+				printf("\e[31m-- 已经到顶咯\e[0m\n==== %s ====\n", headline);
 			}
 		}
+		start = count+1;
 	}
 }
 
@@ -484,6 +487,7 @@ struct hohmann_orbital_parameters {
 	double theta;    /* 剩余角度，为0时最佳(rad) */
 	double expect_theta;    /* 期望角度提前量(rad) */
 	double T;    /* 半周期 */
+	double v;    /* 期望速度km/s */
 };
 
 /* 计算距离霍曼转移点火点提前量角度 */
@@ -493,17 +497,20 @@ static struct hohmann_orbital_parameters get_hohmann_orbit_theta(Star_t *follow,
 	    || !about_point || !about_point->obj) return (struct hohmann_orbital_parameters){};
 	const Vec_t r2 = vec_sub(destination_to->obj->center, about_point->obj->center);
 	const Vec_t r1 = vec_sub(follow->obj->center, about_point->obj->center);
+	const double r1f = vec_len(r1);
 	const double r2f = vec_len(r2);
-	const double a = (vec_len(r1) + r2f) / 2;
+	const double a = (r1f + r2f) / 2;
 	const double T = 2*M_PI*(a*SCALE)*sqrt(a*SCALE/(G*(follow->mass+about_point->mass)));
-	const double omiga = M_PI - (sqrt(G*about_point->mass/(r2f*SCALE)) / SCALE / r2f)*T/2;
-	const double theta = acos(vec_point_product(vec_direct(r1), vec_direct(r2))) * \
-			     (vec_point_product(vec_cross_product(r1, vec_sub(follow->speed, about_point->speed)),
-					       vec_cross_product(r1, r2)) < 0 ? -1 : 1);
+	const double mu = G*about_point->mass/SCALE/SCALE/SCALE;
+	const double omiga = M_PI - (sqrt(mu/r2f) / r2f)*T/2;
+	/* 使用了跟踪天体平面 */
+	const double rtheta = vec_angle2d(r1, r2, vec_sub(follow->speed, about_point->speed));
+	const double theta = fmod(rtheta - fmod(omiga, 2*M_PI) + M_PI, 2*M_PI);
 	const struct hohmann_orbital_parameters ret = {
 		.expect_theta = omiga,
-		.theta = theta - fmod(omiga, 2*M_PI),
+		.theta = (theta<0?theta+2*M_PI:theta)-M_PI,
 		.T = T/2,
+		.v = sqrt(2*mu*r2f/r1f/(r1f+r2f)),
 	};
 	return ret;
 }
@@ -563,9 +570,11 @@ static void voyage_helper(Runtimedata_t *rt)
 		print_starinfo(s2, dat2);
 		printf("相对倾角: %.4f deg\n", acos(vec_point_product(dat2.u, dat.u))/M_PI*180.);
 		struct hohmann_orbital_parameters ret = get_hohmann_orbit_theta(from, to, s2);
-		printf("霍曼转移轨半周期: %.1f d\n", ret.T/(24*60*60));
-		printf("霍曼转移角度提前: %.1f deg\n", ret.expect_theta/M_PI*180.);
-		printf("距霍曼转移点火点: %.1f deg\n", ret.theta/M_PI*180.);
+		printf("====== 霍曼转移轨道数据 ======\n");
+		printf("半周期: %.3g d\n", ret.T/(24*60*60));
+		printf("提前角度: %.3g deg\n", ret.expect_theta/M_PI*180.);
+		printf("距点火点: %.3g deg\n", ret.theta/M_PI*180.);
+		printf("期望速度: %.3g km/s\n", ret.v);
 	}
 
 	printf("（回车返回）\n");
@@ -608,12 +617,16 @@ static void print_qrh()
    倾角。当括号内的角度读数接近0时表明你运行到了两个轨道平面的升/降交点。此时先
    使用p暂停，使用I打开参考线，转动相机使中心天体-自己-目标天体的连线（青线和灰
    线）处于同一条直线。观察黄色矢量方向（如果看不见就用+放大），旋转相机使得黄线
-   基本竖直于屏幕，连续按两次>或者<以朝着黄线相对于青灰线的一侧旋转，此时视线方
-   向基本指向速度的法向方向。使用zx设定推力并按下空格启动引擎，还有要记得取消暂
-   停。等待引擎加速改变速度方向。角度每改变5°左右就需要反方向按两次<或>旋转相机
-   让黄线重新竖直。重复该动作并持续观察轨道相差角度直到接近0。但由于误差等原因很
-   多时候数值无法完全归零，状态栏显示精度又不足以观察最小值，可在临界范围内改为
-   观察括号内数值，一般而言，其值最大时一般轨道夹角最小。
+   与青灰线小于90°角的角平分线（需要目测估计）与屏幕竖直，连续按两次>或者<让视角
+   旋转90°使得黄线整体朝屏幕朝外，此时视线方向基本指向速度的法向方向。使用zx设定
+   推力并按下空格启动引擎，还有要记得取消暂停。等待引擎加速改变速度方向。观察角
+   度指示器待轨道倾角接近零并且在旁边括号内升降交点角度指示器示数跨越90°前停止加
+   速。若轨道倾角仍旧较大，取消暂停再次等待括号内角度归零并按照上述方法重新设置
+   视角。但是由于倾角较小看不出黄线朝那边倾斜，可以任选一边方向旋转90°，使用?观
+   察相对轨道倾角，打开引擎快速取消又恢复暂停，再用?观察倾角是变大或减少。若倾角
+   增大则直接使用r逆转引擎推力方向。此时可状态栏显示精度可能不足以观察最小值，可
+   在临界范围内(<0.1°时)改为观察括号内数值，一般经验而言，其值最大时一般轨道夹角
+   最小。
 2. 变轨操作：使用f,t设置目标后，若目标为自身环绕天体，则会显示近地点(Rp)和远地点
    (Ra)高度。一般而言，近地点加减速和在远地点改变轨道倾角最省dv。若远地点值为负
    数则说明当前天体未能被目标天体捕获需要在近地点附近进行减速。加速减速都需要带
@@ -670,11 +683,7 @@ static bool input_handle(Runtimedata_t *rt)
 		rt->active_cam->position = vec_add(rt->follow->obj->center, vec_mul(direct, -distance));
 		camera_look_no_hold(rt->active_cam, rt->follow->obj->center);
 		break;
-	case 't':
-		rt->destination_to = choose_star(rt, "测距", rt->destination_to);
-		if (rt->follow && rt->destination_to)
-			syslog(rt, "'%s'的航行目标设置为'%s'", rt->follow->name, rt->destination_to->name);
-		break;
+	case 't': rt->destination_to = choose_star(rt, "驶向", rt->destination_to); break;
 	case 'F': rt->look_to = choose_star(rt, "看向", rt->look_to); break;
 	case 'T': rt->rotate_cam_with_spd = !rt->rotate_cam_with_spd; break;
 	case '|': dump_stars(rt); break;
@@ -752,13 +761,13 @@ static bool input_handle(Runtimedata_t *rt)
 	if (!rt->follow) return true;
 
 	/* 手动加速,并记录操作dv(禁止暂停加速) */
-	const double accel = !rt->pause ? rt->throttle/SCALE*rt->time_scale/rt->fps : 0;
+	const double accel = !rt->pause ? 0.1*rt->throttle/SCALE/rt->fps : 0;
 #define accelerate(var, k) rt->follow->speed = vec_add(rt->follow->speed, vec_mul((var), (k))), rt->dv += accel
 	switch (rt->inp) {
-	case 'n': accelerate(v_forward, 5*accel); break;
-	case 'N': accelerate(v_forward, 50*accel); break;
-	case 'b': accelerate(v_forward, -5*accel); break;
-	case 'B': accelerate(v_forward, -50*accel); break;
+	case 'n': accelerate(v_forward, accel); break;
+	case 'N': accelerate(v_forward, 10*accel); break;
+	case 'b': accelerate(v_forward, -accel); break;
+	case 'B': accelerate(v_forward, -10*accel); break;
 	case 'w': accelerate(v_up, accel); break;
 	case 's': accelerate(v_up, -accel); break;
 	case 'a': accelerate(v_right, -accel); break;
@@ -940,8 +949,7 @@ int main(void)
 	size_t i = 0;
 	SVA_t buf = {};
 	double busy = 0;
-	double last_e = 0;
-	struct orbital_parameters ret = {};
+	struct orbital_parameters ret = {}, last_ret = {};
 	Star_t *last_about_point = NULL,
 	       *last_follow = NULL;
 	int8_t last_throttle_on = false;
@@ -960,12 +968,17 @@ int main(void)
 		}
 		if (!rt.about_point) break;
 		if (rt.follow && last_follow == rt.follow && rt.about_point &&
-		    (((last_e-1)*(ret.e-1)<0) || (last_throttle_on^rt.throttle_on)&1)) {
+		    (((last_ret.e-1)*(ret.e-1)<0) || (last_throttle_on^rt.throttle_on)&1 ||
+		     (rt.throttle_on&1 && (ret.ra<last_ret.rp || ret.rp>last_ret.ra)))) {
+			if (ret.ra<last_ret.rp || ret.rp>last_ret.ra) {
+				syslog(&rt, "近远地点高度交换");
+				if (rt.time_scale >= 32) rt.pause = true;
+			}
 			format_orbital_parameters(&rt, &buf, ret);
 			syslog(&rt, "'%s'->'%s':%s(%s,dv:%.3gkm/s)(油门%d%%%s)",
 			       rt.follow->name, rt.about_point->name,
 			       ret.typ, buf.p, rt.dv, rt.throttle, rt.throttle_on&1?"开":"关");
-			last_e = ret.e;
+			last_ret = ret;
 		}
 		last_throttle_on = rt.throttle_on;
 
@@ -1022,7 +1035,7 @@ int main(void)
 		printf("\e[H");
 		rt.backend->render(rt.backend);
 		rt.backend->clean(rt.backend);
-		printf("\e[0m\e[2K\r[T+%.1fd, x%g, %c%s%d%%%c, dv:%.3gkm/s]",
+		printf("\e[0m\e[2K\e[B\e[2K\e[A\r[T+%.1fd, x%g, %c%s%d%%%c, dv:%.3gkm/s]",
 		       rt.gtime/(24.*60*60), rt.time_scale,
 		       rt.throttle_on&1?'[':':',
 		       rt.throttle_on&0b10?"-":"",
@@ -1030,32 +1043,50 @@ int main(void)
 		       rt.throttle_on&1?']':':',
 		       rt.dv);
 		if (rt.follow) {
-			printf(" | %s[%s] (%.3f km/s)",
+			printf(" | %s%c%s%c (%.3f km/s)",
 			       rt.follow->name ? rt.follow->name : "Unknow",
+			       rt.rotate_cam_with_spd ? '{' : '[',
 			       rt.about_point->name ? rt.about_point->name : "Unknow",
+			       rt.rotate_cam_with_spd ? '}' : ']',
 			       vec_len(vec_sub(rt.follow->speed, rt.about_point->speed)));
 		}
 		if (rt.follow && rt.destination_to) {
+			printf(" Rp:%.1fkm Ra:%.1fkm\r\e[B", ret.rp, ret.ra);
 			const Vec_t dist = vec_sub(rt.destination_to->obj->center, rt.follow->obj->center);
 			const Vec_t dv = vec_sub(rt.follow->speed, rt.destination_to->speed);
+			const double vertical_speed = vec_point_product(vec_direct(dist), dv);
 			// 速度 <0 表靠近， >0 表远离
-			printf(" 距%s %.1f km (%.3f km/s)",
+			printf("距%s %.1f km (%.3f km/s)",
 			       rt.destination_to->name ? rt.destination_to->name : "Unknow",
 			       vec_len(dist),
-			       -vec_point_product(vec_direct(dist), dv));
-			if (rt.about_point == rt.destination_to) {
-				/* 环绕状态 */
-				printf(" Rp:%.1fkm Ra:%.1fkm", ret.rp, ret.ra);
-			} else if (get_about_point(&rt, rt.destination_to) == rt.about_point) {
+			       -vertical_speed);
+			if (rt.about_point != rt.destination_to && get_about_point(&rt, rt.destination_to) == rt.about_point) {
 				/* 共心状态 */
 				struct orbital_parameters ret2 = get_orbital_parameters(rt.destination_to, rt.about_point);
 				Vec_t u = vec_direct(vec_cross_product(ret.u, ret2.u));
-				double deg = vec_point_product(vec_direct(vec_sub(rt.follow->speed, rt.about_point->speed)), u);
-				deg = 90 - acos(deg)/M_PI*180.;
-				printf(" %.1f(%.1f)°/%.1f",
+				Vec_t v = vec_sub(rt.follow->speed, rt.about_point->speed);
+				double deg_cross = vec_point_product(vec_direct(v),u);
+				deg_cross = 90 - acos(deg_cross)/M_PI*180.;
+				struct hohmann_orbital_parameters ret3 =
+					get_hohmann_orbit_theta(rt.follow, rt.destination_to, rt.about_point);
+				double time_left = rt.throttle?(rt.throttle_on&0b10?-1:1)*(ret3.v-vec_len(v))/(0.1*rt.throttle/SCALE):0;
+				printf(" %.1f(%.1f)°/%.1f°",
 				       acos(vec_point_product(ret.u, ret2.u))/(M_PI)*180.,
-				       deg,
-				       get_hohmann_orbit_theta(rt.follow, rt.destination_to, rt.about_point).theta/M_PI*180.);
+				       deg_cross,
+				       ret3.theta/M_PI*180.);
+				if (fabs(ret3.theta/M_PI*180.) < 10) {
+					printf(" 加速剩余时间:%.2f", time_left);
+					/* 自动暂停 */
+					if (rt.throttle_on&1 && rt.time_scale>2 && time_left-rt.time_scale < 0) {
+						rt.pause = true;
+						rt.time_scale = 1;
+					}
+				}
+			}
+			if (rt.time_scale >= 32 && ret.e > 1 && vertical_speed > 10 &&
+			    vec_len(dist)<vertical_speed*rt.time_scale) {
+				rt.time_scale = 1;
+				rt.pause = true;
 			}
 		}
 		if (rt.pause) printf(" [已暂停]");

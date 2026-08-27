@@ -79,6 +79,12 @@ Vec_t vec_addn_(Vec_t vecs[], size_t size);
 #define vec2d_area(A, B, C) \
 	(((B).x-(A).x)*((C).y-(A).y) - ((B).y-(A).y)*((C).x-(A).x))
 #define vec_xyzl(x,y,z,l) vec_mul(vec_direct((Vec_t){(x), (y), (z)}), (l))
+/* 获取两个向量的夹角(需要法向量u)返回 [0, 2*M_PI) */
+double vec_angle(Vec_t v1, Vec_t v2, Vec_t u);
+/* 将v2投影到v1,v1_right撑开平面内后计算角度 */
+double vec_angle2d(Vec_t v1, Vec_t v2, Vec_t v1_right);
+/* 将向量投影到法向量代表的平面（有双重求值副作用） */
+#define vec_project(v, u) vec_sub(v, vec_mul(u, vec_point_product(v, u)))
 
 
 /* 相机 */
