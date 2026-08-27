@@ -16,6 +16,7 @@
 const double G = 6.6743e-11;
 const double SCALE = 1e3;    /* 将距离换算成 1单位 = 1km */
 #define pow2(x) ((x)*(x))
+#define syslog(rt, fmt, ...) sva_sprintfcat(&(rt)->logs, "[T+%8.3fd] "fmt"\n", (rt)->gtime/(24.*60*60) __VA_OPT__(,) __VA_ARGS__)
 
 typedef struct {
 	const char *name;
@@ -45,7 +46,7 @@ typedef struct {
 	double time_scale_limit;
 	int  inp;
 	uint8_t throttle;    /* 1% = 0.1m/s^2 */
-	int8_t throttle_on;
+	int8_t throttle_on;    /* <<0位表开关，<<1位表反方向推力 */
 	uint8_t fps;
 	bool rotate_cam_with_spd;
 	bool axis;
@@ -55,25 +56,35 @@ typedef struct {
 } Runtimedata_t;
 
 /* 分页器 */
-static void print_pager(const char *headline, SV_t content)
+static void print_pager(const char *headline, SV_t content, int mode)
 {
 	if (!content.len||!content.p) return;
 	SV_t line = {};
 	SV_t left = content;
 	printf("\e[0m\e[2K\n==== %s ====\n", headline?headline:"请输入文本");
-	const int pager_lines = 20;
+	const int pager_lines = 10;
+	int total_lines = sv_countlines(content);
 	int count = 0;
 	while (sv_forline(&line, &left)) {
-		printf("> %.*s\n", (int)line.len, line.p);
-		if (count >= 0) count++;
-		if (count >= pager_lines || left.len == 0) {
-			count=0;
-			if (left.len == 0) printf("-- 内容结束\n");
-			printf("-- [分页器]回车继续,c不翻页打印,q退出\n");
-			kbhitGetchar();
-			int ch = _getch();
-			if (ch == 'q') break;
-			if (ch == 'c') count=-1;
+		if (mode!=-1 || total_lines-count < pager_lines)
+			printf("> %.*s\n", (int)line.len, line.p);
+		count++;
+		if ((mode<0||count%pager_lines != 0) && left.len != 0) continue;
+		if (left.len == 0) printf("\e[32m-- 内容结束\e[0m\n");
+		printf("\e[2m-- [分页器] %d/%d 回车继续,c不翻页打印,p/u上翻,q退出\e[0m\n", count, total_lines);
+		kbhitGetchar();
+		int ch = _getch();
+		if (ch == 'q') break;
+		if (ch == 'c') mode=-2;
+		else if (ch == 'p' || ch == 'u') {
+			mode = 0;
+			count -= (count-1)%pager_lines+1+pager_lines;
+			left = sv_merge(content, sv_seekline(content, content, count), left);
+			if (count <= 0) {
+				left = content;
+				count = 0;
+				printf("\e[31m-- 已经到顶咯\e[0m\n");
+			}
 		}
 	}
 }
@@ -106,10 +117,9 @@ static void star_pop(Runtimedata_t *rt, Star_t *star, const char *desc)
 	Star_t *stars = rt->objs.ptr;
 	size_t idx = star - stars;
 	if (idx >= rt->objs.len) return;
-	sva_sprintfcat(&rt->logs, "[T+%8.3fd] 天体'%s'掉出了这个世界，凶手是'%s'\n",
-		       rt->gtime/(24.*60*60),
-		       star->name ? star->name : "未知天体",
-		       desc ? desc : "虚空");
+	syslog(rt, "天体'%s'掉出了这个世界，凶手是'%s'",
+	       star->name ? star->name : "未知天体",
+	       desc ? desc : "虚空");
 	/* 修正各指针 */
 	Star_t **objs[] = {&rt->follow, &rt->look_to, &rt->destination_to};
 	size_t offsets[countof(objs)] = {};
@@ -123,9 +133,7 @@ static void star_pop(Runtimedata_t *rt, Star_t *star, const char *desc)
 	}
 	rt->active_cam = rt->follow ? &rt->follow->cam : rt->camera;
 	rt->pause = true;
-	SV_t logs = sv_from_sva(&rt->logs);
-	logs = sv_seekline(logs, logs, sv_countlines(logs)-1);
-	print_pager("发生事件", logs);
+	print_pager("发生事件", sv_from_sva(&rt->logs), -1);
 }
 
 static void cleanup(Runtimedata_t *rt)
@@ -174,7 +182,7 @@ static bool setup(Runtimedata_t *rt, int mode)
 	}
 	rt->backend = backend_create_utf8_256bit(term_w, term_h);
 	rt->camera = camera_create();
-#define CREATE_LINE(x,y,z, r,g,b) obj_set_color(obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){x,y,z})), (Color_t){r,g,b,200})
+#define CREATE_LINE(x,y,z, r,g,b) obj_set_color(obj_apply_shift(obj_create_line_from_point((Point_t){0,0,0}, (Point_t){x,y,z})), (Color_t){r,g,b,100})
 	rt->axis_helper = CREATE_LINE(10*SCALE,0,0, -1,0,0);
 	obj_merge_and_free(rt->axis_helper, CREATE_LINE(0,6*SCALE,0, 0,-1,0));
 	obj_merge_and_free(rt->axis_helper, CREATE_LINE(0,0,3*SCALE, 0,0,-1));
@@ -344,8 +352,7 @@ static void physics_update_step(Runtimedata_t *rt, double time_scale)
 		sva_free(&buf);
 	}
 	if (rt->throttle_on&1 && rt->throttle && rt->follow) {
-		/* throttle_on<0时朝反方向推力 */
-		double accel = rt->throttle * 0.1 / SCALE * time_scale * (rt->throttle_on<0?-1:1);
+		double accel = rt->throttle * 0.1 / SCALE * time_scale * (rt->throttle_on&0b10?-1:1);
 		rt->follow->speed = vec_add(rt->follow->speed, vec_mul(vec_direct(rt->active_cam->forward), accel));
 		rt->dv += fabs(accel);
 	}
@@ -458,6 +465,19 @@ static struct orbital_parameters get_orbital_parameters(Star_t *ship, Star_t *ce
 	else if (dat.e < 1e-5) typ = "圆轨道";
 	dat.typ = typ;
 	return dat;
+}
+
+static void format_orbital_parameters(Runtimedata_t *rt, SVA_t *dest, struct orbital_parameters ret)
+{
+	if (!rt || !rt->follow || !dest) return;
+	const Vec_t dv = vec_sub(rt->follow->speed, rt->about_point?rt->about_point->speed:(Point_t){});
+	const Point_t center = rt->about_point&&rt->about_point->obj?rt->about_point->obj->center:(Point_t){};
+	sva_sprintf(dest, "e=%.3g,a=%.3gkm,θ=%.3g,r=%.3gkm,v=%.3gkm/s,⟂v=%.3gkm/s",
+		    ret.e, ret.a, acos(vec_point_product(ret.u, (Vec_t){0,0,1}))/M_PI*180., ret.r,
+		    vec_len(dv),
+		    -vec_point_product(vec_direct(vec_sub(center, rt->follow->obj->center)), dv)
+		    );
+	return;
 }
 
 struct hohmann_orbital_parameters {
@@ -611,7 +631,7 @@ static void print_qrh()
    观察中心天体是否有改变为目标天体改变后降低倍速等待到近地点进行减速入轨（入轨
    时若远地点为负数时绝对值越大则越接近入轨状态）
 )";
-	print_pager("QRH", sv_from_cstr(content));
+	print_pager("QRH", sv_from_cstr(content), 0);
 }
 
 static void switch_camera(Runtimedata_t *rt, Camera_t *ca)
@@ -650,13 +670,17 @@ static bool input_handle(Runtimedata_t *rt)
 		rt->active_cam->position = vec_add(rt->follow->obj->center, vec_mul(direct, -distance));
 		camera_look_no_hold(rt->active_cam, rt->follow->obj->center);
 		break;
+	case 't':
+		rt->destination_to = choose_star(rt, "测距", rt->destination_to);
+		if (rt->follow && rt->destination_to)
+			syslog(rt, "'%s'的航行目标设置为'%s'", rt->follow->name, rt->destination_to->name);
+		break;
 	case 'F': rt->look_to = choose_star(rt, "看向", rt->look_to); break;
-	case 't': rt->destination_to = choose_star(rt, "测距", rt->destination_to); break;
 	case 'T': rt->rotate_cam_with_spd = !rt->rotate_cam_with_spd; break;
 	case '|': dump_stars(rt); break;
 	case '?': voyage_helper(rt); break;
 	case 'M': print_qrh(); break;
-	case '"': print_pager("航行日志", sv_from_sva(&rt->logs)); break;
+	case '"': print_pager("航行日志", sv_from_sva(&rt->logs), -1); break;
 	case '\'': rt->print_busy = !rt->print_busy; break;
 	case 'i': rt->axis = !rt->axis; break;
 	case 'I': rt->guidline = !rt->guidline; break;
@@ -672,7 +696,7 @@ static bool input_handle(Runtimedata_t *rt)
 	case 'X': rt->throttle=0; break;
 	case 'z': rt->throttle+= rt->throttle<255?1:0; break;
 	case 'x': rt->throttle-= rt->throttle>0?1:0; break;
-	case 'r': rt->throttle_on^=1<<7; break;
+	case 'r': rt->throttle_on^=0b10; break;
 	case ' ':
 		rt->throttle_on ^= 1;
 		if (rt->throttle_on&1 && rt->time_scale >= 32) {
@@ -693,7 +717,7 @@ static bool input_handle(Runtimedata_t *rt)
 		}
 		break;
 	case 'c':
-		printf("\e[2J");
+		printf("\e[4l\e[2J");
 		break;
 	case 'q':
 	case 'Q':
@@ -769,7 +793,7 @@ void scene_init(Runtimedata_t *rt)
 	l_star_create("地球", 5.965e24, 6371, -149.6e6, -29.78, ((Vec_t){0,0,1}));
 	star.self_rotate = (Vec_t){0, 0, 1};
 	star.self_omiga = 2*M_PI/(24*60*60);
-	obj_rotate(obj_set_color(star.obj, (Color_t){29,153,243,100}), (Vec_t){1, 1, -1}, M_PI/3.8);
+	obj_rotate(obj_set_color(star.obj, (Color_t){29,153,243,-1}), (Vec_t){1, 1, -1}, M_PI/3.8);
 	da_append(&rt->objs, &star);
 	center = da_get(&rt->objs, rt->objs.len-1);
 
@@ -781,11 +805,13 @@ void scene_init(Runtimedata_t *rt)
 	// > sqrt((6.67*10^-11) * (5.965*10^24) / (11000*1000))/1000
 	// 6.0141159707
 	star = star_create("地球大卫星", 1e10, 450, (Vec_t){-42164,0,0}, vec_xyzl(0, -1, 0.1, 3.07282), center);
+	obj_set_color(star.obj, (Color_t){0,-1,30,50});
 	da_append(&rt->objs, &star);
 
 	star = star_create("月球", 7.342e22, 1737.4,
 			   vec_rotate((Vec_t){0, 384400, 0}, (Vec_t){1,0,0}, 5.14*M_PI/180),
 			   vec_xyzl(-1, 0, 0, 1.022), center);
+	obj_set_color(star.obj, (Color_t){100,100,100,-1});
 	star.self_rotate = (Vec_t){0, 0, 1};
 	star.self_omiga = 2*M_PI/(30.5*24*60*60);
 	da_append(&rt->objs, &star);
@@ -837,7 +863,7 @@ void scene_init(Runtimedata_t *rt)
 	obj_set_color(star.obj, (Color_t){-1,-1,0,-1});
 	da_append(&rt->objs, &star);
 
-#define THREE_BODY
+// #define THREE_BODY
 #ifdef THREE_BODY
 	/* 安置在太阳系外4光年 */
 	l_star_create("!?强强?!", 5.965e24*(10*RAND01+0.3), 6371*RAND12, 4*365*24*60*60*3e5, RAND12*5, ((Vec_t){0,0,1}));
@@ -914,35 +940,34 @@ int main(void)
 	size_t i = 0;
 	SVA_t buf = {};
 	double busy = 0;
-	struct orbital_parameters ret = {};
 	double last_e = 0;
+	struct orbital_parameters ret = {};
 	Star_t *last_about_point = NULL,
 	       *last_follow = NULL;
+	int8_t last_throttle_on = false;
 	for (i = 0; i < INT64_MAX; ++i) {
 		last_about_point = rt.about_point;
 		last_follow = rt.follow;
 		if ((rt.inp = kbhitGetchar()))
 			if (!input_handle(&rt)) break;
 		if (!rt.pause) rt.gtime += physics_update(&rt);
-		if (!rt.about_point) break;
 		if (rt.follow) ret = get_orbital_parameters(rt.follow, rt.about_point);
 		if (rt.follow && last_follow == rt.follow && last_about_point && last_about_point != rt.about_point) {
-			sva_sprintfcat(&rt.logs, "[T+%8.3fd] 天体'%s'被'%s'捕获(原运行在'%s'),累计dv:%.3gkm/s\n",
-				       rt.gtime/(24.*60*60),
-				       rt.follow->name, rt.about_point->name, last_about_point->name,
-				       rt.dv);
+			format_orbital_parameters(&rt, &buf, ret);
+			syslog(&rt, "天体'%s'被'%s'捕获(%s)(原运行在'%s'),累计dv:%.3gkm/s",
+			       rt.follow->name, rt.about_point->name, buf.p,
+			       last_about_point->name, rt.dv);
 		}
-		if (rt.follow && rt.about_point && fabs(last_e-ret.e)>0.05) {
-			const Vec_t dv = vec_sub(rt.follow->speed, rt.about_point->speed);
-			sva_sprintfcat(&rt.logs, "[T+%8.3fd] '%s'->'%s'变轨为'%s'(e=%g, a=%.3gkm, θ=%.3g, r=%.3gkm, v=%.3gkm/s, vh=%.3gkm/s),累计dv:%.3gkm/s\n",
-				       rt.gtime/(24.*60*60),
-				       rt.follow->name, rt.about_point->name,
-				       ret.typ, ret.e, ret.a, acos(vec_point_product(ret.u, (Vec_t){0,0,1}))/M_PI*180., ret.r,
-				       vec_len(dv),
-				       -vec_point_product(vec_direct(vec_sub(rt.about_point->obj->center, rt.follow->obj->center)), dv),
-				       rt.dv);
+		if (!rt.about_point) break;
+		if (rt.follow && last_follow == rt.follow && rt.about_point &&
+		    (((last_e-1)*(ret.e-1)<0) || (last_throttle_on^rt.throttle_on)&1)) {
+			format_orbital_parameters(&rt, &buf, ret);
+			syslog(&rt, "'%s'->'%s':%s(%s,dv:%.3gkm/s)(油门%d%%%s)",
+			       rt.follow->name, rt.about_point->name,
+			       ret.typ, buf.p, rt.dv, rt.throttle, rt.throttle_on&1?"开":"关");
 			last_e = ret.e;
 		}
+		last_throttle_on = rt.throttle_on;
 
 		if (rt.follow && rt.look_to) {
 			Vec_t direct = rt.look_to == rt.follow ? \
@@ -967,8 +992,8 @@ int main(void)
 						 vec_sub(rt.follow->speed, rt.about_point->speed)),
 					 &p1, &p2);
 			backend_draw_line(rt.backend, rt.active_cam, p1, p2,
-					  (Color_t){-1,-1,0,-1},
-					  (Color_t){-1,-1,0,-1});
+					  (Color_t){-1,-1,0,100},
+					  (Color_t){-1,-1,0,100});
 		}
 		if (rt.guidline && rt.follow && rt.destination_to) {
 			Point_t p1, p2;
@@ -978,16 +1003,16 @@ int main(void)
 					 rt.destination_to->obj->center,
 					 &p1, &p2);
 			backend_draw_line(rt.backend, rt.active_cam, p1, p2,
-					  (Color_t){0,-1,-1,-1},
-					  (Color_t){0,-1,-1,-1});
+					  (Color_t){0,-1,-1,100},
+					  (Color_t){0,-1,-1,100});
 			/* 当前环绕中心方向 */
 			camera_cast_line(rt.active_cam,
 					 rt.follow->obj->center,
 					 rt.about_point->obj->center,
 					 &p1, &p2);
 			backend_draw_line(rt.backend, rt.active_cam, p1, p2,
-					  (Color_t){-1,-1,-1,0.3*225},
-					  (Color_t){-1,-1,-1,0.3*225});
+					  (Color_t){-1,-1,-1,100},
+					  (Color_t){-1,-1,-1,100});
 		}
 		for (size_t i = 0; i < rt.objs.len; i++) {
 			Star_t *star = da_get(&rt.objs, i);
@@ -1000,7 +1025,7 @@ int main(void)
 		printf("\e[0m\e[2K\r[T+%.1fd, x%g, %c%s%d%%%c, dv:%.3gkm/s]",
 		       rt.gtime/(24.*60*60), rt.time_scale,
 		       rt.throttle_on&1?'[':':',
-		       rt.throttle_on>=0?"":"-",
+		       rt.throttle_on&0b10?"-":"",
 		       rt.throttle,
 		       rt.throttle_on&1?']':':',
 		       rt.dv);
