@@ -18,6 +18,10 @@ const double SCALE = 1e3;    /* 将距离换算成 1单位 = 1km */
 #define pow2(x) ((x)*(x))
 #define syslog(rt, fmt, ...) sva_sprintfcat(&(rt)->logs, "[T+%8.3fd] "fmt"\n", (rt)->gtime/(24.*60*60) __VA_OPT__(,) __VA_ARGS__)
 
+/* 宏编译条件 */
+// #define FLG_BENCHTEST 1
+// #define FLG_THREE_BODY
+
 typedef struct {
 	const char *name;
 	Obj_t *obj;
@@ -53,6 +57,7 @@ typedef struct {
 	bool guidline;
 	bool pause;
 	bool print_busy;
+	bool use_rk4;
 } Runtimedata_t;
 
 /* 分页器 */
@@ -75,7 +80,11 @@ static void print_pager(const char *headline, SV_t content, int mode)
 		printf("\e[2m-- [分页器] %d-%d/%d 回车继续,c不翻页打印,p/u上翻,q退出\e[0m\n",
 		       start, count, total_lines);
 		kbhitGetchar();
+#ifdef FLG_BENCHTEST
+		int ch = 'c';
+#else
 		int ch = _getch();
+#endif
 		if (ch == 'q') break;
 		if (ch == 'c') mode=-2;
 		else if (ch == 'p' || ch == 'u') {
@@ -120,8 +129,20 @@ static void star_pop(Runtimedata_t *rt, Star_t *star, const char *desc)
 	Star_t *stars = rt->objs.ptr;
 	size_t idx = star - stars;
 	if (idx >= rt->objs.len) return;
-	syslog(rt, "天体'%s'掉出了这个世界，凶手是'%s'",
+	char *hints[] = {
+		"心跳停止了",
+		"咬到舌头了",
+		"以为他们会飞了",
+		"掉出了这个世界",
+		"的零件放错了位置",
+		"的内脏变成了外脏",
+		"被送到了奥库瑞姆之家",
+		"的椎间盘突出了",
+		"被折成两半了",
+	};
+	syslog(rt, "天体'%s'%s，凶手是'%s'",
 	       star->name ? star->name : "未知天体",
+	       hints[rand()%countof(hints)],
 	       desc ? desc : "虚空");
 	/* 修正各指针 */
 	Star_t **objs[] = {&rt->follow, &rt->look_to, &rt->destination_to};
@@ -203,7 +224,7 @@ static bool setup(Runtimedata_t *rt, int mode)
 	rt->objs.size = sizeof(Star_t);
 	/* 设置帧率、运行倍率 */
 	rt->fps = 40;
-	rt->time_scale_limit = 1024;
+	rt->time_scale_limit = 4096;
 	rt->time_scale = 1;
 	return true;
 }
@@ -295,6 +316,160 @@ static Star_t *get_about_point(Runtimedata_t *rt, Star_t *follow)
 	return best;
 }
 
+/* ai生成的RK4用辅助代码 */
+static void compute_acceleration(Runtimedata_t *rt, Vec_t *pos, Vec_t *acc)
+{
+	int n = (int)rt->objs.len;
+	Star_t *objs = rt->objs.ptr;
+	memset(acc, 0, sizeof(Vec_t) * n);	// 清空
+
+	// 1. 引力加速度（两两相互作用）
+	for (int i = 0; i < n; i++) {
+		for (int j = i + 1; j < n; j++) {
+			Vec_t diff = vec_sub(pos[i], pos[j]);	// 从j指向i的向量 (km)
+			double r2 = (pow2(diff.x) + pow2(diff.y) + pow2(diff.z)) * pow2(SCALE);
+			if (r2 < 1e-18)
+				continue;
+			// double r = sqrt(r2);
+			Vec_t dir = vec_direct(diff);	// 单位方向向量
+			double a = G / (r2 * SCALE);	// 与原始公式一致
+			acc[i] = vec_add(acc[i], vec_mul(dir, -a * objs[j].mass));
+			acc[j] = vec_add(acc[j], vec_mul(dir, a * objs[i].mass));
+		}
+	}
+
+	// 2. 推力加速度（仅作用于跟随天体）
+	if ((rt->throttle_on & 1) && rt->follow) {
+		int idx = rt->follow - objs;
+		if (idx >= 0 && idx < n) {
+			double thrust_acc = rt->throttle * 0.1 / SCALE;
+			if (rt->throttle_on & 0b10) thrust_acc = -thrust_acc;	// 反向
+			Vec_t dir = vec_direct(rt->active_cam->forward);
+			acc[idx] = vec_add(acc[idx], vec_mul(dir, thrust_acc));
+		}
+	}
+}
+
+/* ai生成的RK4法物理更新 */
+static void physics_update_step_rk4(Runtimedata_t *rt, double time_scale)
+{
+	if (!rt || rt->objs.len == 0 || time_scale == 0)
+		return;
+
+	double dt = time_scale / rt->fps;	// 单步物理时间（秒）
+	int n = (int)rt->objs.len;
+	Star_t *objs = rt->objs.ptr;
+
+	// 保存当前状态
+	Vec_t pos0[n], vel0[n];
+	for (int i = 0; i < n; i++) {
+		pos0[i] = objs[i].obj->center;
+		vel0[i] = objs[i].speed;
+	}
+
+	// 分配临时数组（用于RK4各阶段）
+	Vec_t k1v[n], k1p[n], k2v[n], k2p[n], k3v[n], k3p[n], k4v[n], k4p[n];
+	Vec_t tmp_pos[n], tmp_vel[n];
+
+	// ---- 阶段1 ----
+	compute_acceleration(rt, pos0, k1v);	// k1v = a(t0, pos0, vel0)
+	for (int i = 0; i < n; i++)
+		k1p[i] = vel0[i];	// k1p = vel0
+
+	// ---- 阶段2 ----
+	for (int i = 0; i < n; i++) {
+		tmp_pos[i] = vec_add(pos0[i], vec_mul(k1p[i], 0.5 * dt));
+		tmp_vel[i] = vec_add(vel0[i], vec_mul(k1v[i], 0.5 * dt));
+	}
+	compute_acceleration(rt, tmp_pos, k2v);
+	for (int i = 0; i < n; i++)
+		k2p[i] = tmp_vel[i];
+
+	// ---- 阶段3 ----
+	for (int i = 0; i < n; i++) {
+		tmp_pos[i] = vec_add(pos0[i], vec_mul(k2p[i], 0.5 * dt));
+		tmp_vel[i] = vec_add(vel0[i], vec_mul(k2v[i], 0.5 * dt));
+	}
+	compute_acceleration(rt, tmp_pos, k3v);
+	for (int i = 0; i < n; i++)
+		k3p[i] = tmp_vel[i];
+
+	// ---- 阶段4 ----
+	for (int i = 0; i < n; i++) {
+		tmp_pos[i] = vec_add(pos0[i], vec_mul(k3p[i], dt));
+		tmp_vel[i] = vec_add(vel0[i], vec_mul(k3v[i], dt));
+	}
+	compute_acceleration(rt, tmp_pos, k4v);
+	for (int i = 0; i < n; i++)
+		k4p[i] = tmp_vel[i];
+
+	// ---- 最终更新位置和速度 ----
+	for (int i = 0; i < n; i++) {
+		Vec_t dp = vec_add(vec_add(k1p[i], vec_mul(k2p[i], 2.0)),
+				   vec_add(vec_mul(k3p[i], 2.0), k4p[i])
+		    );
+		objs[i].obj->center = vec_add(pos0[i], vec_mul(dp, dt / 6.0));
+
+		Vec_t dv = vec_add(vec_add(k1v[i], vec_mul(k2v[i], 2.0)),
+				   vec_add(vec_mul(k3v[i], 2.0), k4v[i])
+		    );
+		objs[i].speed = vec_add(vel0[i], vec_mul(dv, dt / 6.0));
+	}
+
+	// ---- 自转（欧拉更新，不影响平动） ----
+	for (int i = 0; i < n; i++) {
+		obj_rotate(objs[i].obj, objs[i].self_rotate,
+			   objs[i].self_omiga * dt);
+	}
+
+	// ---- 累计推进Δv（用于显示） ----
+	if ((rt->throttle_on & 1) && rt->follow) {
+		double thrust_acc = rt->throttle * 0.1 / SCALE;
+		if (rt->throttle_on & 0b10)
+			thrust_acc = -thrust_acc;
+		rt->dv += fabs(thrust_acc * dt);
+	}
+	// ---- 碰撞检测与合并（与原逻辑相同） ----
+	Star_t *crash[2] = { NULL };
+	for (int i = 0; i < n; i++) {
+		for (int j = i + 1; j < n; j++) {
+			Vec_t diff =
+			    vec_sub(objs[i].obj->center, objs[j].obj->center);
+			double r2 = pow2(diff.x) + pow2(diff.y) + pow2(diff.z);
+			double sum_r = objs[i].radius + objs[j].radius;
+			if (r2 < sum_r * sum_r) {
+				crash[0] = &objs[i];
+				crash[1] = &objs[j];
+				break;
+			}
+		}
+		if (crash[0])
+			break;
+	}
+	if (crash[0] && crash[1] && crash[0] != crash[1]) {
+		// 按质量排序，大质量保留
+		if (crash[0]->mass <= crash[1]->mass) {
+			Star_t *tmp = crash[0];
+			crash[0] = crash[1];
+			crash[1] = tmp;
+		}
+		// 动量守恒合并
+		crash[0]->mass += crash[1]->mass;
+		crash[0]->speed =
+		    vec_mul(vec_add
+			    (vec_mul(crash[0]->speed, crash[0]->mass),
+			     vec_mul(crash[1]->speed, crash[1]->mass)),
+			    1.0 / crash[0]->mass);
+		// 记录并移除被合并天体
+		SVA_t buf = { };
+		sva_sprintf(&buf, "碰撞合并: %s(%gkg) + %s(%gkg)",
+			    crash[0]->name, crash[1]->mass, crash[1]->name,
+			    crash[1]->mass);
+		star_pop(rt, crash[1], buf.p);
+		sva_free(&buf);
+	}
+}
+
 static void physics_update_step(Runtimedata_t *rt, double time_scale)
 {
 	if (!rt || rt->objs.len == 0 || time_scale == 0) return;
@@ -367,7 +542,8 @@ static double physics_update(Runtimedata_t *rt)
 	Vec_t v1 = rt->follow&&rt->rotate_cam_with_spd ? rt->follow->speed : (Vec_t){};
 	double time_scale = rt->time_scale;
 	while ((time_scale-=rt->time_scale_limit) > 0) {
-		physics_update_step(rt, rt->time_scale_limit);
+		if (rt->use_rk4) physics_update_step_rk4(rt, rt->time_scale_limit);
+		else physics_update_step(rt, rt->time_scale_limit);
 	}
 	physics_update_step(rt, time_scale+rt->time_scale_limit);
 	if (rt->follow) rt->about_point = get_about_point(rt, rt->follow);
@@ -583,14 +759,17 @@ static void voyage_helper(Runtimedata_t *rt)
 	return;
 }
 
-static void dump_stars(Runtimedata_t *rt)
+static void dump_stars(Runtimedata_t *rt, FILE *output)
 {
 	if (!rt || !rt->objs.ptr) return;
+	if (!output) output = stdout;
 	Star_t *objs = rt->objs.ptr;
-	printf("\e[0m\n\e[2K===== 数据导出：各星体基本参数 =====\n");
+	bool flg = isatty(fileno(output));
+	if (flg) fprintf(output, "\e[0m\n\e[2K");
+	fprintf(output, "===== 数据导出：各星体基本参数 =====\n");
 	for (size_t i = 0; i < rt->objs.len; i++) {
 		if (!objs[i].obj) continue;
-		printf(" [%lu] %s (%gkg/r=%gkm) 位置(km): {%.3f,%.3f,%.3f} 速度(km/s): {%.3f,%.3f,%.3f}\n", i+1,
+		fprintf(output, " [%lu] %s (%gkg/r=%gkm) 位置(km): {%.3f,%.3f,%.3f} 速度(km/s): {%.3f,%.3f,%.3f}\n", i+1,
 		       objs[i].name ? objs[i].name : "{未命名星体}",
 		       objs[i].mass, objs[i].radius,
 		       objs[i].obj->center.x,
@@ -600,11 +779,19 @@ static void dump_stars(Runtimedata_t *rt)
 		       objs[i].speed.y,
 		       objs[i].speed.z);
 	}
-	printf("游戏时间: T+%.1f s, 折合约 T+%.1f d\n", rt->gtime, rt->gtime/(24*60*60));
-	printf("操作累计dv: %.3f km/s\n", rt->dv);
-	printf("（回车返回）\n");
-	kbhitGetchar();
-	_getch();
+	fprintf(output, "游戏时间: T+%.1f s, 折合约 T+%.1f d\n", rt->gtime, rt->gtime/(24*60*60));
+	fprintf(output, "操作累计dv: %.3f km/s\n", rt->dv);
+#ifdef FLG_BENCHTEST
+	fprintf(output, "时间倍率: x%g (块大小%gs)\n", rt->time_scale, rt->time_scale_limit);
+	fprintf(output, "是否使用rk4: %d\n", rt->use_rk4);
+	if (output != stderr) dump_stars(rt, stderr);
+#else
+	if (flg) {
+		fprintf(output, "（回车返回）\n");
+		kbhitGetchar();
+		_getch();
+	}
+#endif
 }
 
 static void print_qrh()
@@ -831,7 +1018,11 @@ static bool input_handle(Runtimedata_t *rt)
 	case 't': rt->destination_to = choose_star(rt, "驶向", rt->destination_to); break;
 	case 'F': rt->look_to = choose_star(rt, "看向", rt->look_to); break;
 	case 'T': rt->rotate_cam_with_spd = !rt->rotate_cam_with_spd; break;
-	case '|': dump_stars(rt); break;
+	case '$':
+		rt->use_rk4 = !rt->use_rk4;
+		rt->time_scale_limit = rt->use_rk4?8192:4096;
+		break;
+	case '|': dump_stars(rt, NULL); break;
 	case '?': voyage_helper(rt); break;
 	case 'M': print_qrh(); break;
 	case '"': print_pager("航行日志", sv_from_sva(&rt->logs), -1); break;
@@ -1017,8 +1208,7 @@ void scene_init(Runtimedata_t *rt)
 	obj_set_color(star.obj, (Color_t){-1,-1,0,-1});
 	da_append(&rt->objs, &star);
 
-// #define THREE_BODY
-#ifdef THREE_BODY
+#ifdef FLG_THREE_BODY
 	/* 安置在太阳系外4光年 */
 	l_star_create("!?强强?!", 5.965e24*(10*RAND01+0.3), 6371*RAND12, 4*365*24*60*60*3e5, RAND12*5, ((Vec_t){0,0,1}));
 	star.self_rotate = vec_direct(RAND_VEC(1));
@@ -1059,17 +1249,97 @@ void scene_init(Runtimedata_t *rt)
 	}
 }
 
+#ifdef FLG_BENCHTEST
+/* 计算系统总机械能(ai生成) */
+static double compute_system_energy(Runtimedata_t *rt)
+{
+	if (!rt || rt->objs.len == 0) return 0;
+	Star_t *objs = rt->objs.ptr;
+	size_t n = rt->objs.len;
+
+	double Ek = 0.0;	// 总动能 (J)
+	double Ep = 0.0;	// 总势能 (J)
+	Vec_t ang_mom = { 0, 0, 0 };	// 总角动量 (kg·km²/s)
+
+	// 计算动能和角动量
+	for (size_t i = 0; i < n; i++) {
+		if (!objs[i].obj)
+			continue;
+		double mi = objs[i].mass;
+		Vec_t vi = objs[i].speed;	// km/s
+		// 动能：0.5 * m * v^2  (单位：kg*(km/s)^2 = 1e6 J)
+		Ek += 0.5 * mi * vec_point_product(vi, vi);
+		// 角动量：r × (m v)  (单位：kg·km²/s)
+		Vec_t ri = objs[i].obj->center;	// 以太阳为原点的绝对坐标 (km)
+		ang_mom =
+		    vec_add(ang_mom, vec_cross_product(ri, vec_mul(vi, mi)));
+	}
+
+	// 计算势能：对所有 i<j 对求和 -G*m_i*m_j/r_ij
+	for (size_t i = 0; i < n; i++) {
+		if (!objs[i].obj)
+			continue;
+		for (size_t j = i + 1; j < n; j++) {
+			if (!objs[j].obj)
+				continue;
+			Vec_t diff =
+			    vec_sub(objs[i].obj->center, objs[j].obj->center);
+			double r_ij = vec_len(diff) * SCALE;	// 转换为米
+			if (r_ij < 1e-9)
+				continue;	// 避免除以零
+			Ep -= G * objs[i].mass * objs[j].mass / r_ij;
+		}
+	}
+
+	return Ek + Ep;	// 总机械能 (J)
+	// return ang_mom;	// 角动量向量
+}
+#endif
+
+
 int main(void)
 {
 	Runtimedata_t rt = {0};
 	if (!setup(&rt, 0)) {
 		return EXIT_FAILURE;
 	}
+#ifdef FLG_BENCHTEST
+	rt.time_scale_limit = 1024*16*2;
+	rt.time_scale = 1e8;
+	rt.print_busy = true;
+	/* 是的你没看错一众ai在面对
+	 * “预估下FLG_BENCHTEST分别为0和1时的测试结果”
+	 * 在这里都栽了坑，异口同声地说FLG_BENCHTEST=0时
+	 * 按照正常交互模式运行，很有意思，特此记录
+	 * 同时修改为等式判断
+	 * (删掉这部分注释体验让ai糊涂)
+	 * */
+	if (FLG_BENCHTEST==1) rt.use_rk4 = true;
+	if (1) {
+		time_t timep;
+		time(&timep);
+		struct tm tp;
+		gmtime_r(&timep, &tp);
+		char buf[100];
+		strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tp);
+		fprintf(stderr, "-- [性能测试] %s (%ld)\n", buf, timep);
+	}
+	srand(141421356);
+#else
 	srand(time(NULL));
+#endif
 	scene_init(&rt);
 	rt.camera->position = (Vec_t){0, 0, 1e6*SCALE};
 	rt.camera->dept = 1e8*SCALE;
-
+#ifdef FLG_BENCHTEST
+	const double TOTAL_ENEGRY = compute_system_energy(&rt);
+	fprintf(stderr,
+		"==================================================\n"
+		"-- [性能测试] 初始场景：\n");
+	dump_stars(&rt, stderr);
+	rt.follow = da_get(&rt.objs, 0);
+	rt.destination_to = get_about_point(&rt, rt.follow);
+#else
 	printf("按键说明：\n"
 	       "zx 增减推力 空格开关油门（固定朝视线方向加速）\n"
 	       "(每1%%推力每秒提供0.1m/s的dv)\n"
@@ -1090,6 +1360,7 @@ int main(void)
 	       );
 	rt.inp = 'f';
 	input_handle(&rt);
+#endif
 
 	printf("\e[2J");
 	size_t i = 0;
@@ -1099,7 +1370,12 @@ int main(void)
 	Star_t *last_about_point = NULL,
 	       *last_follow = NULL;
 	int8_t last_throttle_on = false;
+#ifdef FLG_BENCHTEST
+	/* 测试40fps*20s */
+	for (i = 0; i < 800; ++i) {
+#else
 	for (i = 0; i < INT64_MAX; ++i) {
+#endif
 		last_about_point = rt.about_point;
 		last_follow = rt.follow;
 		if ((rt.inp = kbhitGetchar()))
@@ -1269,10 +1545,22 @@ int main(void)
 		if (rt.pause) printf(" [已暂停]");
 		if (rt.print_busy) printf(" (%5.1f%%/%dfps)", busy, (int)(busy<100?rt.fps:rt.fps*100/busy));
 		busy = (busy + (1-(sleep_fixed_step(1./rt.fps))/(1./rt.fps)) * 100)/2;
+#ifdef FLG_BENCHTEST
+		rt.pause = false;
+#endif
 	}
 
+#ifdef FLG_BENCHTEST
+	fflush(stdout);
+	fprintf(stderr, "-- [性能测试] 结束场景：\n");
+	dump_stars(&rt, stderr);
+	fprintf(stderr, "-- [性能测试] 航行日志：\n%s", rt.logs.p?rt.logs.p:"（暂无日志）\n");
+	fprintf(stderr, "-- [性能测试] 原总能量：%.10g\n", TOTAL_ENEGRY);
+	fprintf(stderr, "-- [性能测试] 现总能量：%.10g\n", compute_system_energy(&rt));
+#else
 	if (rt.logs.p)
 		printf("\e[0m\n航行日志：\n%s", rt.logs.p);
+#endif
 
 	sva_free(&buf);
 	cleanup(&rt);
