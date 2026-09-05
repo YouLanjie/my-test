@@ -23,7 +23,7 @@ const double SCALE = 1e3;    /* 将距离换算成 1单位 = 1km */
 // #define FLG_BENCHTEST 1
 
 typedef struct {
-	const char *name;
+	SVA_t name;
 	Obj_t *obj;
 	double radius;
 	double mass;          /* 质量(kg) */
@@ -116,8 +116,9 @@ static Star_t star_create(char *name, double mass, double radius, Vec_t position
 		.speed = vec_add(about_point ? about_point->speed : (Vec_t){}, speed),
 		.mass = mass > 1e-4 ? mass : 1e-4,    /* 负质量是非法的！ */
 		.radius = radius,
-		.name = name ? name : "UNKNOW",
+		.name = {},
 	};
+	sva_from_cstr(&star.name, name?name:"UNKNOW");
 	return star;
 }
 
@@ -125,6 +126,7 @@ static void star_free(void *p)
 {
 	Star_t *star = p;
 	if (!star) return;
+	sva_free(&star->name);
 	if (!star->obj) return;
 	obj_free(star->obj);
 	star->obj = NULL;
@@ -156,7 +158,7 @@ static void star_pop(Runtimedata_t *rt, Star_t *star, const char *desc)
 		"被送到了奥库瑞姆之家",
 	};
 	syslog(rt, "天体'%s'%s，凶手是'%s'",
-	       star->name ? star->name : "未知天体",
+	       star->name.p ? star->name.p : "未知天体",
 	       hints[rand()%countof(hints)],
 	       desc ? desc : "虚空");
 	/* 修正各指针 */
@@ -210,6 +212,8 @@ static bool setup(Runtimedata_t *rt, int mode)
 	if (!rt) return false;
 	int term_w = get_winsize_col() - 0;
 	int term_h = get_winsize_row() - 2;
+	if (term_w <= 0) term_w = 10;
+	if (term_h <= 0) term_h = 10;
 	if (rt->backend) {
 		/* 轮换后端 */
 #define BACKEND(name) backend_create_##name,
@@ -254,9 +258,11 @@ static bool setup(Runtimedata_t *rt, int mode)
 static Star_t *get_about_point(Runtimedata_t *rt, Star_t *follow)
 {
 	static Obj_t base_obj = { };
+	static const SV_t name_sv = sv_from_lstr("绝对坐标");
+	static const SVA_t name = {.p = (void*)name_sv.p, .len = name_sv.len, .capacity = 0};
 	static Star_t base = {
 		.obj = &base_obj,
-		.name = "绝对坐标",
+		.name = name,
 	};
 	Star_t *objs = rt->objs.ptr;
 	if (!rt || !objs || rt->objs.len < 2)
@@ -482,7 +488,7 @@ static void physics_update_step_rk4(Runtimedata_t *rt, double time_scale)
 		// 记录并移除被合并天体
 		SVA_t buf = { };
 		sva_sprintf(&buf, "碰撞合并: %s(%gkg) + %s(%gkg)",
-			    crash[0]->name, crash[1]->mass, crash[1]->name,
+			    crash[0]->name.p, crash[1]->mass, crash[1]->name.p,
 			    crash[1]->mass);
 		star_pop(rt, crash[1], buf.p);
 		sva_free(&buf);
@@ -543,7 +549,7 @@ static void physics_update_step(Runtimedata_t *rt, double time_scale)
 #undef star_impact_xyz
 		SVA_t buf = {};
 		sva_sprintf(&buf, "来自`%s`(+%gkg)大地的爱",
-			    crash[0]->name?crash[0]->name:"未知天体",
+			    crash[0]->name.p?crash[0]->name.p:"未知天体",
 			    crash[1]->mass);
 		star_pop(rt, crash[1], buf.p);
 		sva_free(&buf);
@@ -592,7 +598,7 @@ static Star_t *choose_star(Runtimedata_t *rt, const char *hint, Star_t *old)
 	Star_t *objs = rt->objs.ptr;
 	for (size_t i = 0; i < rt->objs.len; i++) {
 		printf(" [%lu] %s (%g kg/%g km)%s\n", i+1,
-		       objs[i].name ? objs[i].name : "{未命名星体}",
+		       objs[i].name.p ? objs[i].name.p : "{未命名星体}",
 		       objs[i].mass, objs[i].radius, !objs[i].obj?"(不可用)":"");
 		if (objs+i == old) choice = i;
 	}
@@ -805,7 +811,7 @@ get_hohmann_orbit_theta(Star_t *follow, Star_t *destination_to,
 static void print_starinfo(Star_t *star, struct orbital_parameters dat)
 {
 	if (!star || !star->obj) return;
-	printf("围绕天体: %s\n", star->name);
+	printf("围绕天体: %s\n", star->name.p);
 	printf("轨道类型: %s (%.3f) \t| 周期: %g d\n", dat.typ, dat.e, sec2day(dat.T));
 	printf("当前高度: %.1f km \t| 半长轴: %.1f km\n", dat.r, dat.a);
 	printf("近地点: %.1f km \t| 远地点: %.1f km\n", dat.rp, dat.ra);
@@ -832,8 +838,8 @@ static void voyage_helper(Runtimedata_t *rt)
 	const double speed = sqrt(G*to->mass/(distance*SCALE)) / SCALE;
 	printf("========== 基础信息 ==========\n");
 	printf("'%s' -> '%s'\n",
-	       from->name ? from->name : "Unknow",
-	       to->name ? to->name : "Unknow");
+	       from->name.p ? from->name.p : "Unknow",
+	       to->name.p ? to->name.p : "Unknow");
 	printf("距离：%.1f km\n", distance);
 	printf("相对速度：%.1f km\n", vec_len(vec_sub(from->speed, to->speed)));
 	// printf("航向：{%.1f, %.1f, %.1f}\n", direct.x, direct.y, direct.z);
@@ -844,7 +850,7 @@ static void voyage_helper(Runtimedata_t *rt)
 	Star_t *s1 = get_about_point(rt, from);
 	if (!s1) s1 = to;
 	struct orbital_parameters dat = get_orbital_parameters(from, s1);
-	printf("====== 当前(%s)轨道情况 ======\n", from->name);
+	printf("====== 当前(%s)轨道情况 ======\n", from->name.p);
 	print_starinfo(s1, dat);
 
 	/* 目标天体中心 */
@@ -853,7 +859,7 @@ static void voyage_helper(Runtimedata_t *rt)
 	Star_t *s3 = s1 != s2 ? get_about_point(rt, s1) : NULL;
 	if ((s1 == s2 || s3 == s2) && s1 != to && s2 != from) {
 		struct orbital_parameters dat2 = get_orbital_parameters(to, s2);
-		printf("====== 目标(%s)共轨情况 ======\n", to->name);
+		printf("====== 目标(%s)共轨情况 ======\n", to->name.p);
 		print_starinfo(s2, dat2);
 		printf("相对倾角: %.4f deg\n", acos(vec_point_product(dat2.u, dat.u))/M_PI*180.);
 		struct hohmann_orbital_parameters ret = get_hohmann_orbit_theta(from, to, s2, NULL);
@@ -881,13 +887,13 @@ static void dump_stars(Runtimedata_t *rt, FILE *output, bool no_inp)
 	if (!rt || !rt->objs.ptr) return;
 	if (!output) output = stdout;
 	Star_t *objs = rt->objs.ptr;
-	bool flg = isatty(fileno(output)) && !no_inp;
+	bool flg = !no_inp && isatty(fileno(output));
 	if (flg) fprintf(output, "\e[0m\n\e[2K");
 	fprintf(output, "===== 数据导出：各星体基本参数 =====\n");
 	for (size_t i = 0; i < rt->objs.len; i++) {
 		if (!objs[i].obj) continue;
 		fprintf(output, " [%lu] %s (%gkg/r=%gkm) 位置(km): {%.3f,%.3f,%.3f} 速度(km/s): {%.3f,%.3f,%.3f}\n", i+1,
-		       objs[i].name ? objs[i].name : "{未命名星体}",
+		       objs[i].name.p ? objs[i].name.p : "{未命名星体}",
 		       objs[i].mass, objs[i].radius,
 		       objs[i].obj->center.x,
 		       objs[i].obj->center.y,
@@ -902,7 +908,7 @@ static void dump_stars(Runtimedata_t *rt, FILE *output, bool no_inp)
 #ifdef FLG_BENCHTEST
 	fprintf(output, "时间倍率: x%g (块大小%gs)\n", rt->time_scale, rt->time_scale_limit);
 	fprintf(output, "是否使用rk4: %d\n", rt->use_rk4);
-	if (output != stderr) dump_stars(rt, stderr, false);
+	if (output != stderr) dump_stars(rt, stderr, true);
 #else
 	if (flg) {
 		fprintf(output, "（回车返回）\n");
@@ -1234,7 +1240,7 @@ static bool input_handle(Runtimedata_t *rt)
 	return true;
 }
 
-void scene_init(Runtimedata_t *rt, bool add_three_body)
+static void scene_init(Runtimedata_t *rt, bool add_three_body)
 {
 	if (!rt) return;
 	double rand_num = 0;
@@ -1367,6 +1373,47 @@ void scene_init(Runtimedata_t *rt, bool add_three_body)
 	}
 }
 
+/* 导入天体场景（暂缺失自转、颜色等配置） */
+static bool scene_init_from_dumped_txt(Runtimedata_t *rt, const char *filename)
+{
+	int ret = 0, count = 0;
+	char buf[1024] = {};
+	FILE *fp = fopen(filename, "r");
+	if (!fp) return false;
+
+	size_t idx = 0;
+	char name[1024] = {};
+	double mass = 0;
+	double radius = 0;
+	double Px = 0, Py = 0, Pz = 0;
+	double Vx = 0, Vy = 0, Vz = 0;
+	Star_t star;
+	while (fgets(buf, sizeof(buf), fp)) {
+		ret = sscanf(buf, " [%lu] %s (%lgkg/r=%lgkm) 位置(km): {%lf,%lf,%lf} 速度(km/s): {%lf,%lf,%lf}",
+			     &idx, name, &mass, &radius, &Px, &Py, &Pz, &Vx, &Vy, &Vz);
+		if (ret < 10) continue;
+		count++;
+		star = star_create(name, mass, radius, (Vec_t){Px,Py,Pz}, (Vec_t){Vx,Vy,Vz}, NULL);
+		da_append(&rt->objs, &star);
+	}
+	fclose(fp);
+	if (count <= 0) return false;
+
+	Star_t *objs = rt->objs.ptr;
+	for (size_t i = 0; i < rt->objs.len; i++) {
+		if (!objs[i].obj) continue;
+		objs[i].cam = *rt->camera;    /* 同步相机配置 */
+		const double distance = objs[i].radius*10;
+		const Vec_t direct = vec_mul(vec_direct(objs[i].cam.forward), -distance);
+		objs[i].cam.dept = 5*distance;
+		objs[i].cam.position = vec_add(objs[i].obj->center, direct);
+	}
+
+	printf("[INFO] 共导入%d个天体\n", count);
+	dump_stars(rt, NULL, false);
+	return true;
+}
+
 #ifdef FLG_BENCHTEST
 /* 计算系统总机械能(ai生成) */
 static double compute_system_energy(Runtimedata_t *rt)
@@ -1438,8 +1485,8 @@ static void game_loop(Runtimedata_t *rt)
 		if (rt->follow && last_follow == rt->follow && last_about_point && last_about_point != rt->about_point) {
 			format_orbital_parameters(rt, &buf, ret);
 			syslog(rt, "天体'%s'被'%s'捕获(%s)(原运行在'%s'),累计dv:%.3gkm/s",
-			       rt->follow->name, rt->about_point->name, buf.p,
-			       last_about_point->name, rt->dv);
+			       rt->follow->name.p, rt->about_point->name.p, buf.p,
+			       last_about_point->name.p, rt->dv);
 		}
 		if (!rt->about_point) break;
 		const bool cond1 = rt->follow && last_follow == rt->follow && rt->about_point;
@@ -1457,7 +1504,7 @@ static void game_loop(Runtimedata_t *rt)
 			}
 			format_orbital_parameters(rt, &buf, ret);
 			syslog(rt, "'%s'->'%s':%s(%s,dv:%.3gkm/s)(油门%d%%%s)",
-			       rt->follow->name, rt->about_point->name,
+			       rt->follow->name.p, rt->about_point->name.p,
 			       ret.typ, buf.p, rt->dv, rt->throttle, rt->throttle_on&1?"开":"关");
 		}
 		last_ret = ret;
@@ -1525,9 +1572,9 @@ static void game_loop(Runtimedata_t *rt)
 		       rt->dv);
 		if (rt->follow) {
 			printf(" | %s%c%s%c (%.3f km/s)",
-			       rt->follow->name ? rt->follow->name : "Unknow",
+			       rt->follow->name.p ? rt->follow->name.p : "Unknow",
 			       rt->rotate_cam_with_spd ? '{' : '[',
-			       rt->about_point->name ? rt->about_point->name : "Unknow",
+			       rt->about_point->name.p ? rt->about_point->name.p : "Unknow",
 			       rt->rotate_cam_with_spd ? '}' : ']',
 			       vec_len(vec_sub(rt->follow->speed, rt->about_point->speed)));
 		}
@@ -1538,7 +1585,7 @@ static void game_loop(Runtimedata_t *rt)
 			const double vertical_speed = vec_point_product(vec_direct(dist), dv);
 			// 速度 <0 表靠近， >0 表远离
 			printf("距%s %.1f km (%.3f km/s)",
-			       rt->destination_to->name ? rt->destination_to->name : "Unknow",
+			       rt->destination_to->name.p ? rt->destination_to->name.p : "Unknow",
 			       vec_len(dist),
 			       -vertical_speed);
 			Star_t *dest_about_point = NULL;
@@ -1601,6 +1648,7 @@ static void argv_help(char *argv)
 	printf("Usage: %s\n"
 	       "    -h        打印此信息\n"
 	       "    -t        增设三体天体\n"
+	       "    -i <FILE> 导入指定txt文件数据\n"
 	       "    -s <SEED> 指定初始化种子\n"
 	       "    -p        初始化后导出数据并退出\n"
 	       "    -M        打印内置操作手册\n",
@@ -1611,9 +1659,10 @@ int main(int argc, char *argv[])
 {
 	Runtimedata_t rt = {0};
 	rt.seed = time(NULL);
+	char *import_filename = NULL;
 	bool init_only = false;
 	bool add_three_body = false;
-	while ((rt.inp=getopt(argc, argv, "hHtps:")) != -1) {
+	while ((rt.inp=getopt(argc, argv, "hHtps:i:")) != -1) {
 		switch (rt.inp) {
 		case 'H':
 			print_qrh(true);
@@ -1627,6 +1676,9 @@ int main(int argc, char *argv[])
 			break;
 		case 's':
 			sscanf(optarg, "%u", &rt.seed);
+			break;
+		case 'i':
+			import_filename = optarg;
 			break;
 		case 'h':
 			argv_help(argv[0]);
@@ -1665,7 +1717,8 @@ int main(int argc, char *argv[])
 	rt.seed = 141421356;
 #endif
 	srand(rt.seed);
-	scene_init(&rt, add_three_body);
+	if (!import_filename || !scene_init_from_dumped_txt(&rt, import_filename))
+		scene_init(&rt, add_three_body);
 	rt.camera->position = (Vec_t){0, 0, 1e6*SCALE};
 	rt.camera->dept = 1e8*SCALE;
 	if (init_only) {

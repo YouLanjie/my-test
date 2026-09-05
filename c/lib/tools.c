@@ -236,7 +236,7 @@ extern int ct_getch_cond(int *cond)
 extern int get_winsize_col()
 {
 #ifdef __linux__
-	struct winsize size;
+	struct winsize size = {};
 	ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
 	return size.ws_col;
 #endif
@@ -252,7 +252,7 @@ extern int get_winsize_col()
 extern int get_winsize_row()
 {
 #ifdef __linux__
-	struct winsize size;
+	struct winsize size = {};
 	ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
 	return size.ws_row;
 #endif
