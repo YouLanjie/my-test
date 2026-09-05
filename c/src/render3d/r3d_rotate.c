@@ -224,7 +224,7 @@ static bool setup(Runtimedata_t *rt, int mode)
 	rt->objs.size = sizeof(Star_t);
 	/* 设置帧率、运行倍率 */
 	rt->fps = 40;
-	rt->time_scale_limit = 4096;
+	rt->time_scale_limit = 2048;
 	rt->time_scale = 1;
 	return true;
 }
@@ -666,28 +666,58 @@ struct hohmann_orbital_parameters {
 	double v;    /* 期望速度km/s */
 };
 
-/* 计算距离霍曼转移点火点提前量角度 */
-static struct hohmann_orbital_parameters get_hohmann_orbit_theta(Star_t *follow, Star_t *destination_to, Star_t *about_point)
+/**
+ * @brief 计算距离霍曼转移点火点提前量角度
+ *
+ * @param follow 操纵天体
+ * @param destination_to 目标天体
+ * @param dest_about_point 目标天体环绕中心
+ * @param about_point 操纵天体环绕中心
+ * @return 轨道参数结构体
+ */
+static struct hohmann_orbital_parameters
+get_hohmann_orbit_theta(Star_t *follow, Star_t *destination_to,
+			Star_t *dest_about_point, Star_t *about_point)
 {
 	if (!follow || !follow->obj || !destination_to || !destination_to->obj
-	    || !about_point || !about_point->obj) return (struct hohmann_orbital_parameters){};
-	const Vec_t r2 = vec_sub(destination_to->obj->center, about_point->obj->center);
-	const Vec_t r1 = vec_sub(follow->obj->center, about_point->obj->center);
+	    || !dest_about_point || !dest_about_point->obj) return (struct hohmann_orbital_parameters){};
+	const Vec_t r2 = vec_sub(destination_to->obj->center, dest_about_point->obj->center);
+	const Vec_t r1 = vec_sub(follow->obj->center, dest_about_point->obj->center);
 	const double r1f = vec_len(r1);
 	const double r2f = vec_len(r2);
 	const double a = (r1f + r2f) / 2;
-	const double T = 2*M_PI*(a*SCALE)*sqrt(a*SCALE/(G*(follow->mass+about_point->mass)));
-	const double mu = G*about_point->mass/SCALE/SCALE/SCALE;
+	const double T = 2*M_PI*(a*SCALE)*sqrt(a*SCALE/(G*(follow->mass+dest_about_point->mass)));
+	const double mu = G*dest_about_point->mass/SCALE/SCALE/SCALE;
 	const double omiga = M_PI - (sqrt(mu/r2f) / r2f)*T/2;
 	/* 使用了跟踪天体平面 */
-	const double rtheta = vec_angle2d(r1, r2, vec_sub(follow->speed, about_point->speed));
+	const double rtheta = vec_angle2d(r1, r2, vec_sub(follow->speed, dest_about_point->speed));
 	const double theta = fmod(rtheta - fmod(omiga, 2*M_PI) + M_PI, 2*M_PI);
-	const struct hohmann_orbital_parameters ret = {
+	struct hohmann_orbital_parameters ret = {
 		.expect_theta = omiga,
 		.theta = (theta<0?theta+2*M_PI:theta)-M_PI,
 		.T = T/2,
 		.v = sqrt(2*mu*r2f/r1f/(r1f+r2f)),
 	};
+	if (!about_point || about_point->mass <= 0 || about_point == dest_about_point)
+		return ret;
+
+	const double mu2 = G*about_point->mass/SCALE/SCALE/SCALE;
+	const Vec_t v3 = vec_mul(vec_direct(vec_sub(follow->speed, dest_about_point->speed)), ret.v);
+	ret.v = vec_len(vec_sub(vec_add(v3, dest_about_point->speed), about_point->speed));
+	/* 根据预期剩余速度计算期望速度 */
+	const Vec_t r3 = vec_sub(follow->obj->center, about_point->obj->center);
+	const double speed_need = pow2(ret.v)+2*mu2/vec_len(r3);
+	if (speed_need > 0) {
+		ret.v = sqrt(speed_need);
+	}
+	/* 算法借用自get_orbital_parameters()
+	 * 计算在霍曼轨道速度下的双曲线曲率 */
+	const Vec_t v1 = vec_direct(vec_sub(about_point->speed, dest_about_point->speed));
+	const Vec_t v2 = vec_mul(v1, ret.v);
+	const double e = vec_len(vec_mul(vec_sub(vec_mul(r3, vec_point_product(v2,v2)-mu2/vec_len(r3)),
+						 vec_mul(v2, vec_point_product(r3,v2))), 1/mu2));
+	ret.theta = fmod(vec_angle2d(vec_sub(follow->speed, about_point->speed), v1, vec_mul(r3,-1))
+			 -asin(1/e)+M_PI, 2*M_PI)-M_PI;
 	return ret;
 }
 
@@ -728,29 +758,34 @@ static void voyage_helper(Runtimedata_t *rt)
 	printf("理想圆轨线速度：%g km/s, 角速度：%g rad/s\n", speed, speed/distance);
 	printf("理想圆轨周期：%.1f s | %.1f d\n", 2*M_PI/(speed/distance), 2*M_PI/(speed/distance)/(24*60*60));
 
+	/* 驾驶天体中心 */
 	Star_t *s1 = get_about_point(rt, from);
 	if (!s1) s1 = to;
-	struct orbital_parameters dat = get_orbital_parameters(from, to);
-	if (s1 != to) {
-		printf("====== 假设(%s -> %s)轨道情况 ======\n", from->name, to->name);
-		print_starinfo(to, dat);
-		dat = get_orbital_parameters(from, s1);
-	}
+	struct orbital_parameters dat = get_orbital_parameters(from, s1);
 	printf("====== 当前(%s)轨道情况 ======\n", from->name);
 	print_starinfo(s1, dat);
 
+	/* 目标天体中心 */
 	Star_t *s2 = get_about_point(rt, to);
-	if (s1 == s2 && s1 != to && s2 != from) {
+	/* 驾驶天体中心的中心 */
+	Star_t *s3 = s1 != s2 ? get_about_point(rt, s1) : NULL;
+	if ((s1 == s2 || s3 == s2) && s1 != to && s2 != from) {
 		struct orbital_parameters dat2 = get_orbital_parameters(to, s2);
 		printf("====== 目标(%s)共轨情况 ======\n", to->name);
 		print_starinfo(s2, dat2);
 		printf("相对倾角: %.4f deg\n", acos(vec_point_product(dat2.u, dat.u))/M_PI*180.);
-		struct hohmann_orbital_parameters ret = get_hohmann_orbit_theta(from, to, s2);
+		struct hohmann_orbital_parameters ret = get_hohmann_orbit_theta(from, to, s2, NULL);
 		printf("====== 霍曼转移轨道数据 ======\n");
 		printf("半周期: %.3g d\n", ret.T/(24*60*60));
 		printf("提前角度: %.3g deg\n", ret.expect_theta/M_PI*180.);
 		printf("距点火点: %.3g deg\n", ret.theta/M_PI*180.);
 		printf("期望速度: %.3g km/s\n", ret.v);
+		if (s1 != s2) {
+			ret = get_hohmann_orbit_theta(from, to, s2, s1);
+			printf("====== 次级霍曼轨道数据 ======\n");
+			printf("距点火点: %.3g deg\n", ret.theta/M_PI*180.);
+			printf("期望速度: %.3g km/s\n", ret.v);
+		}
 	}
 
 	printf("（回车返回）\n");
@@ -1020,7 +1055,7 @@ static bool input_handle(Runtimedata_t *rt)
 	case 'T': rt->rotate_cam_with_spd = !rt->rotate_cam_with_spd; break;
 	case '$':
 		rt->use_rk4 = !rt->use_rk4;
-		rt->time_scale_limit = rt->use_rk4?8192:4096;
+		rt->time_scale_limit = rt->use_rk4?4096:2048;
 		break;
 	case '|': dump_stars(rt, NULL); break;
 	case '?': voyage_helper(rt); break;
@@ -1389,25 +1424,25 @@ int main(void)
 			       last_about_point->name, rt.dv);
 		}
 		if (!rt.about_point) break;
-		bool cond1 = rt.follow && last_follow == rt.follow && rt.about_point;
-		bool cond2 = cond1 ?    /* 变轨时近远地点高度交换 */
+		const bool cond1 = rt.follow && last_follow == rt.follow && rt.about_point;
+		const bool cond2 = cond1 ?    /* 变轨时近远地点高度交换 */
 			rt.throttle_on&1
-			&& ret.e < 1 && last_ret.e < 1
-			&& (ret.ra+10<last_ret.rp || ret.rp>last_ret.ra+10) : false;
-		bool cond3 = cond1 ? cond2    /* 触发以下任意事件 */
+			&& (ret.e < 1 && last_ret.e < 1)
+			&& (ret.ra-last_ret.rp<=1e-5 || ret.rp-last_ret.ra>=-1e-5) : false;
+		const bool cond3 = cond1 ? cond2    /* 触发以下任意事件 */
 			|| (last_throttle_on^rt.throttle_on)&1      /* 油门开关 */
 			|| ((last_ret.e-1)*(ret.e-1)<0) : false;    /* 轨道类型改变 */
 		if (cond1 && cond3) {
 			if (cond2) {
 				syslog(&rt, "近远地点高度交换");
-				if (rt.time_scale >= 32) rt.pause = true;
+				if (rt.time_scale >= 2) rt.pause = true;
 			}
 			format_orbital_parameters(&rt, &buf, ret);
 			syslog(&rt, "'%s'->'%s':%s(%s,dv:%.3gkm/s)(油门%d%%%s)",
 			       rt.follow->name, rt.about_point->name,
 			       ret.typ, buf.p, rt.dv, rt.throttle, rt.throttle_on&1?"开":"关");
-			last_ret = ret;
 		}
+		last_ret = ret;
 		last_throttle_on = rt.throttle_on;
 
 		if (rt.follow && rt.look_to) {
@@ -1503,30 +1538,17 @@ int main(void)
 				double deg_cross = vec_point_product(vec_direct(v),u);
 				deg_cross = 90 - acos(deg_cross)/M_PI*180.;
 				struct hohmann_orbital_parameters ret3 =
-					get_hohmann_orbit_theta(rt.follow, rt.destination_to, dest_about_point);
-				if (mode == 2) {
-					/* 算法借用自get_orbital_parameters()
-					 * 计算在霍曼轨道速度下的双曲线曲率 */
-					const Vec_t v1 = vec_sub(rt.about_point->speed, dest_about_point->speed);
-					const Vec_t v2 = vec_mul(v1, ret3.v/vec_len(v1) - 1);
-					const Vec_t r = vec_sub(rt.follow->obj->center, rt.about_point->obj->center);
-					const double mu = rt.about_point->mass*G/SCALE/SCALE/SCALE;
-					const double e = vec_len(vec_mul(vec_sub(vec_mul(r, vec_point_product(v2,v2)-mu/vec_len(r)), vec_mul(v2, vec_point_product(r, v2))), 1/mu));
-					ret3.theta = fmod(vec_angle2d(v, v1, vec_mul(r,-1))-asin(1/e)+M_PI, 2*M_PI)-M_PI;
-					const Vec_t v3 = vec_mul(vec_direct(vec_sub(rt.follow->speed, dest_about_point->speed)), ret3.v);
-					ret3.v = vec_len(vec_sub(vec_add(v3, dest_about_point->speed), rt.about_point->speed));
-					/* 根据预期剩余速度计算期望速度 */
-					const double speed_need = pow2(ret3.v)+2*mu/vec_len(r);
-					if (speed_need > 0) {
-						ret3.v = sqrt(speed_need);
-					}
-				}
-				const double time_left = rt.throttle ?
-					(rt.throttle_on&0b10?-1:1)*(ret3.v-vec_len(v))/(0.1*rt.throttle/SCALE): 0;
+					get_hohmann_orbit_theta(rt.follow, rt.destination_to, dest_about_point, NULL);
 				printf(" %.1f°(%.1f)°/%.1f°",
 				       acos(vec_point_product(ret.u, ret2.u))/(M_PI)*180.,
 				       deg_cross,
 				       ret3.theta/M_PI*180.);
+				if (mode == 2) {
+					ret3 = get_hohmann_orbit_theta(rt.follow, rt.destination_to, dest_about_point, rt.about_point);
+					printf(" [%.1f°]", ret3.theta/M_PI*180.);
+				}
+				const double time_left = rt.throttle ?
+					(rt.throttle_on&0b10?-1:1)*(ret3.v-vec_len(v))/(0.1*rt.throttle/SCALE): 0;
 				if (fabs(ret3.theta/M_PI*180.) < 10) {
 					printf(" L:%.2fs", time_left);
 					/* 自动暂停 */
@@ -1537,7 +1559,7 @@ int main(void)
 				}
 			}
 			if (rt.destination_to==rt.about_point && rt.time_scale >= 32 && ret.e > 1 &&
-			    vertical_speed > 0 && ret.d_rp < vertical_speed*rt.time_scale) {
+			    vertical_speed > 0 && fabs(ret.r-ret.rp) < vertical_speed*rt.time_scale) {
 				rt.time_scale = 1;
 				rt.pause = true;
 			}
