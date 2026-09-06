@@ -184,6 +184,7 @@ struct RenderBackend_t {
 	void (*clean)(RenderBackend_t *backend);              /* 清理上一帧的数据 */
 	void (*destroy)(RenderBackend_t *backend);            /* 释放内存 */
 	void (*get_size)(RenderBackend_t *backend, int *w, int *h);    /* 获取实际宽高(可选) */
+	int  (*get_input)(RenderBackend_t *backend);          /* 从输出后端获取输入(可选) */
 	void *data;
 	enum Backend_id id;
 };

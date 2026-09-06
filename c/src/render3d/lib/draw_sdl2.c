@@ -34,6 +34,7 @@ typedef struct {
 	int w, h;		/* 窗口宽高（像素） */
 	int pitch;		/* 纹理每行字节数 */
 	uint32_t format;	/* 纹理像素格式（如 SDL_PIXELFORMAT_ARGB8888） */
+	int inp;		/* 按键输入 */
 } Scr_t;
 
 /* 将 Color_t 转换为 SDL 像素格式（这里按 ARGB 顺序，可根据系统调整） */
@@ -87,6 +88,8 @@ static Scr_t *scr_create(int width, int height)
 		fprintf(stderr, "SDL_CreateWindow Error: %s\n", SDL_GetError());
 		goto error;
 	}
+	/* 使输入按键字面化 */
+	SDL_StartTextInput();
 
 	/* 创建渲染器（使用硬件加速） */
 	s->renderer = SDL_CreateRenderer(s->window, -1,
@@ -149,6 +152,16 @@ static void scr_getsize(RenderBackend_t *backend, int *w, int *h)
 	Scr_t *s = backend->data;
 	*w = s->w;
 	*h = s->h;
+}
+
+static int scr_get_input(RenderBackend_t *backend)
+{
+	if (!backend || !backend->data)
+		return 0;
+	Scr_t *s = backend->data;
+	const int c = s->inp;
+	s->inp = 0;
+	return c;
 }
 
 static int scr_resize(Scr_t *s, int new_w, int new_h)
@@ -253,6 +266,10 @@ static void render(RenderBackend_t *backend)
 				}
 			}
 			break;
+		case SDL_TEXTINPUT:
+			if (e.text.text[0] <= 0) break;
+			s->inp = e.text.text[0];
+			break;
 		default:
 			break;
 		}
@@ -321,6 +338,7 @@ RenderBackend_t *backend_create_sdl2(int width, int height)
 		.clean = clean,
 		.destroy = destroy,
 		.get_size = scr_getsize,
+		.get_input = scr_get_input,
 		.data = data,
 		.id = RDBK_sdl2,
 	};

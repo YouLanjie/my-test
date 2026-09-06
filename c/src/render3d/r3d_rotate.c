@@ -1480,6 +1480,8 @@ static void game_loop(Runtimedata_t *rt)
 		last_follow = rt->follow;
 		if ((rt->inp = kbhitGetchar()))
 			if (!input_handle(rt)) break;
+		if (rt->backend->get_input && (rt->inp = rt->backend->get_input(rt->backend)))
+			if (!input_handle(rt)) break;
 		if (!rt->pause) rt->gtime += physics_update(rt);
 		if (rt->follow) ret = get_orbital_parameters(rt->follow, rt->about_point);
 		if (rt->follow && last_follow == rt->follow && last_about_point && last_about_point != rt->about_point) {
