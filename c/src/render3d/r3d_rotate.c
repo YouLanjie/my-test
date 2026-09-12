@@ -890,9 +890,16 @@ static void dump_stars(Runtimedata_t *rt, FILE *output, bool no_inp)
 	bool flg = !no_inp && isatty(fileno(output));
 	if (flg) fprintf(output, "\e[0m\n\e[2K");
 	fprintf(output, "===== 数据导出：各星体基本参数 =====\n");
+	Color_t c = COLOR_WHITE;
 	for (size_t i = 0; i < rt->objs.len; i++) {
 		if (!objs[i].obj) continue;
-		fprintf(output, " [%lu] %s (%gkg/r=%gkm) 位置(km): {%.3f,%.3f,%.3f} 速度(km/s): {%.3f,%.3f,%.3f}\n", i+1,
+		if (objs[i].obj->count_point > 1 && objs[i].obj->colors) {
+			c = objs[i].obj->colors[0];
+		}
+		fprintf(output, " [%lu] %s (%gkg/r=%gkm) "
+			"位置(km): {%.3f,%.3f,%.3f} "
+			"速度(km/s): {%.3f,%.3f,%.3f} "
+			"(#%.2X%.2X%.2X%.2X)\n", i+1,
 		       objs[i].name.p ? objs[i].name.p : "{未命名星体}",
 		       objs[i].mass, objs[i].radius,
 		       objs[i].obj->center.x,
@@ -900,7 +907,8 @@ static void dump_stars(Runtimedata_t *rt, FILE *output, bool no_inp)
 		       objs[i].obj->center.z,
 		       objs[i].speed.x,
 		       objs[i].speed.y,
-		       objs[i].speed.z);
+		       objs[i].speed.z,
+		       c.r, c.g, c.b, c.a);
 	}
 	fprintf(output, "游戏时间: T+%.1f s, 折合约 T+%.1f d\n", rt->gtime, sec2day(rt->gtime));
 	fprintf(output, "操作累计dv: %.3f km/s\n", rt->dv);
@@ -1267,14 +1275,14 @@ static void scene_init(Runtimedata_t *rt, bool add_three_body)
 	center = da_get(&rt->objs, rt->objs.len-1);
 
 	star = star_create("地球小卫星", 1, 0.5, (Vec_t){12000,0,0}, vec_xyzl(0, 1, 0.8, 5.75993), center);
-	obj_set_color(star.obj, (Color_t){-1,30,30,50});
+	obj_set_color(star.obj, (Color_t){-1,30,30,200});
 	da_append(&rt->objs, &star);
 
 	// GM = Rv^2
 	// > sqrt((6.67*10^-11) * (5.965*10^24) / (11000*1000))/1000
 	// 6.0141159707
 	star = star_create("地球大卫星", 1e10, 450, (Vec_t){-42164,0,0}, vec_xyzl(0, -1, 0.1, 3.07282), center);
-	obj_set_color(star.obj, (Color_t){0,-1,30,50});
+	obj_set_color(star.obj, (Color_t){0,-1,30,200});
 	da_append(&rt->objs, &star);
 
 	star = star_create("月球", 7.342e22, 1737.4,
@@ -1387,13 +1395,16 @@ static bool scene_init_from_dumped_txt(Runtimedata_t *rt, const char *filename)
 	double radius = 0;
 	double Px = 0, Py = 0, Pz = 0;
 	double Vx = 0, Vy = 0, Vz = 0;
+	Color_t c;
 	Star_t star;
 	while (fgets(buf, sizeof(buf), fp)) {
-		ret = sscanf(buf, " [%lu] %s (%lgkg/r=%lgkm) 位置(km): {%lf,%lf,%lf} 速度(km/s): {%lf,%lf,%lf}",
-			     &idx, name, &mass, &radius, &Px, &Py, &Pz, &Vx, &Vy, &Vz);
+		ret = sscanf(buf, " [%lu] %s (%lgkg/r=%lgkm) 位置(km): {%lf,%lf,%lf} 速度(km/s): {%lf,%lf,%lf} (#%2hhX%2hhX%2hhX%2hhX)",
+			     &idx, name, &mass, &radius, &Px, &Py, &Pz, &Vx, &Vy, &Vz,
+			     &c.r, &c.g, &c.b, &c.a);
 		if (ret < 10) continue;
 		count++;
 		star = star_create(name, mass, radius, (Vec_t){Px,Py,Pz}, (Vec_t){Vx,Vy,Vz}, NULL);
+		if (ret >= 14) obj_set_color(star.obj, c);
 		da_append(&rt->objs, &star);
 	}
 	fclose(fp);
@@ -1472,10 +1483,11 @@ static void game_loop(Runtimedata_t *rt)
 	int8_t last_throttle_on = false;
 #ifdef FLG_BENCHTEST
 	/* 测试40fps*20s */
-	for (i = 0; i < 800; ++i) {
+	for (i = 0; i < 800; ++i)
 #else
-	for (i = 0; i < INT64_MAX; ++i) {
+	for (i = 0; i < INT64_MAX; ++i)
 #endif
+	{
 		last_about_point = rt->about_point;
 		last_follow = rt->follow;
 		if ((rt->inp = kbhitGetchar()))
@@ -1496,18 +1508,24 @@ static void game_loop(Runtimedata_t *rt)
 			rt->throttle_on&1
 			&& (ret.e < 1 && last_ret.e < 1)
 			&& (ret.ra-last_ret.rp<=1e-5 || ret.rp-last_ret.ra>=-1e-5) : false;
-		const bool cond3 = cond1 ? cond2    /* 触发以下任意事件 */
-			|| (last_throttle_on^rt->throttle_on)&1      /* 油门开关 */
+		const bool cond3 = (last_throttle_on^rt->throttle_on)&1      /* 油门开关 */
+			|| (rt->throttle_on&1 && (last_throttle_on^rt->throttle_on)&0b10);
+		const bool cond4 = cond1 ? cond2    /* 触发以下任意事件 */
+			|| cond3
 			|| ((last_ret.e-1)*(ret.e-1)<0) : false;    /* 轨道类型改变 */
-		if (cond1 && cond3) {
+		if (cond1 && cond4) {
+			if (cond3) {
+				syslog(rt, "油门切换至: %s向推力 %d%% %s",
+				       rt->throttle_on&0b10?"反":"正", rt->throttle, rt->throttle_on&1?"开":"关");
+			}
 			if (cond2) {
 				syslog(rt, "近远地点高度交换");
 				if (rt->time_scale >= 2) rt->pause = true;
 			}
 			format_orbital_parameters(rt, &buf, ret);
-			syslog(rt, "'%s'->'%s':%s(%s,dv:%.3gkm/s)(油门%d%%%s)",
+			syslog(rt, "'%s'->'%s':%s(%s,dv:%.3gkm/s)",
 			       rt->follow->name.p, rt->about_point->name.p,
-			       ret.typ, buf.p, rt->dv, rt->throttle, rt->throttle_on&1?"开":"关");
+			       ret.typ, buf.p, rt->dv);
 		}
 		last_ret = ret;
 		last_throttle_on = rt->throttle_on;
@@ -1573,19 +1591,25 @@ static void game_loop(Runtimedata_t *rt)
 		       rt->throttle_on&1?']':':',
 		       rt->dv);
 		if (rt->follow) {
+			const char hint[2][4] = { "<{[", ">}]", };
+			const uint8_t hintc = rt->follow==rt->look_to?0:(rt->rotate_cam_with_spd?1:2);
 			printf(" | %s%c%s%c (%.3f km/s)",
 			       rt->follow->name.p ? rt->follow->name.p : "Unknow",
-			       rt->rotate_cam_with_spd ? '{' : '[',
+			       hint[0][hintc],
 			       rt->about_point->name.p ? rt->about_point->name.p : "Unknow",
-			       rt->rotate_cam_with_spd ? '}' : ']',
+			       hint[1][hintc],
 			       vec_len(vec_sub(rt->follow->speed, rt->about_point->speed)));
 		}
 		if (rt->follow && rt->destination_to) {
-			printf(" Rp:%.1fkm Ra:%.1fkm\r\e[B", ret.rp, ret.ra);
+			const char *hint1 =
+				ret.rp<=rt->about_point->radius ? "\e[31m"
+				: (ret.rp<=1.2*rt->about_point->radius ? "\e[33m" : "");
+			const char *hint2 = hint1[0] ? "\e[0m" : "";
+			printf(" Rp:%s%.1fkm%s Ra:%.1fkm\r\e[B", hint1, ret.rp, hint2, ret.ra);
 			const Vec_t dist = vec_sub(rt->destination_to->obj->center, rt->follow->obj->center);
 			const Vec_t dv = vec_sub(rt->follow->speed, rt->destination_to->speed);
 			const double vertical_speed = vec_point_product(vec_direct(dist), dv);
-			// 速度 <0 表靠近， >0 表远离
+			// 对于打速度印值， <0 表靠近， >0 表远离
 			printf("距%s %.1f km (%.3f km/s)",
 			       rt->destination_to->name.p ? rt->destination_to->name.p : "Unknow",
 			       vec_len(dist),
@@ -1620,15 +1644,21 @@ static void game_loop(Runtimedata_t *rt)
 					printf(" L:%.2fs", time_left);
 					/* 自动暂停 */
 					if (rt->throttle_on&1 && rt->time_scale>2 && time_left-rt->time_scale < 0) {
-						rt->pause = true;
-						rt->time_scale = 1;
+						// rt->pause = true;
+						rt->time_scale /= 2;
 					}
 				}
 			} else if (ret.e > 1 && ret.Tp < 30*24*60*60) {
 				printf(" L:%.2fs", ret.Tp);
 			}
-			if (rt->destination_to==rt->about_point && rt->time_scale > 2 && ret.e > 1 &&
-			    vertical_speed > 0 && ret.Tp - rt->time_scale < 0) {
+			if (ret.rp<=rt->about_point->radius && rt->time_scale > 2) {
+				rt->time_scale = 1;
+				rt->pause = true;
+			}
+			const bool cond = (ret.rp<=rt->about_point->radius && vertical_speed > 0)
+				|| (rt->destination_to==rt->about_point && ret.e > 1
+				    && vertical_speed > 0 && ret.Tp - rt->time_scale < 0);
+			if (rt->time_scale > 2 && cond) {
 				/* 旧条件：fabs(ret.r-ret.rp) < vertical_speed*rt->time_scale */
 				rt->time_scale = 1;
 				rt->pause = true;
