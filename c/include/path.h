@@ -64,6 +64,7 @@ Path_t * path_normalize(Path_t *path);
  * @return 拼接后路径
  */
 Path_t *path_join(Path_t *path, SV_t child);
+/* 通过stat()获取文件状态 */
 Path_st_t path_get_st(Path_t f);
 /* 可递归创建文件夹 */
 int path_mkdir(SV_t path, int mode);

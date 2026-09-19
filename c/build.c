@@ -78,8 +78,6 @@ CFLAGS_t CFILEFLAGS[] = {
 
 	// FLG("tetris.c",            "ncurses"),
 };
-#undef MUS
-#undef MUSDEP
 #undef FLG
 // 配置区结束
 // ================================
@@ -97,7 +95,6 @@ static bool rule_fordir(SV_t d_name, uint8_t d_type);
 // 递归文件处理和目标生成规则
 static Target_t *action_c_lib(Target_t *list, SV_t full_path);
 static Target_t *action_c_elf(Target_t *list, SV_t full_path);
-static Target_t *action_c_lib(Target_t *list, SV_t full_path);
 // 文件构建规则
 static bool build_c2obj(Target_t *target);
 static bool build_obj2elf(Target_t *target);
@@ -353,16 +350,44 @@ static Target_t *get_target_by_libname(Target_t *list, SV_t libname)
 	return ret;
 }
 
-static bool check_header(SV_t content, SV_t header)
+/* 自动为elf目标导入需要链接的库 */
+static void autoimport_by_header(Target_t *list, Target_t *target_elf, SV_t match)
 {
-	if (!content.p || !header.p) return false;
+	if (!list || !target_elf || !match.p) return;
+	Target_t *lib = NULL;
+	size_t i, j;
+	for (i = 0; i < countof(CLIBS); i++) {
+		for (j = 0; CLIBS[i].header[j]; j++) {
+			const SV_t header = sv_from_cstr(CLIBS[i].header[j]);
+			const SV_t father = sv_end_with(header, sv_from_lstr("/*")) ? path_father(header) : (SV_t){};
+
+			if (!(father.p && sv_end_with(path_father(match), father))    /* 目录泛匹配 */
+			    && !(!father.p && sv_end_with(match, header))) continue;    /* 具体文件匹配 */
+
+			lib = get_target_by_libname(list, sv_from_cstr(CLIBS[i].libname));
+			if (!lib) continue;
+			target_depend_append(target_elf, lib);
+		}
+	}
+	return;
+}
+
+/* 扫描c文件寻找include的文件并处理 */
+static void scan_header(Target_t *list, Target_t *target_elf, Target_t *target_c)
+{
+	if (!list || !target_elf || !target_c) return;
+	SVA_t content = {};
+	path_readfile(sv_from_sva(&target_c->name), &content, 10*PATH_MAX);
+	if (!content.p) return;
+
 	char buf[1024] = {};
-	SV_t match = {},
-	     father = sv_end_with(header, sv_from_lstr("/*")) ? path_father(header) : (SV_t){},
-	     line;
 	int count = 0;
-	while (content.len && count < 30) {
-		line = sv_chop_by_delim(&content, '\n');
+	SV_t match = {},
+	     line = {},
+	     left = sv_from_sva(&content);
+	Path_t header_path = {};
+	Target_t *header = NULL;
+	while (sv_forline(&line, &left) && count < 30) {
 		count++;
 		if (sscanf(line.p, " # include <%[^>]>", buf) > 0) {
 			match = sv_from_cstr(buf);
@@ -370,33 +395,20 @@ static bool check_header(SV_t content, SV_t header)
 			match = sv_from_cstr(buf);
 		} else match = (SV_t){};
 
-		if (match.p) {
-			if (father.p && sv_end_with(path_father(match), father)) return true;
-			else if (!father.p && sv_end_with(match, header)) return true;
-		}
-	}
-	return false;
-}
+		if (!match.p) continue;
+		autoimport_by_header(list, target_elf, match);
+		sva_from_sv(&header_path, path_father(sv_from_sva(&target_c->name)));
+		path_join(&header_path, match);
 
-/* 自动为elf目标导入需要链接的库 */
-static void autoimport_by_header(Target_t *list, Target_t *target_elf, Target_t *target_c)
-{
-	if (!list || !target_elf) return;
-	SVA_t content = {};
-	path_readfile(sv_from_sva(&target_c->name), &content, 10*PATH_MAX);
-	if (!content.p) return;
-	Target_t *lib = NULL;
-	size_t i, j;
-	for (i = 0; i < countof(CLIBS); i++) {
-		for (j = 0; CLIBS[i].header[j]; j++) {
-			if (!check_header(sv_from_sva(&content), sv_from_cstr(CLIBS[i].header[j])))
-				continue;
-			lib = get_target_by_libname(list, sv_from_cstr(CLIBS[i].libname));
-			if (!lib) continue;
-			target_depend_append(target_elf, lib);
-		}
+		if (!path_get_st(header_path).isfile) continue;
+		header = target_get_or_create(list, sv_from_sva(&header_path));
+		if (!header) continue;
+		header->type = TY_DEP;
+		/* c依赖引用的.h文件 */
+		target_depend_append(target_c, header);
 	}
 	sva_free(&content);
+	sva_free(&header_path);
 	return;
 }
 
@@ -477,8 +489,8 @@ static Target_t *action_c_elf(Target_t *list, SV_t full_path)
 	}
 	target_depend_append(target_elf, target_obj);  // elf 依赖 .o
 
-	/* 自动导入 */
-	autoimport_by_header(list, target_elf, target_c);
+	/* 扫描头文件，自动导入.h和库 */
+	scan_header(list, target_elf, target_c);
 	/* 查找显式要求的库 */
 	CFLAGS_t *flag = NULL;
 	for (uint64_t i = 0; i < countof(CFILEFLAGS); i++) {
@@ -643,7 +655,7 @@ int main(int argc, char *argv[])
 
 	if (argc <= 1) list = target_fordir(list, NULL, sv_from_cstr(SOURCE_DIR), rule_fordir, action_c_elf);
 	else {
-		if (strcmp(argv[1], "help") == 0) {
+		if (strcmp(argv[1], "help") == 0 || strcmp(argv[1], "-h") == 0) {
 			printf("Usage: %s [help|clean|list|run] <...>\n", argv[0]);
 			goto EXIT_AND_CLEANUP;
 		} else if (strcmp(argv[1], "clean") == 0) {
@@ -653,8 +665,10 @@ int main(int argc, char *argv[])
 			goto EXIT_AND_CLEANUP;
 		} else if (strcmp(argv[1], "list") == 0) {
 			mode = 1;
-			target_freelist(list);
-			list = NULL;
+			if (argc > 2) {
+				target_freelist(list);
+				list = NULL;
+			}
 		} else if (strcmp(argv[1], "run") == 0) {
 			mode = 2;
 		}

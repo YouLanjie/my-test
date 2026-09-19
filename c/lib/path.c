@@ -109,7 +109,6 @@ Path_t *path_join(Path_t *path, SV_t child)
 	return path_normalize(path);
 }
 
-/* fl的文件是否比f的新 */
 Path_st_t path_get_st(Path_t f)
 {
 	Path_st_t st = {0};
