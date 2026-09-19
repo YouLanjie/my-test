@@ -7,6 +7,7 @@
 ${meta}
   <title>${title}</title>
   <link rel="stylesheet" type="text/css" href="/main.css">
+  <link rel="shortcut icon" href="/icon.webp">
   <script>
   (function() {
     theme = localStorage.getItem('theme') || "light"
@@ -184,7 +185,7 @@ function toggleTheme() {
 }
 window.onload = function() {
   theme = localStorage.getItem('theme') || "light";
-  document.getElementById("dark-theme-css").innerText = theme+"（点击切换）"
+  document.getElementById("theme-toggle-button").innerText = theme+"（点击切换）"
 }
 </script>
 <div class="container">

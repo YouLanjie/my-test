@@ -22,6 +22,12 @@ const double SCALE = 1e3;    /* 将距离换算成 1单位 = 1km */
 /* 宏编译条件 */
 // #define FLG_BENCHTEST 1
 
+#ifdef FLG_BENCHTEST
+#ifndef TIME_SCALE_LIMIT
+#define TIME_SCALE_LIMIT 1024*8
+#endif
+#endif
+
 typedef struct {
 	SVA_t name;
 	Obj_t *obj;
@@ -1726,7 +1732,7 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 #ifdef FLG_BENCHTEST
-	rt.time_scale_limit = 1024*16*2;
+	rt.time_scale_limit = TIME_SCALE_LIMIT;
 	rt.time_scale = 1e8;
 	rt.print_busy = true;
 	/* 是的你没看错一众ai在面对

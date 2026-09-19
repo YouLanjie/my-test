@@ -72,6 +72,7 @@ class Activetype(Enum):
     EDIT_NOTE = 3
     EDIT_MSG = 4
     CHUSER = 5
+    LOGOUT_OUT_OF_DATE = 6
 @unique
 class Messagetype(Enum):
     """消息类型枚举"""
@@ -123,6 +124,8 @@ class System:
     _admi_psswd = "db10fa5fb2467f50c7242356ee42ca86"
     _admi_sid = "SYSTEM-LOG-SERVER"
     cli_sid = "CLI-SESSION-UUID"
+    # sid过期时间(14天)
+    session_ttl = 14 * 24 * 3600
     def __init__(self) -> None:
         exists = self.db_path.is_file()
         self.conn = sqlite3.connect(self.db_path)
@@ -132,6 +135,7 @@ class System:
             # 减少重复初始化
             self.init_db()
             self.syslog("[INFO] 聊天室建立")
+        self.clean_up_outofdate_sid()
     def init_db(self):
         """初始化数据库"""
         self.conn.executescript("""\
@@ -198,7 +202,7 @@ CREATE INDEX IF NOT EXISTS "idx_tid" ON "msgs_tags"(tid);
 CREATE TABLE IF NOT EXISTS "sessions" (
 	sid TEXT PRIMARY KEY,
 	uid TEXT NOT NULL,
-	ctime INTEGER,
+	ctime INTEGER,         -- 最后活跃时间(更新延迟1h)
 	FOREIGN KEY ("uid") REFERENCES "users"(uuid) ON DELETE CASCADE
 );
 
@@ -238,11 +242,34 @@ LEFT JOIN users u ON u.uuid = m.owner;
     def get_uid_by_sid(self, sid:str) -> tuple[bool,str]:
         """根据会话sid获取用户uid"""
         cur = self.conn.cursor()
-        cur.execute("SELECT uid FROM sessions WHERE sid = ?", (sid,))
+        cur.execute("SELECT uid,ctime FROM sessions WHERE sid = ?", (sid,))
         ret = cur.fetchone()
-        if ret:
-            return (True, ret[0])
-        return (False, "会话未登录")
+        if not ret:
+            return (False, "会话未登录")
+        uid,ctime = ret
+        now = time.time()
+        if ctime + self.session_ttl < now:
+            self.conn.execute("DELETE FROM sessions WHERE sid = ?", (sid,))
+            self.logevent(uid, Activetype.LOGOUT_OUT_OF_DATE)
+            self.conn.commit()
+            return (False, "会话已过期，请重新登录")
+        if ctime + 3600 < now:
+            # 更新会话最后活跃时间
+            self.conn.execute("UPDATE sessions SET ctime = ? WHERE sid = ?", (now, sid))
+            self.conn.commit()
+        return (True, uid)
+    def clean_up_outofdate_sid(self):
+        """清理过期会话"""
+        # expire  v. （因到期而）失效，终止；到期
+        expire_before = int(time.time()) - self.session_ttl
+        cur = self.conn.cursor()
+        cur.execute("SELECT uid FROM sessions WHERE ctime < ?", (expire_before,))
+        ret = cur.fetchall()
+        for uid, in ret:
+            self.logevent(uid, Activetype.LOGOUT_OUT_OF_DATE)
+        cur.execute("DELETE FROM sessions WHERE ctime < ?", (expire_before,))
+        self.conn.commit()
+        return cur.rowcount
     def get_userinfo(self, uid:str) -> tuple[bool, str|UserInfo]:
         """通过uid获取用户详细信息"""
         user = self.get_userlist(uid)
@@ -408,7 +435,9 @@ LEFT JOIN users u ON u.uuid = m.owner;
     def login(self, sid:str, name:str, passwd:str) -> tuple[bool,str]:
         """登录（sid无则留空），返回状态和sid"""
         if self.get_uid_by_sid(sid)[0]:
-            return (False, "当前会话已登录")
+            # return (False, "当前会话已登录")
+            # 如若已登录，则自动登出
+            self.logout(sid)
         name = str(name)
         passwd = hashlib.md5(str(passwd).encode("utf8")).hexdigest()
         cur = self.conn.cursor()
@@ -535,12 +564,15 @@ LEFT JOIN users u ON u.uuid = m.owner;
 
 class Rescourses:
     """资源类"""
+    _tf_home = Path(__file__).parent/"ncr_res"
+    tf_css = _tf_home/"main.css"
+    tf_dcss = _tf_home/"dark.css"
+    tf_icon = _tf_home/"icon.webp"
+    tf_html = _tf_home/"template.html"
     def __init__(self) -> None:
-        self.tf_css = Path(__file__).parent/"ncr_res/main.css"
-        self.tf_dcss = Path(__file__).parent/"ncr_res/dark.css"
-        self.tf_html = Path(__file__).parent/"ncr_res/template.html"
         self.css = ""
         self.darkcss = ""
+        self.icon = b""
         self.last_update = time.time()
         # 键：meta, title, loginstatus, content
         self.index = Template("<html><head>${meta}</head><body>${content}</body></html>")
@@ -560,6 +592,8 @@ class Rescourses:
             self.css = self.tf_css.read_text()
         if self.tf_dcss.is_file():
             self.darkcss = self.tf_dcss.read_text()
+        if self.tf_icon.is_file():
+            self.icon = self.tf_icon.read_bytes()
         if not self.tf_html.is_file():
             return
         ret = re.split(r"<!-- template:\s*([A-Za-z0-9_-]+) -->\n", self.tf_html.read_text())[1:]
@@ -577,6 +611,7 @@ class Rescourses:
 
 class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
     """Web交互 && 自定义请求处理器"""
+    force_login = False
     system : None|System = None
     httpd : None|socketserver.TCPServer = None
     res = Rescourses()
@@ -1039,21 +1074,35 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
                 }
         css_list = {"/main.css":self.res.css,
                     "/dark.css":self.res.darkcss}
-        if path not in handler and path not in css_list:
+        file_list = {"/icon.webp":(self.res.icon, 'image/webp')}
+        if path not in handler and path not in css_list and path not in file_list:
             self.ret_404()
             return
-        html_content = ""
+        html_content = b""
         if path in css_list:
-            html_content = css_list[path]
+            html_content = css_list[path].encode()
             self.send_response(200)
             self.send_header('Content-type', 'text/css')
             self.end_headers()
+        elif path in file_list:
+            html_content = file_list[path][0]
+            self.send_response(200)
+            self.send_header('Content-type', file_list[path][1])
+            self.end_headers()
         elif path in handler:
-            html_content = handler[path]()
+            if self.force_login and self.system \
+                    and path not in {"/login", "/ret"} \
+                    and not self.system.get_uid_by_sid(self.get_sid())[0]:
+                html_content = self.get_response(
+                        "【登录保护】站点开启了仅登录用户可查看站内内容，请先登录（注册也是不允许的）",
+                        timeout=3, url="/login")
+            if not html_content:
+                html_content = handler[path]()
             self.send_response(200 if html_content!="500" else 500)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
-        self.wfile.write(html_content.encode())
+            html_content = html_content.encode()
+        self.wfile.write(html_content)
     def ret_response(self, msg:str, header:dict[str,str]|None=None, timeout=2, url="/"):
         """响应POST请求返回重定向界面"""
         header = header or {}
@@ -1091,6 +1140,11 @@ class InterfaceWeb(http.server.SimpleHTTPRequestHandler):
                 "/admi-setusertype":self.post_setusertype,
                 }
         if parsed_path.path not in handler:
+            self.ret_404()
+            return
+        if self.force_login and self.system \
+                and parsed_path.path not in {"/login"} \
+                and not self.system.get_uid_by_sid(self.get_sid())[0]:
             self.ret_404()
             return
         if handler[parsed_path.path](parsed_data, data):
@@ -1547,10 +1601,13 @@ def main():
     parser.add_argument('-I', '--import-file', help='需要导入的json存档文件')
     parser.add_argument('-p', '--port', default=8000, type=int, help='端口号')
     parser.add_argument('-S', '--pure-http-server', action="store_true", help='纯服务器(前台运行)')
+    parser.add_argument('-L', '--login-only', action="store_true", help='仅允许用户登录后访问站点内容')
     args = parser.parse_args()
     # 指定数据库文件
     System.db_path = Path(args.input)
     InterfaceWeb.default_port = args.port
+    if args.login_only:
+        InterfaceWeb.force_login = True
     if args.import_file:
         import_from_json_chatroom(Path(args.import_file))
     if args.pure_http_server:
