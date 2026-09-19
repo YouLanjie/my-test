@@ -305,6 +305,85 @@ Obj_t *obj_create_cube_with_surface(double edge_len)
 	return obj;
 }
 
+/* 代码由ai生成 */
+Obj_t *obj_create_sphere(double radius, size_t longitude_segments, size_t latitude_segments)
+{
+	if (longitude_segments < 3 || latitude_segments < 2) {
+		return NULL;
+	}
+	/*
+	 * 纬度层数：latitude_segments + 1
+	 * 每层经度点数：longitude_segments
+	 * 注意：南北极会有多个重合点，但这样索引简单。
+	 */
+	size_t point_num = (latitude_segments + 1) * longitude_segments;
+
+	/*
+	 * 纬线：每个非极点的纬度层有 longitude_segments 条线
+	 * 经线：每个经度方向有 latitude_segments 条线
+	 */
+	size_t line_num = (latitude_segments - 1) * longitude_segments
+	    + latitude_segments * longitude_segments;
+
+	Point_t *points = malloc(point_num * sizeof(*points));
+	Line_t *lines = malloc(line_num * sizeof(*lines));
+
+	if (!points || !lines) {
+		free(points);
+		free(lines);
+		return NULL;
+	}
+
+	/* 生成球面点 */
+	for (size_t i = 0; i <= latitude_segments; ++i) {
+		double theta =
+		    -M_PI / 2.0 + (double)i * M_PI / (double)latitude_segments;
+		double z = radius * sin(theta);
+		double ring_r = radius * cos(theta);
+
+		for (size_t j = 0; j < longitude_segments; ++j) {
+			double phi =
+			    (double)j * 2.0 * M_PI / (double)longitude_segments;
+
+			points[i * longitude_segments + j] = (Point_t) {
+			ring_r *cos(phi), ring_r * sin(phi), z};
+		}
+	}
+
+	size_t k = 0;
+
+	/* 纬线：跳过南北极，避免生成零长度线 */
+	for (size_t i = 1; i < latitude_segments; ++i) {
+		for (size_t j = 0; j < longitude_segments; ++j) {
+			lines[k][0] = i * longitude_segments + j;
+			lines[k][1] = i * longitude_segments + (j + 1) % longitude_segments;
+			k++;
+		}
+	}
+
+	/* 经线：从南极连到北极 */
+	for (size_t j = 0; j < longitude_segments; ++j) {
+		for (size_t i = 0; i < latitude_segments; ++i) {
+			lines[k][0] = i * longitude_segments + j;
+			lines[k][1] = (i + 1) * longitude_segments + j;
+			k++;
+		}
+	}
+
+	Obj_t *obj = obj_create((Point_t) { 0, 0, 0 }, 0, NULL, 0, NULL, 0, NULL);
+
+	obj->count_point = point_num;
+	obj->points = points;
+	obj->count_line = line_num;
+	obj->lines = lines;
+	obj->colors = malloc(sizeof(*obj->colors)*point_num);
+	assert(obj->colors);
+	for (size_t i = 0; i < point_num; i++) {
+		obj->colors[i] = COLOR_WHITE;
+	}
+	return obj;
+}
+
 Obj_t *obj_create_image_from_str(Point_t center, double k, const char *p, char ch)
 {
 	if (!p || ch == '\n') return NULL;

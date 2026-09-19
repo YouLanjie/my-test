@@ -274,6 +274,16 @@ Obj_t *obj_create_box_from_point(Point_t points[8]);
 Obj_t *obj_create_cube(double edge_len);
 /* 类似obj_create_cube但是创建有封闭六面的立方体 */
 Obj_t *obj_create_cube_with_surface(double edge_len);
+/*
+ * @brief 创建球体，仅设置点和线。
+ *
+ * @param radius 球半径
+ * @param longitude_segments 经度方向分段数，即绕一圈分成多少段
+ * @param latitude_segments 纬度方向分段数，即从南极到北极分成多少段
+ *
+ * @return 返回的球体以原点为中心。
+ */
+Obj_t *obj_create_sphere(double radius, size_t longitude_segments, size_t latitude_segments);
 /**
  * @brief 通过字符串字符画生成物体
  * (画布垂直于z轴,中心在边界框中心)

@@ -117,8 +117,9 @@ static void print_pager(const char *headline, SV_t content, int mode)
 static Star_t star_create(char *name, double mass, double radius, Vec_t position, Vec_t speed, Star_t *about_point)
 {
 	Point_t center = about_point&&about_point->obj ? about_point->obj->center : (Vec_t){};
+	// obj_create_cube/*_with_surface*/
 	Star_t star = {
-		.obj = obj_shift(obj_create_cube/*_with_surface*/(2*radius), vec_add(center, position)),
+		.obj = obj_shift(obj_create_sphere(radius, 16, 16), vec_add(center, position)),
 		.speed = vec_add(about_point ? about_point->speed : (Vec_t){}, speed),
 		.mass = mass > 1e-4 ? mass : 1e-4,    /* 负质量是非法的！ */
 		.radius = radius,
@@ -681,7 +682,7 @@ static struct orbital_parameters get_orbital_parameters(Star_t *ship, Star_t *ce
 		dat.T = INFINITY;
 		dat.Tp = INFINITY;
 		dat.Ta = INFINITY;
-		dat.ra = INFINITY;
+		// dat.ra = INFINITY;
 	}
 	/* 舍弃正圆 */
 	if (dat.e < 1e-12) return dat;
@@ -1502,7 +1503,9 @@ static void game_loop(Runtimedata_t *rt)
 			if (!input_handle(rt)) break;
 		if (!rt->pause) rt->gtime += physics_update(rt);
 		if (rt->follow) ret = get_orbital_parameters(rt->follow, rt->about_point);
-		if (rt->follow && last_follow == rt->follow && last_about_point && last_about_point != rt->about_point) {
+		if (rt->follow && last_follow == rt->follow
+		    && last_about_point && last_about_point->name.p
+		    && last_about_point != rt->about_point) {
 			format_orbital_parameters(rt, &buf, ret);
 			syslog(rt, "天体'%s'被'%s'捕获(%s)(原运行在'%s'),累计dv:%.3gkm/s",
 			       rt->follow->name.p, rt->about_point->name.p, buf.p,
@@ -1657,7 +1660,7 @@ static void game_loop(Runtimedata_t *rt)
 			} else if (ret.e > 1 && ret.Tp < 30*24*60*60) {
 				printf(" L:%.2fs", ret.Tp);
 			}
-			if (ret.rp<=rt->about_point->radius && rt->time_scale > 2) {
+			if (ret.rp<=rt->about_point->radius && rt->time_scale > 1) {
 				rt->time_scale = 1;
 				rt->pause = true;
 			}
