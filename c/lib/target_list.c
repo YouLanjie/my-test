@@ -171,6 +171,52 @@ void target_buildlist(Target_t *list)
 	}
 }
 
+static size_t target_get_subdeps(Target_t *target)
+{
+	if (!target) return 0;
+	if (!target->dependencies) return 1;
+	size_t count = 1;
+	for (size_t i = 0; i < target->depend_len; i++) {
+		count += target_get_subdeps(target->dependencies[i]);
+	}
+	return count;
+}
+
+struct target_subdeps_t {
+	Target_t *target;
+	int64_t subdeps;
+};
+
+static int target_subdeps_cmp(const void *ts1, const void *ts2)
+{
+	if (!ts1 || !ts2) return 0;
+	return ((struct target_subdeps_t*)ts1)->subdeps - ((struct target_subdeps_t*)ts2)->subdeps;
+}
+
+Target_t *target_sort_by_subdeps(Target_t *list)
+{
+	if (!list) return NULL;
+	size_t len = 0;
+	for (Target_t *target = list; target; target = target->next) len++;
+	if (len == 0) return list;
+	struct target_subdeps_t *target_list = malloc(len*sizeof(*target_list));
+	if (!target_list) return list;
+	size_t i = 0;
+	for (Target_t *target = list; target; target = target->next) {
+		target_list[i].target = target;
+		target_list[i].subdeps = target_get_subdeps(target);
+		i++;
+	}
+	qsort(target_list, len, sizeof(*target_list), target_subdeps_cmp);
+	for (i = 0; i < len; i++) {
+		target_list[i].target->prev = i>0 ? target_list[i-1].target : NULL;
+		target_list[i].target->next = i+1<len ? target_list[i+1].target : NULL;
+	}
+	list = target_list[0].target;
+	free(target_list);
+	return list;
+}
+
 void *target_build_for_pthread(void *target)
 {
 	if (!target) return NULL;
@@ -191,7 +237,8 @@ void target_buildlist_for_pthread(Target_t *list, int8_t ptr_max)
 	Target_t *ptr_target[ptr_max] = {};
 	pthread_t ptrs[ptr_max] = {};
 	for (Target_t *p = list; p; p = p->next) {
-		if (p->type != TY_NORM) continue;
+		if (p->type != TY_NORM && p->type != TY_DEP) continue;
+		if (p->type == TY_DEP && !p->build) continue;
 		while (count >= ptr_max) {
 			for (i = 0; i < ptr_max; i++) {
 				if (!ptrs[i] || !ptr_target[i]) continue;

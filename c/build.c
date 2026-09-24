@@ -375,7 +375,7 @@ static void autoimport_by_header(Target_t *list, Target_t *target_elf, SV_t matc
 /* 扫描c文件寻找include的文件并处理 */
 static void scan_header(Target_t *list, Target_t *target_elf, Target_t *target_c)
 {
-	if (!list || !target_elf || !target_c) return;
+	if (!list || !target_c) return;
 	SVA_t content = {};
 	path_readfile(sv_from_sva(&target_c->name), &content, 10*PATH_MAX);
 	if (!content.p) return;
@@ -389,6 +389,8 @@ static void scan_header(Target_t *list, Target_t *target_elf, Target_t *target_c
 	Target_t *header = NULL;
 	while (sv_forline(&line, &left) && count < 30) {
 		count++;
+		sv_trim_left_by_type(&line, isspace);
+		if (line.len == 0) continue;
 		if (sscanf(line.p, " # include <%[^>]>", buf) > 0) {
 			match = sv_from_cstr(buf);
 		} else if (sscanf(line.p, " # include \"%[^\"]\"", buf) > 0) {
@@ -401,7 +403,13 @@ static void scan_header(Target_t *list, Target_t *target_elf, Target_t *target_c
 		path_join(&header_path, match);
 
 		if (!path_get_st(header_path).isfile) continue;
-		header = target_get_or_create(list, sv_from_sva(&header_path));
+		header = target_get_by_name(list, sv_from_sva(&header_path));
+		if (!header) {
+			header = target_create(sv_from_sva(&header_path));
+			target_append(list, header);
+			/* 递归扫描文件创建依赖 */
+			scan_header(list, NULL, header);
+		}
 		if (!header) continue;
 		header->type = TY_DEP;
 		/* c依赖引用的.h文件 */
@@ -420,8 +428,8 @@ static Path_t *path_hander_obj_replace(Path_t* path)
 	for (size_t n = 0; n < path->len; n++) if (path->p[n] == '/') path->p[n] = '_';
 	SV_t sv = path_stemname(sv_from_sva(path));
 	while (sv.len > 0 && (sv.p[0] == '.' || sv.p[0] == '_')) sv_chop_left(&sv, 1);
+	// sv从path来，不能修改path
 	SVA_t new = {0};
-	sva_from_sva(&new, path);
 	sva_strcpy(path, sva_sprintfcat(path_join(sva_from_cstr(&new, BUILD_DIR), sv), ".o"));
 	sva_free(&new);
 	return path;
@@ -539,9 +547,8 @@ static Target_t *action_c_lib(Target_t *list, SV_t full_path)
 {
 	if (!full_path.p) return list;
 	Target_t *lib;
-	Target_t *target_c = target_get_by_name(list, full_path);
+	Target_t *target_c;
 	Target_t *target_obj;
-	if (target_c) return list;
 	SV_t libdir = path_father(full_path);
 	SV_t testpath;
 	SVA_t objpath = {};
@@ -558,6 +565,7 @@ static Target_t *action_c_lib(Target_t *list, SV_t full_path)
 		if (!target_c) return list;
 		if (!list) list = target_c;
 		target_c->type = TY_DEP;
+		scan_header(list, NULL, target_c);
 
 		path_hander_obj_replace(sva_from_sv(&objpath, full_path));
 		target_obj = target_get_or_create(list, sv_from_sva(&objpath));
@@ -702,7 +710,8 @@ int main(int argc, char *argv[])
 	/* 打印 */
 	// target_printlist(list, 0);
 	// printf("[INFO] 运行构建\n");
-	target_buildlist_for_pthread(list, 8);
+	list = target_sort_by_subdeps(list);
+	target_buildlist_for_pthread(list, sysconf(_SC_NPROCESSORS_ONLN));
 	target_printlist(list, 0);
 
 	while (mode == 2 && argc >= 3) {

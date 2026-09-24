@@ -40,6 +40,8 @@ void target_buildlist(Target_t *list);
 void *target_build_for_pthread(void *target);
 void target_buildlist_for_pthread(Target_t *list, int8_t ptr_max);
 void target_printlist(Target_t *list, uint16_t mode);
+/* 按照总依赖多少重排序(由少到多)，返回新表头 */
+Target_t *target_sort_by_subdeps(Target_t *list);
 
 #endif //TARGET_LIST_H
 
