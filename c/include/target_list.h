@@ -66,7 +66,7 @@ Target_t *target_sort_by_subdeps(Target_t *list);
  * @param list 要查找的目标列表(留空自动创建)
  * @param cwd 工作目录，可以为空
  * @param dirname 要查找的工作目录下的子目录
- * @param rule 规则判断函数,返回true则跳过
+ * @param rule 规则判断函数,返回false则跳过
  * @param action 对文件的行为函数
  * @return 构建好的列表
  */

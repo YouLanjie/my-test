@@ -16,6 +16,7 @@
 // #include <string.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <errno.h>
 
 Target_t *target_create(SV_t name)
 {
@@ -329,6 +330,7 @@ Target_t *target_fordir(Target_t *list, char *cwd, SV_t dirname,
 			bool (*rule)(SV_t d_name, uint8_t d_type),
 			Target_t *(*action)(Target_t *list, SV_t full_path))
 {
+	if (!action) return list;
 	if (!cwd) cwd = "./";
 
 	Path_t path = {0};
@@ -336,7 +338,7 @@ Target_t *target_fordir(Target_t *list, char *cwd, SV_t dirname,
 
 	DIR *dp = opendir(path.p);
 	if (!dp) {
-		if (path_get_st(path).isfile && rule(path_basename(sv_from_sva(&path)), DT_REG)) {
+		if (path_get_st(path).isfile && rule && rule(path_basename(sv_from_sva(&path)), DT_REG)) {
 			list = action(list, sv_from_sva(&path));
 		} else {
 			fprintf(stderr, "ERROR 无法打开文件夹:%s\n", path.p);

@@ -437,7 +437,7 @@ SVA_t *sva_replace(SVA_t *ret, SV_t pat, SV_t src)
 		sv_chop_left(&cur_read, pat.len);
 		if (!cur_read.p) continue;
 
-		memmove(dest->p+cur_write, src.p, src.len);
+		if (src.p) memmove(dest->p+cur_write, src.p, src.len);
 		cur_write += src.len;
 	}
 	if (dest != ret) {

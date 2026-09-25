@@ -89,6 +89,7 @@ static void print_pager(const char *headline, SV_t content, int mode)
 	while (sv_forline(&line, &left)) {
 		if (mode!=-1 || total_lines-count < pager_lines)
 			printf("> %.*s\n", (int)line.len, line.p);
+		else start++;
 		count++;
 		if ((mode<0||count%pager_lines != 0) && left.len != 0) continue;
 		if (left.len == 0) printf("\e[32m-- 内容结束\e[0m\n");
