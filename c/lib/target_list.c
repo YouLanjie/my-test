@@ -29,6 +29,7 @@ Target_t *target_create(SV_t name)
 void target_free(Target_t *target)
 {
 	if (!target) return;
+	sva_free(&target->name);
 	if (target->prev) target->prev->next = target->next;
 	if (target->next) target->next->prev = target->prev;
 	if (target->dependencies) free(target->dependencies);

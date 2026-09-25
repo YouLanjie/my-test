@@ -86,10 +86,12 @@ int sv_cmp(SV_t s1, SV_t s2)
 	if (s1.p == s2.p && s1.len == s2.len) return 0;
 	if (!s1.p || !s2.p) return s1.p ? 1 : 0;
 	if (!s1.len && !s2.len) return 0;
-	size_t len = min(s1.len, s2.len);
-	int ret = memcmp(s1.p, s2.p, len);
-	if (ret == 0) return s1.len - s2.len;
-	return ret;
+	const size_t len = min(s1.len, s2.len);
+	const int ret = memcmp(s1.p, s2.p, len);
+	if (ret != 0) return ret;
+	if (s1.len > s2.len) return 1;
+	if (s1.len < s2.len) return -1;
+	return 0;
 }
 
 int sv_case_cmp(SV_t s1, SV_t s2)
@@ -97,10 +99,12 @@ int sv_case_cmp(SV_t s1, SV_t s2)
 	if (s1.p == s2.p && s1.len == s2.len) return 0;
 	if (!s1.p || !s2.p) return s1.p ? 1 : 0;
 	if (!s1.len && !s2.len) return 0;
-	size_t len = min(s1.len, s2.len);
-	int ret = strncasecmp(s1.p, s2.p, len);
-	if (ret == 0) return s1.len - s2.len;
-	return ret;
+	const size_t len = min(s1.len, s2.len);
+	const int ret = strncasecmp(s1.p, s2.p, len);
+	if (ret != 0) return ret;
+	if (s1.len > s2.len) return 1;
+	if (s1.len < s2.len) return -1;
+	return 0;
 }
 
 bool sv_begin_with(SV_t s, SV_t pat)

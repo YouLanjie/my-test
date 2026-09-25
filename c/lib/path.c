@@ -40,7 +40,7 @@ SV_t path_suffixname(SV_t path)
 
 SV_t path_father(SV_t path)
 {
-	while (path.len > 1 && path.p[path.len] == '/') path.len--;
+	while (path.len > 1 && path.p[path.len-1] == '/') path.len--;
 	while (path.len && path.p[path.len-1] != '/') sv_chop_right(&path, 1);
 	return path;
 }
@@ -49,7 +49,7 @@ SV_t path_father(SV_t path)
  * c: 待添加的分隔符（'/'或'\0'） */
 static inline void _path_tails_process(Path_t *path, char c)
 {
-	if (!path->p || path->p[path->len-1] == '/') return;    /* 忽略重复的 */
+	if (!path->p || (path->len && path->p[path->len-1] == '/')) return;    /* 忽略重复的 */
 	if (sv_end_with(sv_from_sva(path), sv_from_lstr("/."))) {    /* 跳过单独'.'充数的 */
 		// path->p[path->len-1] = 0;
 		path->len--;
@@ -198,16 +198,12 @@ SVA_t *path_readfile(SV_t path, SVA_t *dest, size_t maxsize)
 	do {
 		if (size <= 0 || size >= UINT64_MAX || size+1 == 0) break;
 		if (size > maxsize) size = maxsize;
-		sva_free(dest);
-		dest->capacity = size+1;
-		dest->p = malloc(dest->capacity);
-		if (!dest->p) {
-			dest->capacity = 0;
-			perror("The file is too big");
+		sva_clear(dest);
+		if (!sva_adjust_minimun(dest, size+1)) {
+			perror("The file may too big");
 			break;
 		}
-		dest->len = size;
-		fread(dest->p, 1, size, fp);
+		dest->len = fread(dest->p, 1, size, fp);
 		if (dest->len < dest->capacity) dest->p[dest->len] = '\0';
 	} while (0);
 	fclose(fp);
