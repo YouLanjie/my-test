@@ -55,9 +55,11 @@ SV_t sv_seekline(SV_t base, SV_t slice, int line_offset);
 size_t sv_getlinenum(SV_t base, SV_t slice);
 /* 根据两个切片的最大边界合并切片 */
 SV_t sv_merge(SV_t base, SV_t slice1, SV_t slice2);
+/* 类同memmem，返回找到第一个点及往后的内容 */
+SV_t sv_memmem(SV_t base, SV_t pat);
 
 
-/* 具有所有权的sv */
+/* 具有所有权的sv，约定保证p非空时p[len]==0 */
 typedef struct {
 	size_t capacity;
 	size_t len;
@@ -74,8 +76,8 @@ int sva_free(SVA_t *s);
  */
 SVA_t *sva_from_sv(SVA_t *s, SV_t sv);
 SVA_t *sva_from_cstr(SVA_t *s, const char *p);
-#define sva_from_sva(ret, from) sva_from_sv(ret, sv_from_sva(from))
 SVA_t *sva_strcpy(SVA_t *ret, const SVA_t *from);
+#define sva_from_sva(ret, from) sva_strcpy(ret, from)
 static inline SV_t sv_from_sva(const SVA_t *s)   /* 注意需要避免SVA释放后SV仍存在 */
 {
 	return s ? (SV_t){.len=s->len, .p=s->p} : (SV_t){.len=0, .p=NULL};
@@ -85,12 +87,16 @@ SVA_t *sva_smallest(SVA_t *s);
 SVA_t *sva_double(SVA_t *s);
 /* 调整确保内存容量大等于size */
 SVA_t *sva_adjust_minimun(SVA_t *s, size_t size);
+SVA_t *sva_append(SVA_t *ret, SV_t sv);
 SVA_t *sva_sprintf(SVA_t *ret,char *fmt, ...) __attribute__((format(printf, 2, 3)));
 SVA_t *sva_sprintfcat(SVA_t *ret, char *fmt, ...) __attribute__((format(printf, 2, 3)));
 #define sva_cmp(s1, s2) sv_cmp(sv_from_sva(s1), sv_from_sva(s2))
 SVA_t *sva_chop_right(SVA_t *s, size_t len);
 /* 清除sva的内容但是不释放内存供下次使用 */
 SVA_t *sva_clear(SVA_t *s);
+/* 替换（不允许pat或src为由ret截出的视图 */
+SVA_t *sva_replace(SVA_t *ret, SV_t pat, SV_t src);
+SVA_t *sva_replace_chr(SVA_t *ret, char pat, char src);
 
 #endif //STRING_VIEW_H
 

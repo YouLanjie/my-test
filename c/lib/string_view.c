@@ -205,6 +205,17 @@ SV_t sv_merge(SV_t base, SV_t slice1, SV_t slice2)
 	return (SV_t){.p = p1, .len = p2-p1};
 }
 
+SV_t sv_memmem(SV_t base, SV_t pat)
+{
+	if (!base.p || !pat.p || !pat.len || base.len < pat.len)
+		return (SV_t){};
+	SV_t ret = {
+		.p = memmem(base.p, base.len, pat.p, pat.len),
+	};
+	ret.len = ret.p ? base.len - (ret.p-base.p) : 0;
+	return ret;
+}
+
 
 /* ===================
  * SVA相关
@@ -247,7 +258,7 @@ SVA_t *sva_from_sv(SVA_t *s, SV_t sv)
 		s->len = 0;
 		return NULL;
 	}
-	memcpy(s->p, sv.p, s->len);
+	memmove(s->p, sv.p, s->len);
 	s->p[s->len] = 0;
 	return s;
 }
@@ -304,6 +315,17 @@ SVA_t *sva_adjust_minimun(SVA_t *s, size_t size)
 		return NULL;
 	}
 	return s;
+}
+
+SVA_t *sva_append(SVA_t *ret, SV_t sv)
+{
+	if (!ret) return NULL;
+	if (!sv.p) return ret;
+	sva_adjust_minimun(ret, ret->len+sv.len+1);
+	memmove(ret->p+ret->len, sv.p, sv.len);
+	ret->len += sv.len;
+	ret->p[ret->len] = 0;
+	return ret;
 }
 
 SVA_t *sva_sprintf(SVA_t *ret, char *fmt, ...)
@@ -383,4 +405,51 @@ SVA_t *sva_clear(SVA_t *s)
 	memset(s->p, 0, s->len);
 	s->len = 0;
 	return s;
+}
+
+SVA_t *sva_replace(SVA_t *ret, SV_t pat, SV_t src)
+{
+	if (!ret
+	    || (pat.p > ret->p && pat.p < ret->p+ret->len)
+	    || (src.p > ret->p && src.p < ret->p+ret->len)) return NULL;
+	if (!pat.p || !pat.len || (!src.p && src.len)
+	    || !ret->len || pat.len > ret->len) return ret;
+	SVA_t tmp = {};
+	SVA_t *dest = pat.len < src.len ? sva_create(&tmp) : ret;
+	SV_t cur_read = sv_from_sva(ret);
+	size_t cur_write = 0;
+	const char *cur_last;
+	while (cur_read.len > 0) {
+		cur_last = cur_read.p;
+		cur_read = sv_memmem(cur_read, pat);
+		const char *p = (cur_read.p?cur_read.p:ret->p+ret->len-1);
+		while (dest != ret &&
+		       dest->capacity <= cur_write+(p-cur_last)+src.len)
+			sva_adjust_minimun(dest, (dest->capacity+1)*2);
+
+		memmove(dest->p+cur_write, cur_last, p-cur_last);
+		cur_write += p-cur_last;
+
+		sv_chop_left(&cur_read, pat.len);
+		if (!cur_read.p) continue;
+
+		memmove(dest->p+cur_write, src.p, src.len);
+		cur_write += src.len;
+	}
+	if (dest != ret) {
+		dest->len = cur_write;
+		sva_free(ret);
+		*ret = tmp;
+	}
+	dest->p[dest->len] = 0;
+	return ret;
+}
+
+SVA_t *sva_replace_chr(SVA_t *ret, char pat, char src)
+{
+	if (!ret) return NULL;
+	if (!ret->p) return ret;
+	for (size_t n = 0; n < ret->len; n++)
+		if (ret->p[n] == pat) ret->p[n] = src;
+	return ret;
 }

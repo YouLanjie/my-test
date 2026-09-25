@@ -425,12 +425,12 @@ static void scan_header(Target_t *list, Target_t *target_elf, Target_t *target_c
 static Path_t *path_hander_obj_replace(Path_t* path)
 {
 	if (!path || !path->p) return NULL;
-	for (size_t n = 0; n < path->len; n++) if (path->p[n] == '/') path->p[n] = '_';
+	sva_replace_chr(path, '/', '_');
 	SV_t sv = path_stemname(sv_from_sva(path));
 	while (sv.len > 0 && (sv.p[0] == '.' || sv.p[0] == '_')) sv_chop_left(&sv, 1);
 	// sv从path来，不能修改path
 	SVA_t new = {0};
-	sva_strcpy(path, sva_sprintfcat(path_join(sva_from_cstr(&new, BUILD_DIR), sv), ".o"));
+	sva_strcpy(path, sva_append(path_join(sva_from_cstr(&new, BUILD_DIR), sv), sv_from_lstr(".o")));
 	sva_free(&new);
 	return path;
 }
