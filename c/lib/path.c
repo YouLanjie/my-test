@@ -145,8 +145,7 @@ int path_mkdir(SV_t path, int mode)
 			ret = mkdir(sva.p, mode);
 			if (ret) break;
 		}
-		if ((len = strlen(sva.p)) < sva.len) sva.p[len] = '/';
-	} while (strlen(sva.p) < sva.len);
+	} while ((len = strlen(sva.p)) < sva.len && (sva.p[len] = '/'));
 	sva_free(&sva);
 	return ret;
 }

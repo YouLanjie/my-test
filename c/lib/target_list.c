@@ -15,6 +15,7 @@
 #include <stdlib.h>
 // #include <string.h>
 #include <unistd.h>
+#include <dirent.h>
 
 Target_t *target_create(SV_t name)
 {
@@ -30,6 +31,7 @@ void target_free(Target_t *target)
 {
 	if (!target) return;
 	sva_free(&target->name);
+	sva_free(&target->log);
 	if (target->prev) target->prev->next = target->next;
 	if (target->next) target->next->prev = target->prev;
 	if (target->dependencies) free(target->dependencies);
@@ -270,21 +272,6 @@ void target_buildlist_for_pthread(Target_t *list, int8_t ptr_max)
 	}
 }
 
-/**
- * @brief 打印任务列表
- *
- * @param list 列表本身
- * @param mode 模式
- * 0: TS_NOCHECK (ON)
- * 1: TS_WORKING
- * 2: TS_SUCCESS
- * 3: TS_SKIP    (ON)
- * 4: TS_FAILD   (ON)
- * 5: TY_NORM    (ON)
- * 6: TY_PHONY   (ON)
- * 7: TY_DEP     (ON)
- * 8: 仅有已更新项目
- */
 void target_printlist(Target_t *list, uint16_t mode)
 {
 	if (!list) return;
@@ -318,6 +305,63 @@ void target_printlist(Target_t *list, uint16_t mode)
 		if (p->depend_len > 0) printf("}");
 		if (p->build) printf(" <- func<\e[2m%p\e[0m>", p->build);
 		printf("\n");
+		if (p->status != TS_WORKING || p->progress != TS_FAILD)
+			continue;
+		if (p->status == TS_WORKING) {
+			const double progres = p->progress > 1
+				? 1 : (p->progress < 0 ? 0 : p->progress);
+			printf("    [%-20.*s] %6.2f%%\n",
+			       (int)(progres*20),
+			       "#####################",
+			       progres);
+			continue;
+		}
+		if (!p->log.p || !p->log.len) continue;
+		SV_t log = sv_from_sva(&p->log);
+		SV_t line;
+		while (sv_forline(&line, &log)) {
+			printf("    LOG> %.*s\n", (int)line.len, line.p);
+		}
 	}
+}
+
+Target_t *target_fordir(Target_t *list, char *cwd, SV_t dirname,
+			bool (*rule)(SV_t d_name, uint8_t d_type),
+			Target_t *(*action)(Target_t *list, SV_t full_path))
+{
+	if (!cwd) cwd = "./";
+
+	Path_t path = {0};
+	path_join(sva_from_cstr(&path, cwd), dirname);
+
+	DIR *dp = opendir(path.p);
+	if (!dp) {
+		if (path_get_st(path).isfile && rule(path_basename(sv_from_sva(&path)), DT_REG)) {
+			list = action(list, sv_from_sva(&path));
+		} else {
+			fprintf(stderr, "ERROR 无法打开文件夹:%s\n", path.p);
+			fprintf(stderr, "ERROR 错误信息: %s\n", strerror(errno));
+		}
+		sva_free(&path);
+		return list;
+	}
+	Path_t tmp = {0};
+	struct dirent *dp_item = NULL;
+	for (;;) {
+		if ((dp_item = readdir(dp)) == NULL) break;
+		if (rule && rule(sv_from_cstr(dp_item->d_name), dp_item->d_type) == false) continue;
+		if (dp_item->d_type == DT_DIR) {
+			list = target_fordir(list, path.p, sv_from_cstr(dp_item->d_name), rule, action);
+			continue;
+		}
+		path_join(sva_from_sv(&tmp, sv_from_sva(&path)),
+			  sv_from_cstr(dp_item->d_name));
+		list = action(list, sv_from_sva(&tmp));
+
+	}
+	closedir(dp);
+	sva_free(&tmp);
+	sva_free(&path);
+	return list;
 }
 

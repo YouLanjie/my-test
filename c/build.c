@@ -224,57 +224,6 @@ static bool build_obj2alib(Target_t *target)
 	return ret == 0;
 }
 
-/**
- * @brief 递归遍历文件夹
- *
- * @param list 要查找的目标列表(留空自动创建)
- * @param cwd 工作目录，可以为空
- * @param dirname 要查找的工作目录下的子目录
- * @param rule 规则判断函数
- * @param action 对文件的行为函数
- * @return 构建好的列表
- */
-static Target_t *target_fordir(Target_t *list, char *cwd, SV_t dirname,
-			bool (*rule)(SV_t d_name, uint8_t d_type),
-			Target_t *(*action)(Target_t *list, SV_t full_path))
-{
-	if (!cwd) cwd = "./";
-
-	Path_t path = {0};
-	path_join(sva_from_cstr(&path, cwd), dirname);
-
-	DIR *dp = opendir(path.p);
-	if (!dp) {
-		if (path_get_st(path).isfile && rule(path_basename(sv_from_sva(&path)), DT_REG)) {
-			list = action(list, sv_from_sva(&path));
-		} else {
-			fprintf(stderr, "ERROR 无法打开文件夹:%s\n", path.p);
-			fprintf(stderr, "ERROR 错误信息: %s\n", strerror(errno));
-		}
-		sva_free(&path);
-		return list;
-	}
-	Path_t tmp = {0};
-	struct dirent *dp_item = NULL;
-	for (;;) {
-		if ((dp_item = readdir(dp)) == NULL) break;
-		if (rule && rule(sv_from_cstr(dp_item->d_name), dp_item->d_type) == false) continue;
-		if (dp_item->d_type == DT_DIR) {
-			list = target_fordir(list, path.p, sv_from_cstr(dp_item->d_name), rule, action);
-			continue;
-		}
-		path_join(sva_from_sv(&tmp, sv_from_sva(&path)),
-			  sv_from_cstr(dp_item->d_name));
-		list = action(list, sv_from_sva(&tmp));
-
-	}
-	closedir(dp);
-	sva_free(&tmp);
-	sva_free(&path);
-	return list;
-}
-
-
 /* 通过库简称(-l后名)获得库文件libxxx.a目标 */
 static Target_t *get_target_by_libname(Target_t *list, SV_t libname)
 {
