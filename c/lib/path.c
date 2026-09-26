@@ -58,10 +58,10 @@ static inline void _path_tails_process(Path_t *path, char c)
 	while (sv_end_with(sv_from_sva(path), sv_from_lstr("/.."))) {    /* 撤回一个目录层级 */
 		path->len -= 3;
 		const SV_t sv = sv_from_sva(path);
-		if (sv_cmp(sv, sv_from_cstr("..")) == 0 || sv_end_with(sv, sv_from_lstr("/.."))) {
+		if (sv_cmp(sv, sv_from_lstr("..")) == 0 || sv_end_with(sv, sv_from_lstr("/.."))) {
 			path->len+=3;    /* 如果上一级目录也是..则取消撤回并添加新字符 */
 			break;
-		} else if (sv_cmp(sv, sv_from_cstr(".")) == 0 || sv_end_with(sv, sv_from_lstr("/."))) {
+		} else if (sv_cmp(sv, sv_from_lstr(".")) == 0 || sv_end_with(sv, sv_from_lstr("/."))) {
 			/* 如果上一级是.则替换为.. */
 			path->p[path->len] = '.';
 			path->len+=1;
@@ -75,7 +75,7 @@ static inline void _path_tails_process(Path_t *path, char c)
 	if (c) path->len++;
 }
 
-Path_t * path_normalize(Path_t *path)
+Path_t *path_normalize(Path_t *path)
 {
 	if (!path || !path->capacity) return NULL;
 	const int len = path->len;
@@ -97,15 +97,21 @@ Path_t * path_normalize(Path_t *path)
 	path->p[path->len] = 0;
 	_path_tails_process(path, '\0');
 	if (path->len == 0) sva_sprintf(path, "./");
+	else if (sv_begin_with(sv_from_sva(path), sv_from_lstr("./")))
+		sva_chop_left(path, 2);
 	return path;
 }
 
 Path_t *path_join(Path_t *path, SV_t child)
 {
-	if (!path || !path->capacity || !path->p) return NULL;
-	static const char sep = '/';
-	if (child.len && child.p[0] == sep) sva_sprintf(path, "%.*s", (int)child.len, child.p);
-	else sva_sprintfcat(path, "%c%.*s", sep, (int)child.len, child.p);
+	if (!path) return NULL;
+	static const char sep[] = "/";
+	if (child.len && child.p[0] == *sep)
+		sva_sprintf(path, "%.*s", (int)child.len, child.p);
+	else {
+		if (path->len) sva_append(path, sv_from_lstr(sep));
+		sva_append(path, child);
+	}
 	return path_normalize(path);
 }
 

@@ -24,6 +24,9 @@ typedef struct Target_t {
 
 	SVA_t log;
 	double progress;
+	double time_start;
+	double time_stop;
+	double time_outoftime;    /* 等待子项目(依赖)的超时时间s */
 
 	size_t depend_len;
 	struct Target_t **dependencies;
@@ -41,7 +44,7 @@ Target_t *target_get_or_create(Target_t *list, SV_t name);
 void target_build(Target_t *target);
 void target_buildlist(Target_t *list);
 void *target_build_for_pthread(void *target);
-void target_buildlist_for_pthread(Target_t *list, int8_t ptr_max);
+void target_buildlist_for_pthread(Target_t *list, int8_t ptr_max, int8_t print_process);
 /**
  * @brief 打印任务列表
  *
@@ -56,6 +59,7 @@ void target_buildlist_for_pthread(Target_t *list, int8_t ptr_max);
  * 6: TY_PHONY   (ON)
  * 7: TY_DEP     (ON)
  * 8: 仅有已更新项目
+ * 9: 打印构建函数地址
  */
 void target_printlist(Target_t *list, uint16_t mode);
 /* 按照总依赖多少重排序(由少到多)，返回新表头 */

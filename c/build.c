@@ -41,10 +41,10 @@ typedef struct {
 
 // ===============================
 // 配置区
-#define SOURCE_DIR "./src/"
-#define LIB_DIR    "./lib/"
-#define BUILD_DIR  "./.build/"
-#define BIN_DIR    "./bin/"
+#define SOURCE_DIR "src/"
+#define LIB_DIR    "lib/"
+#define BUILD_DIR  ".build/"
+#define BIN_DIR    "bin/"
 #define COMPILOR   "gcc"
 #define CCOMFLAGS  "-Wall -Wextra -O2 -g"
 #define CLINKFLAGS "-L"BUILD_DIR
@@ -69,6 +69,7 @@ CFLAGS_t CFILEFLAGS[] = {
 	FLG("render3d/render3d.c",   "m "OPTPREFIX"SDL2"),
 	FLG("render3d/r3d_rotate.c", "m "OPTPREFIX"SDL2"),
 
+	FLG("Type_conversion.c",  "avformat avcodec avutil swresample swscale m"),
 	FLG("tests/libav_test.c", "avformat avcodec avutil swresample m"),
 	FLG("tests/try_iconv.c",  "iconv"),
 	FLG("tests/try_pcre.c",  "pcre2-8"),
@@ -660,7 +661,7 @@ int main(int argc, char *argv[])
 	// target_printlist(list, 0);
 	// printf("[INFO] 运行构建\n");
 	list = target_sort_by_subdeps(list);
-	target_buildlist_for_pthread(list, sysconf(_SC_NPROCESSORS_ONLN));
+	target_buildlist_for_pthread(list, sysconf(_SC_NPROCESSORS_ONLN), false);
 	target_printlist(list, 0);
 
 	while (mode == 2 && argc >= 3) {

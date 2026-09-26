@@ -249,7 +249,7 @@ int sva_free(SVA_t *s)
 
 SVA_t *sva_from_sv(SVA_t *s, SV_t sv)
 {
-	if (!s || !sv.p) return NULL;
+	if (!s || !sv.p || !(s->len+1)) return NULL;
 	s->len = sv.len;
 	/* 若已申请内存且长度足够则不申请内存 */
 	if (!s->p || s->capacity <= s->len) {
@@ -393,10 +393,20 @@ SVA_t *sva_strcpy(SVA_t *ret, const SVA_t *from)
 	return sva_from_sv(ret, sv_from_sva(from));
 }
 
+SVA_t *sva_chop_left(SVA_t *s, size_t len)
+{
+	if (!s || !s->p || !s->capacity) return NULL;
+	if (len >= s->len) len = s->len;
+	else memmove(s->p, s->p+len, s->len-len);
+	s->len -= len;
+	if (s->len < s->capacity) s->p[s->len] = '\0';
+	return s;
+}
+
 SVA_t *sva_chop_right(SVA_t *s, size_t len)
 {
 	if (!s || !s->p || !s->capacity) return NULL;
-	if (len > s->len) len = 0;
+	if (len > s->len) len = s->len;
 	s->len -= len;
 	if (s->len < s->capacity) s->p[s->len] = '\0';
 	return s;

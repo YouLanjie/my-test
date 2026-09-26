@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 // #include <string.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -23,7 +24,9 @@ Target_t *target_create(SV_t name)
 	if (name.len == 0 || !name.p) return NULL;
 	Target_t *target = malloc(sizeof(*target));
 	if (!target) return NULL;
-	*target = (Target_t){};
+	*target = (Target_t){
+		.time_outoftime = 60,
+	};
 	sva_from_sv(&target->name, name);
 	return target;
 }
@@ -99,6 +102,24 @@ Target_t *target_get_or_create(Target_t *list, SV_t name)
 	return get;
 }
 
+static double get_nowtime()
+{
+	struct timespec t = {};
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return t.tv_sec + t.tv_nsec/1e9;
+}
+
+static void secnanosleep(double sec)
+{
+	struct timespec rqt = {
+		.tv_sec = sec,
+		.tv_nsec = ((sec-(long)sec)*1e9),
+	}, remain = {};
+	while (nanosleep(&rqt, &remain) == -1
+	       && errno == EINTR
+	       && (rqt=remain,true));
+}
+
 void target_build(Target_t *target)
 {
 	if (!target) return;
@@ -112,7 +133,7 @@ void target_build(Target_t *target)
 	target->time = st.st.st_mtim.tv_sec + st.st.st_mtim.tv_nsec*1e-9;
 	isexist = st.isexist;
 	if (!st.isexist) need_build = true;
-	double waittime = 0;
+	target->time_start = get_nowtime();
 	for (size_t i = 0; i < target->depend_len; i++) {
 		target_build(target->dependencies[i]);
 		switch (target->dependencies[i]->status) {
@@ -136,15 +157,16 @@ void target_build(Target_t *target)
 		}
 		if (need_wait && i+1 >= target->depend_len) {
 			i = -1;
-			usleep(1e3);
-			waittime += 1e3;
-			if (waittime > 60e6) {
+			secnanosleep(0.01);
+			if (get_nowtime()-target->time_start > target->time_outoftime) {
 				target->status = TS_FAILD;
 				return;
 			}
 			need_wait = false;
 		}
 	}
+	target->time_start = get_nowtime();
+	target->time_stop = target->time_start;
 	if (!need_build) {
 		target->status = TS_SUCCESS;
 		return;
@@ -163,6 +185,7 @@ void target_build(Target_t *target)
 			target->isupdated = true;
 		}
 	} else target->status = TS_SUCCESS;
+	target->time_stop = get_nowtime();
 	return;
 }
 
@@ -229,7 +252,37 @@ void *target_build_for_pthread(void *target)
 	return NULL;
 }
 
-void target_buildlist_for_pthread(Target_t *list, int8_t ptr_max)
+static inline void wait_jobs(Target_t *list, Target_t *ptr_target[], pthread_t ptrs[],
+			     int ptr_max, int wait_num, bool print_process,
+			     double *t0)
+{
+	if (!ptr_target || !ptrs) return;
+	int count = 0, i = 0;
+	for (; i < ptr_max; i++)
+		if (ptrs[i]) count++;
+	if (count < wait_num) return;
+	double t1;
+	while (count && count >= wait_num) {
+		for (i = 0; count && i < ptr_max; i++) {
+			if (!ptrs[i] || !ptr_target[i]) continue;
+			if (ptr_target[i]->status == TS_WORKING
+			    || ptr_target[i]->status == TS_NOCHECK) continue;
+			pthread_join(ptrs[i], NULL);
+			ptrs[i] = 0;
+			ptr_target[i] = NULL;
+			count--;
+		}
+		secnanosleep(0.01);
+		if (!t0) continue;
+		if (print_process && (t1 = get_nowtime()) > *t0 + 1) {
+			*t0 = t1;
+			printf("==== 当前任务列 ====\n");
+			target_printlist(list, 0b11011);
+		}
+	}
+}
+
+void target_buildlist_for_pthread(Target_t *list, int8_t ptr_max, int8_t print_process)
 {
 	if (!list) return;
 	if (ptr_max <= 1) {    /* 单线程 */
@@ -237,40 +290,21 @@ void target_buildlist_for_pthread(Target_t *list, int8_t ptr_max)
 		return;
 	}
 
-	int8_t count = 0, i;
+	int i;
 	Target_t *ptr_target[ptr_max] = {};
 	pthread_t ptrs[ptr_max] = {};
+	double t0 = get_nowtime();
 	for (Target_t *p = list; p; p = p->next) {
 		if (p->type != TY_NORM && p->type != TY_DEP) continue;
 		if (p->type == TY_DEP && !p->build) continue;
-		while (count >= ptr_max) {
-			for (i = 0; i < ptr_max; i++) {
-				if (!ptrs[i] || !ptr_target[i]) continue;
-				if (ptr_target[i]->status == TS_WORKING) continue;
-				pthread_join(ptrs[i], NULL);
-				ptrs[i] = 0;
-				ptr_target[i] = NULL;
-				count--;
-			}
-			usleep(1e3);
-		}
-		for (i = 0; ptrs[i] && i < ptr_max; i++);
+		wait_jobs(list, ptr_target, ptrs, ptr_max, ptr_max, print_process, &t0);
+		for (i = 0; i < ptr_max && ptrs[i]; i++);
+		if (i >= ptr_max) continue;
 		// target_build(p);
 		pthread_create(&ptrs[i], NULL, target_build_for_pthread, p);
 		ptr_target[i] = p;
-		count++;
 	}
-	while (count > 0) {
-		for (i = 0; i < ptr_max; i++) {
-			if (!ptrs[i] || !ptr_target[i]) continue;
-			if (ptr_target[i]->status == TS_WORKING) continue;
-			pthread_join(ptrs[i], NULL);
-			ptrs[i] = 0;
-			ptr_target[i] = NULL;
-			count--;
-		}
-		usleep(1e3);
-	}
+	wait_jobs(list, ptr_target, ptrs, ptr_max, 0, print_process, &t0);
 }
 
 void target_printlist(Target_t *list, uint16_t mode)
@@ -289,11 +323,13 @@ void target_printlist(Target_t *list, uint16_t mode)
 		[TY_PHONY] = "\e[2m(PHONY)\e[0m",
 		[TY_DEP] = "\e[2m(DEP)\e[0m",
 	};
+	char pointer_buf[16] = {};
 	for (Target_t *p = list; p; p = p->next) {
 		if (!(mode&(1<<p->status) && mode&(1<<(p->type+5)))) continue;
 		if (mode&(1<<8) && !p->isupdated) continue;
-		printf("[\e[2m%p\e[0m] %s%s'\e[32m%.*s\e[0m'",
-		       p, statusstr[p->status%countof(statusstr)],
+		snprintf(pointer_buf, sizeof(pointer_buf), "%p", p);
+		printf("[\e[2m%.4s..%.4s\e[0m] %s%s'\e[32m%.*s\e[0m'",
+		       pointer_buf, pointer_buf+12-4, statusstr[p->status%countof(statusstr)],
 		       typestr[p->type%countof(typestr)],
 		       (int)p->name.len, p->name.p);
 		if (p->depend_len > 0) printf(" <- {");
@@ -304,14 +340,17 @@ void target_printlist(Target_t *list, uint16_t mode)
 			       i+1 >= p->depend_len ? "" : ", ");
 		}
 		if (p->depend_len > 0) printf("}");
-		if (p->build) printf(" <- func<\e[2m%p\e[0m>", p->build);
+		if (mode&(1<<9) && p->build) printf(" <- func<\e[2m%p\e[0m>", p->build);
+		if (p->time_stop - p->time_start > 0.01)
+			printf(" (took %.3gs)", p->time_stop - p->time_start);
 		printf("\n");
-		if (p->status != TS_WORKING || p->progress != TS_FAILD)
+		if (p->status != TS_WORKING && p->progress != TS_FAILD)
 			continue;
 		if (p->status == TS_WORKING) {
 			const double progres = p->progress > 1
 				? 1 : (p->progress < 0 ? 0 : p->progress);
-			printf("    [%-20.*s] %6.2f%%\n",
+			if (progres == 0) continue;
+			printf("    \e[2m[%-20.*s] %6.2f%%\e[0m\n",
 			       (int)(progres*20),
 			       "#####################",
 			       progres);
@@ -336,6 +375,7 @@ Target_t *target_fordir(Target_t *list, char *cwd, SV_t dirname,
 	Path_t path = {0};
 	path_join(sva_from_cstr(&path, cwd), dirname);
 
+	if (!path.p) return list;
 	DIR *dp = opendir(path.p);
 	if (!dp) {
 		if (path_get_st(path).isfile && rule && rule(path_basename(sv_from_sva(&path)), DT_REG)) {
