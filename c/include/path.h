@@ -64,15 +64,21 @@ Path_t * path_normalize(Path_t *path);
  * @return 拼接后路径
  */
 Path_t *path_join(Path_t *path, SV_t child);
-/* 通过stat()获取文件状态 */
-Path_st_t path_get_st(Path_t f);
+/* 通过lstat()获取文件状态(不跟随符号链接) */
+Path_st_t path_get_st(SV_t path);
+/* 通过lstat()获取文件状态(跟随符号链接) */
+Path_st_t path_get_st_follow(SV_t path);
 /* 可递归创建文件夹 */
 int path_mkdir(SV_t path, int mode);
-/* 递归删除文件夹 */
-int path_remove(SV_t path);
 /* @brief 读取文件内容最多maxsize并保存到dest
  * @return 保存地址dest，出错为NULL */
 SVA_t *path_readfile(SV_t path, SVA_t *dest, size_t maxsize);
+
+// #define ENABELE_UNSAFE_FUNC
+#ifdef ENABELE_UNSAFE_FUNC
+/* 递归删除文件夹 */
+int path_remove(SV_t path);
+#endif
 
 #endif //PATH_H
 

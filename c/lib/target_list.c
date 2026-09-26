@@ -31,15 +31,17 @@ Target_t *target_create(SV_t name)
 	return target;
 }
 
-void target_free(Target_t *target)
+Target_t *target_free(Target_t *target)
 {
-	if (!target) return;
+	if (!target) return NULL;
+	Target_t *next = target->next;
 	sva_free(&target->name);
 	sva_free(&target->log);
 	if (target->prev) target->prev->next = target->next;
 	if (target->next) target->next->prev = target->prev;
 	if (target->dependencies) free(target->dependencies);
 	free(target);
+	return next;
 }
 
 void target_freelist(Target_t *list)
@@ -69,6 +71,7 @@ void target_append(Target_t *list, Target_t *target)
 void target_depend_append(Target_t *target, Target_t *dependency)
 {
 	if (!target || !dependency) return;
+	Target_t **old_ptr = target->dependencies;
 	if (!target->dependencies) {
 		target->depend_len = 1;
 		target->dependencies = malloc(target->depend_len*sizeof(*target->dependencies));
@@ -79,6 +82,7 @@ void target_depend_append(Target_t *target, Target_t *dependency)
 		target->dependencies = realloc(target->dependencies, target->depend_len*sizeof(*target->dependencies));
 	}
 	if (!target->dependencies) {
+		if (old_ptr) free(old_ptr);
 		target->depend_len = 0;
 		return;
 	}
@@ -129,7 +133,7 @@ void target_build(Target_t *target)
 	bool isexist    = false;
 	bool need_wait  = false;
 	bool need_build = false;
-	Path_st_t st = path_get_st(target->name);
+	Path_st_t st = path_get_st(sv_from_sva(&target->name));
 	target->time = st.st.st_mtim.tv_sec + st.st.st_mtim.tv_nsec*1e-9;
 	isexist = st.isexist;
 	if (!st.isexist) need_build = true;
@@ -180,7 +184,7 @@ void target_build(Target_t *target)
 		// printf("[INFO] 构建 %s\n", target->name.p);
 		target->status = target->build(target) ? TS_SUCCESS : TS_FAILD;
 		if (target->status == TS_SUCCESS) {
-			st = path_get_st(target->name);
+			st = path_get_st(sv_from_sva(&target->name));
 			target->time = st.st.st_mtim.tv_sec + st.st.st_mtim.tv_nsec*1e-9;
 			target->isupdated = true;
 		}
@@ -344,7 +348,7 @@ void target_printlist(Target_t *list, uint16_t mode)
 		if (p->time_stop - p->time_start > 0.01)
 			printf(" (took %.3gs)", p->time_stop - p->time_start);
 		printf("\n");
-		if (p->status != TS_WORKING && p->progress != TS_FAILD)
+		if (p->status != TS_WORKING && p->status != TS_FAILD)
 			continue;
 		if (p->status == TS_WORKING) {
 			const double progres = p->progress > 1
@@ -378,7 +382,7 @@ Target_t *target_fordir(Target_t *list, char *cwd, SV_t dirname,
 	if (!path.p) return list;
 	DIR *dp = opendir(path.p);
 	if (!dp) {
-		if (path_get_st(path).isfile && rule && rule(path_basename(sv_from_sva(&path)), DT_REG)) {
+		if (path_get_st(sv_from_sva(&path)).isfile && rule && rule(path_basename(sv_from_sva(&path)), DT_REG)) {
 			list = action(list, sv_from_sva(&path));
 		} else {
 			fprintf(stderr, "ERROR 无法打开文件夹:%s\n", path.p);

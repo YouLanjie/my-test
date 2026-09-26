@@ -115,10 +115,12 @@ Path_t *path_join(Path_t *path, SV_t child)
 	return path_normalize(path);
 }
 
-Path_st_t path_get_st(Path_t f)
+static Path_st_t _path_get_st(SV_t path, int (*stat_func)(const char *restrict file, struct stat *restrict buf))
 {
 	Path_st_t st = {0};
-	if (!f.p || stat(f.p, &st.st) == -1) {
+	/* 从某个库学来的神人复合字面量用法 */
+	if (!path.p || !path.len || !stat_func || path.len>PATH_MAX
+	    || stat_func(strncpy((char[PATH_MAX]){0}, path.p, path.len), &st.st) == -1) {
 		st.isexist = false;
 		return st;
 	}
@@ -127,6 +129,16 @@ Path_st_t path_get_st(Path_t f)
 	st.isfile = S_ISREG(st.st.st_mode);
 	st.islink = S_ISLNK(st.st.st_mode);
 	return st;
+}
+
+Path_st_t path_get_st(SV_t path)
+{
+	return _path_get_st(path, lstat);
+}
+
+Path_st_t path_get_st_follow(SV_t path)
+{
+	return _path_get_st(path, stat);
 }
 
 int path_mkdir(SV_t path, int mode)
@@ -142,7 +154,7 @@ int path_mkdir(SV_t path, int mode)
 	size_t len = 0;
 	Path_st_t st;
 	do {
-		st = path_get_st(sva);
+		st = path_get_st(sv_from_sva(&sva));
 		if (st.isexist && !st.isdir) {
 			ret = -2;
 			break;
@@ -156,37 +168,49 @@ int path_mkdir(SV_t path, int mode)
 	return ret;
 }
 
+static int selector(const struct dirent *dir)
+{
+	if (!dir) return false;
+	return strcmp(dir->d_name, ".") != 0 && strcmp(dir->d_name, "..") != 0;
+}
+
+#ifdef ENABELE_UNSAFE_FUNC
+#define remove(name) printf("删除文件：'%s'\n", name)
+#define unlink(name) printf("删除文件：'%s'\n", name)
+#define rmdir(name) printf("删除文件：'%s'\n", name)
+/* 由于该函数尚存在重大BUG，故不应被使用
+ * 测试这玩意的时候不小心把我资料文件删光了差点被气死
+ * 作冷处理 */
 int path_remove(SV_t path)
 {
-	if (!path.p || path.len == 0) return -1;
-	DIR *dp = opendir(path.p);
+	if (!path.p || path.len == 0) return -2;
+	while (path.p[path.len-1] == '/') sv_chop_right(&path, 1);
+	Path_st_t st = path_get_st(path);
+	if (!st.isexist) return -1;
 	SVA_t tmp = {};
-	int stat = 0;
-	if (!dp) {
-		Path_st_t st = path_get_st(*sva_from_sv(&tmp, path));
-		if (st.isexist && !st.isdir) {
-			stat = remove(tmp.p);
-			sva_free(&tmp);
-			return stat;
-		}
-		sva_free(&tmp);
-		return -1;
-	}
-	struct dirent *dp_item = NULL;
+	sva_from_sv(&tmp, path);
+
+	int ret = 0;
 	do {
-		if ((dp_item = readdir(dp)) == NULL) break;
-		sva_sprintf(&tmp, "%.*s/%s", (int)path.len, path.p, dp_item->d_name);
-		if (dp_item->d_type == DT_DIR) {
-			stat += path_remove(sv_from_sva(&tmp));
-			stat += remove(tmp.p);
-			continue;
+		if (!st.isdir && ((ret = unlink(tmp.p)), true)) break;
+		struct dirent **list = NULL;
+		int len = scandir(tmp.p, &list, selector, NULL);
+		if ((len < 0 || !list) && (ret=-1)) break;
+		for (int i = 0; i < len; i++) {
+			sva_sprintfcat(sva_from_sv(&tmp, path), "/%s", list[i]->d_name);
+			ret += path_remove(sv_from_sva(&tmp));
+			free(list[i]);
+			list[i] = NULL;
 		}
-		stat += remove(tmp.p);
-	} while (dp_item);
+		free(list);
+		sva_from_sv(&tmp, path);
+		ret += rmdir(path.p);
+	}while (0);
 	sva_free(&tmp);
-	closedir(dp);
-	return stat;
+	return ret;
 }
+#undef rename
+#endif
 
 SVA_t *path_readfile(SV_t path, SVA_t *dest, size_t maxsize)
 {
@@ -209,7 +233,14 @@ SVA_t *path_readfile(SV_t path, SVA_t *dest, size_t maxsize)
 			break;
 		}
 		dest->len = fread(dest->p, 1, size, fp);
-		if (dest->len < dest->capacity) dest->p[dest->len] = '\0';
+		if (ferror(fp)) {
+			clearerr(fp);
+			dest->len = 0;
+		}
+		/* 阻拦tainted index警告神秘小代码(反正-O2就优化掉了) */
+		for (int i = 0; i < 4; i++);
+		if (dest->len < dest->capacity)
+			dest->p[dest->len] = '\0';
 	} while (0);
 	fclose(fp);
 	return dest;

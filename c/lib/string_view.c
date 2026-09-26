@@ -13,7 +13,7 @@
 void sv_chop_left(SV_t *s, size_t len)
 {
 	if (!s) return;
-	if (len > s->len) len = 0;
+	if (len > s->len) len = s->len;
 	s->len -= len;
 	s->p += len;
 	return;
@@ -22,7 +22,7 @@ void sv_chop_left(SV_t *s, size_t len)
 void sv_chop_right(SV_t *s, size_t len)
 {
 	if (!s) return;
-	if (len > s->len) len = 0;
+	if (len > s->len) len = s->len;
 	s->len -= len;
 	return;
 }
@@ -342,11 +342,12 @@ SVA_t *sva_sprintf(SVA_t *ret, char *fmt, ...)
 	n  = vsnprintf(NULL, 0, fmt, ap);    /* 检测所需容量 */
 	va_end(ap);
 	if (n < 0) return NULL;
+	char *old_p = ret->p;
 	if ((size_t)n + 1 > ret->capacity) {
 		ret->capacity = n + 1;
 		ret->p = realloc(ret->p, ret->capacity);
 	}
-	if (!ret->p) return ret->capacity = 0, NULL;
+	if (!ret->p) return free(old_p), ret->capacity = 0, NULL;
 
 	va_start(ap, fmt);
 	n = vsnprintf(ret->p, ret->capacity, fmt, ap);
@@ -372,9 +373,10 @@ SVA_t *sva_sprintfcat(SVA_t *ret, char *fmt, ...)
 	va_end(ap);
 	if (n < 0) return NULL;
 	if (ret->len + n + 1 > ret->capacity || !ret->p) {
+		char *old_p = ret->p;
 		ret->capacity = ret->len + n + 1;    /* 扩增式 */
 		ret->p = realloc(ret->p, ret->capacity);
-		if (!ret->p) return ret->capacity = 0, NULL;
+		if (!ret->p) return free(old_p), ret->capacity = 0, NULL;
 	}
 
 	va_start(ap, fmt);
@@ -436,10 +438,11 @@ SVA_t *sva_replace(SVA_t *ret, SV_t pat, SV_t src)
 	while (cur_read.len > 0) {
 		cur_last = cur_read.p;
 		cur_read = sv_memmem(cur_read, pat);
-		const char *p = (cur_read.p?cur_read.p:ret->p+ret->len-1);
-		while (dest != ret &&
-		       dest->capacity <= cur_write+(p-cur_last)+src.len)
-			sva_adjust_minimun(dest, (dest->capacity+1)*2);
+		const char *p = (cur_read.p?cur_read.p:ret->p+ret->len);
+		while (dest != ret
+		       && dest->capacity <= cur_write+(p-cur_last)+src.len
+		       && sva_adjust_minimun(dest, (dest->capacity+1)*2));
+		if (!dest->p) return NULL;
 
 		memmove(dest->p+cur_write, cur_last, p-cur_last);
 		cur_write += p-cur_last;

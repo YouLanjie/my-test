@@ -24,8 +24,8 @@ typedef struct Target_t {
 
 	SVA_t log;
 	double progress;
-	double time_start;
-	double time_stop;
+	double time_start;    /* 开始执行build()的时间 */
+	double time_stop;     /* build()结束的时间 */
 	double time_outoftime;    /* 等待子项目(依赖)的超时时间s */
 
 	size_t depend_len;
@@ -35,7 +35,7 @@ typedef struct Target_t {
 } Target_t;
 
 Target_t *target_create(SV_t name);
-void target_free(Target_t *target);
+Target_t *target_free(Target_t *target);
 void target_freelist(Target_t *list);
 void target_append(Target_t *list, Target_t *target);
 void target_depend_append(Target_t *target, Target_t *dependency);
