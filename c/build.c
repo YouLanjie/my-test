@@ -352,7 +352,7 @@ static void scan_header(Target_t *list, Target_t *target_elf, Target_t *target_c
 		sva_from_sv(&header_path, path_father(sv_from_sva(&target_c->name)));
 		path_join(&header_path, match);
 
-		if (!path_get_st(header_path).isfile) continue;
+		if (!path_get_st(sv_from_sva(&header_path)).isfile) continue;
 		header = target_get_by_name(list, sv_from_sva(&header_path));
 		if (!header) {
 			header = target_create(sv_from_sva(&header_path));

@@ -168,13 +168,13 @@ int path_mkdir(SV_t path, int mode)
 	return ret;
 }
 
+#ifdef ENABELE_UNSAFE_FUNC
 static int selector(const struct dirent *dir)
 {
 	if (!dir) return false;
 	return strcmp(dir->d_name, ".") != 0 && strcmp(dir->d_name, "..") != 0;
 }
 
-#ifdef ENABELE_UNSAFE_FUNC
 #define remove(name) printf("删除文件：'%s'\n", name)
 #define unlink(name) printf("删除文件：'%s'\n", name)
 #define rmdir(name) printf("删除文件：'%s'\n", name)
