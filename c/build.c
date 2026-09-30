@@ -69,7 +69,7 @@ CFLAGS_t CFILEFLAGS[] = {
 	FLG("render3d/render3d.c",   "m "OPTPREFIX"SDL2"),
 	FLG("render3d/r3d_rotate.c", "m "OPTPREFIX"SDL2"),
 
-	FLG("Type_conversion.c",  "avformat avcodec avutil swresample swscale m"),
+	// FLG("Type_conversion.c",  "avformat avcodec avutil swresample swscale m"),
 	FLG("tests/libav_test.c", "avformat avcodec avutil swresample m"),
 	FLG("tests/try_iconv.c",  "iconv"),
 	FLG("tests/try_pcre.c",  "pcre2-8"),

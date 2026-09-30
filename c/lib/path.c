@@ -97,7 +97,7 @@ Path_t *path_normalize(Path_t *path)
 	path->p[path->len] = 0;
 	_path_tails_process(path, '\0');
 	if (path->len == 0) sva_sprintf(path, "./");
-	else if (sv_begin_with(sv_from_sva(path), sv_from_lstr("./")))
+	else if (sv_begin_with(sv_from_sva(path), sv_from_lstr("./")) && path->len != 2)
 		sva_chop_left(path, 2);
 	return path;
 }
@@ -106,7 +106,7 @@ Path_t *path_join(Path_t *path, SV_t child)
 {
 	if (!path) return NULL;
 	static const char sep[] = "/";
-	if (child.len && child.p[0] == *sep)
+	if (child.len && child.p[0] == sep[0])
 		sva_sprintf(path, "%.*s", (int)child.len, child.p);
 	else {
 		if (path->len) sva_append(path, sv_from_lstr(sep));

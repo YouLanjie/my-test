@@ -385,7 +385,7 @@ Target_t *target_fordir(Target_t *list, char *cwd, SV_t dirname,
 		if (path_get_st(sv_from_sva(&path)).isfile && rule && rule(path_basename(sv_from_sva(&path)), DT_REG)) {
 			list = action(list, sv_from_sva(&path));
 		} else {
-			fprintf(stderr, "ERROR 无法打开文件夹:%s\n", path.p);
+			fprintf(stderr, "ERROR 无法打开文件夹: '%s'\n", path.p);
 			fprintf(stderr, "ERROR 错误信息: %s\n", strerror(errno));
 		}
 		sva_free(&path);

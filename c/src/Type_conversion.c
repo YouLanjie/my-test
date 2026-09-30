@@ -583,7 +583,7 @@ static bool rule_fordir(SV_t d_name, uint8_t d_type)
 	/* 跳过文件夹 */
 	if (d_type == DT_DIR) return false;
 	/* 跳过非文件 */
-	if (d_type != DT_REG)
+	if (d_type != DT_REG && d_type != DT_LNK)
 		return false;
 	if (!path_suffixname(d_name).len) return false;
 	return true;
@@ -600,6 +600,10 @@ static Target_t *action_file(Target_t *list, SV_t full_path)
 	Path_t tmp = {};
 	sva_from_sv(&tmp, full_path);
 	path_normalize(&tmp);
+	if (!path_get_st_follow(sv_from_sva(&tmp)).isfile) {
+		sva_free(&tmp);
+		return NULL;
+	}
 	target_src = target_get_or_create(list, sv_from_sva(&tmp));
 	if (target_src) target_src->type = TY_DEP;
 	if (!list) list = target_src;
