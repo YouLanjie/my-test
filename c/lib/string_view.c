@@ -84,7 +84,7 @@ bool sv_issame(SV_t s1, SV_t s2)
 int sv_cmp(SV_t s1, SV_t s2)
 {
 	if (s1.p == s2.p && s1.len == s2.len) return 0;
-	if (!s1.p || !s2.p) return s1.p ? 1 : 0;
+	if (!s1.p || !s2.p) return (int64_t)s1.p - (int64_t)s2.p;
 	if (!s1.len && !s2.len) return 0;
 	const size_t len = min(s1.len, s2.len);
 	const int ret = memcmp(s1.p, s2.p, len);
@@ -97,7 +97,7 @@ int sv_cmp(SV_t s1, SV_t s2)
 int sv_case_cmp(SV_t s1, SV_t s2)
 {
 	if (s1.p == s2.p && s1.len == s2.len) return 0;
-	if (!s1.p || !s2.p) return s1.p ? 1 : 0;
+	if (!s1.p || !s2.p) return (int64_t)s1.p - (int64_t)s2.p;
 	if (!s1.len && !s2.len) return 0;
 	const size_t len = min(s1.len, s2.len);
 	const int ret = strncasecmp(s1.p, s2.p, len);
@@ -325,7 +325,7 @@ SVA_t *sva_append(SVA_t *ret, SV_t sv)
 {
 	if (!ret) return NULL;
 	if (!sv.p) return ret;
-	sva_adjust_minimun(ret, ret->len+sv.len+1);
+	if (!sva_adjust_minimun(ret, ret->len+sv.len+1)) return NULL;
 	memmove(ret->p+ret->len, sv.p, sv.len);
 	ret->len += sv.len;
 	ret->p[ret->len] = 0;
@@ -427,7 +427,9 @@ SVA_t *sva_replace(SVA_t *ret, SV_t pat, SV_t src)
 {
 	if (!ret
 	    || (pat.p > ret->p && pat.p < ret->p+ret->len)
-	    || (src.p > ret->p && src.p < ret->p+ret->len)) return NULL;
+	    || (pat.p+pat.len > ret->p && pat.p+pat.len < ret->p+ret->len)
+	    || (src.p > ret->p && src.p < ret->p+ret->len)
+	    || (src.p+src.len > ret->p && src.p+src.len < ret->p+ret->len)) return NULL;
 	if (!pat.p || !pat.len || (!src.p && src.len)
 	    || !ret->len || pat.len > ret->len) return ret;
 	SVA_t tmp = {};

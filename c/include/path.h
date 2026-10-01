@@ -37,7 +37,7 @@ typedef struct {
  */
 SV_t path_basename(SV_t path);
 /* @brief 获得文件前缀
- * @return 不存在`.`时长度为0 */
+ * @return 不存在`.`时返回basename */
 SV_t path_stemname(SV_t path);
 /* @brief 获得文件后缀(保留`.`)
  * @return 不存在`.`时长度为0 */

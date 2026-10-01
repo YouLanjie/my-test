@@ -527,6 +527,7 @@ static int read_ffmpeg_output(Target_t *target, int pid, int subout, int suberr)
 					break;
 				}
 				if (sscanf(line.p, "out_time_us=%lu", &duration_now) < 1) continue;
+				if (!duration_total) continue;
 				target->progress = (double)duration_now/duration_total;
 			}
 		}
@@ -539,7 +540,7 @@ static int read_ffmpeg_output(Target_t *target, int pid, int subout, int suberr)
 			break;
 		}
 	}
-	return WIFEXITED(ret) ? WEXITSTATUS(ret) : -2;
+	return WIFEXITED(ret) ? WEXITSTATUS(ret) : UINT8_MAX+WTERMSIG(ret);
 }
 
 static SVA_t *argv2str(SVA_t *dest, char *argv[])
@@ -569,23 +570,22 @@ static bool build_ffmpeg(Target_t *target)
 #else
 	SV_t name = sv_from_sva(&target->name);
 
-	char *argv1[] = {
-		"ffmpeg", "-hide_banner", "-y", "-progress", "pipe:1", "-nostats",
-		"-i", target->dependencies[0]->name.p,
-		target->name.p,
-		NULL,
+	char *argv[64] = {
+		"ffmpeg", "-hide_banner", "-nostdin", "-y", "-progress", "pipe:1", "-nostats",
+		"-i", target->dependencies[0]->name.p, NULL,
 	};
-	/* 3gp参数 */
-	char *argv2[] = {
-		"ffmpeg", "-hide_banner", "-y", "-progress", "pipe:1", "-nostats",
-		"-i", target->dependencies[0]->name.p,
-		"-r", "12", "-b:v", "400k", "-s", "352x288",
-		"-ab", "12.2k", "-ac", "1", "-ar", "8000",
-		target->name.p,
-		NULL,
-	};
-	char **argv = sv_case_end_with(name, sv_from_lstr(".3gp"))
-		? argv2 : argv1;
+	size_t argc = 0;
+	for (argc = 0; argc < countof(argv) && argv[argc]; argc++);
+	if (sv_case_end_with(name, sv_from_lstr(".3gp"))) {
+		char *options[] = {
+			"-r", "12", "-b:v", "400k", "-s", "352x288",
+			"-ab", "12.2k", "-ac", "1", "-ar", "8000"
+		};
+		for (size_t i = 0; i < countof(options); i++)
+			argv[argc++] = options[i];
+	}
+	argv[argc++] = target->name.p;
+	argv[argc++] = NULL;
 
 	/* STDOUT 0:读端 1:写端 | STDERR 2:读端 3:写端 */
 	int pipefd[4] = {-1, -1, -1, -1};
@@ -675,7 +675,8 @@ static Target_t *action_file(Target_t *list, SV_t full_path)
 
 	SV_t stem = path_stemname(full_path);
 	if (!stem.len) stem = path_basename(full_path);
-	sva_sprintfcat(path_join(sva_from_sva(&tmp, &output_dir), stem), ".%.*s", (int)output_type.len, output_type.p);
+	sva_sprintfcat(path_join(sva_from_sva(&tmp, &output_dir), stem),
+		       ".%.*s", (int)output_type.len, output_type.p);
 	target_output = target_get_or_create(list, sv_from_sva(&tmp));
 	if (target_output) target_output->build = build_ffmpeg;
 	target_depend_append(target_output, target_src);

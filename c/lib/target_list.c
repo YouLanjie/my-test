@@ -328,6 +328,7 @@ void target_printlist(Target_t *list, uint16_t mode)
 		[TY_DEP] = "\e[2m(DEP)\e[0m",
 	};
 	char pointer_buf[16] = {};
+	const double nowtime = get_nowtime();
 	for (Target_t *p = list; p; p = p->next) {
 		if (!(mode&(1<<p->status) && mode&(1<<(p->type+5)))) continue;
 		if (mode&(1<<8) && !p->isupdated) continue;
@@ -354,10 +355,12 @@ void target_printlist(Target_t *list, uint16_t mode)
 			const double progres = p->progress > 1
 				? 1 : (p->progress < 0 ? 0 : p->progress);
 			if (progres == 0) continue;
-			printf("    \e[2m[%-20.*s] %6.2f%%\e[0m\n",
+			const double time_spent = nowtime - p->time_start;
+			const double eta = time_spent/progres - time_spent;
+			printf("    \e[2m[%-20.*s] %6.2f%% took %.1fs ETA %.1fs\e[0m\n",
 			       (int)(progres*20),
 			       "#####################",
-			       progres);
+			       progres*100, time_spent, eta);
 			continue;
 		}
 		if (!p->log.p || !p->log.len) continue;

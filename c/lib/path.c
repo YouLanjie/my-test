@@ -11,6 +11,7 @@
 SV_t path_basename(SV_t path)
 {
 	SV_t left = {0, path.p};
+	if (path.len == 1 && path.p && path.p[0] == '/') return path;
 	while (path.len != 0) left = sv_chop_by_delim(&path, '/');
 	return left;
 }
@@ -20,9 +21,7 @@ SV_t path_stemname(SV_t path)
 	path = path_basename(path);
 	size_t i = 0;
 	while (i < path.len && path.p[path.len-i-1] != '.') i++;
-	if (i >= path.len) i = 0;
-	else i = path.len-i-1;
-	path.len = i;
+	if (i < path.len) path.len -= i+1;
 	return path;
 }
 
@@ -53,6 +52,7 @@ static inline void _path_tails_process(Path_t *path, char c)
 	if (sv_end_with(sv_from_sva(path), sv_from_lstr("/."))) {    /* 跳过单独'.'充数的 */
 		// path->p[path->len-1] = 0;
 		path->len--;
+		path->p[path->len] = 0;
 		return;
 	}
 	while (sv_end_with(sv_from_sva(path), sv_from_lstr("/.."))) {    /* 撤回一个目录层级 */
@@ -120,11 +120,12 @@ static Path_st_t _path_get_st(SV_t path, int (*stat_func)(const char *restrict f
 {
 	Path_st_t st = {0};
 	/* 从某个库学来的神人复合字面量用法 */
-	if (!path.p || !path.len || !stat_func || path.len>PATH_MAX
-	    || stat_func(strncpy((char[PATH_MAX]){0}, path.p, path.len), &st.st) == -1) {
-		st.isexist = false;
+	if (!path.p || !path.len || !stat_func || path.len>=PATH_MAX)
 		return st;
-	}
+	char buf[path.len+1] = {};
+	buf[path.len] = 0;
+	if (stat_func(strncpy(buf, path.p, path.len), &st.st) == -1)
+		return st;
 	st.isexist = true;
 	st.isdir = S_ISDIR(st.st.st_mode);
 	st.isfile = S_ISREG(st.st.st_mode);
