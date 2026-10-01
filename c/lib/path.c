@@ -65,6 +65,7 @@ static inline void _path_tails_process(Path_t *path, char c)
 			/* 如果上一级是.则替换为.. */
 			path->p[path->len] = '.';
 			path->len+=1;
+			break;
 		}
 		if (!path->len) path->len++;
 		for (;path->len > 0 && path->p[path->len-1] != '/'; path->len--);

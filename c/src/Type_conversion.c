@@ -497,7 +497,7 @@ done:
 
 static int read_ffmpeg_output(Target_t *target, int pid, int subout, int suberr)
 {
-	if (!target || subout < 0 || suberr < 0) return 1;
+	if (!target || subout < 0 || suberr < 0) return -1;
 	struct pollfd fds[2] = {
 		{ .fd = subout, .events = POLLIN, },
 		{ .fd = suberr, .events = POLLIN, },
@@ -539,7 +539,25 @@ static int read_ffmpeg_output(Target_t *target, int pid, int subout, int suberr)
 			break;
 		}
 	}
-	return WIFEXITED(ret) && WEXITSTATUS(ret) == 0;
+	return WIFEXITED(ret) ? WEXITSTATUS(ret) : -2;
+}
+
+static SVA_t *argv2str(SVA_t *dest, char *argv[])
+{
+	if (!dest || !argv) return NULL;
+	SVA_t tmp = {};
+	for (size_t idx = 0; argv[idx]; idx++) {
+		if (idx) sva_append(dest, sv_from_lstr(" "));
+		if (!strpbrk(argv[idx], " \t\r\n\\\"'`!?#$%^&|(){}[]<>~") && strlen(argv[idx]) != 0) {
+			sva_sprintfcat(dest, "%s", argv[idx]);
+			continue;
+		}
+		sva_from_cstr(&tmp, argv[idx]);
+		sva_replace(&tmp, sv_from_lstr("'"), sv_from_lstr("'\\''"));
+		sva_sprintfcat(dest, "'%.*s'", (int)tmp.len, tmp.p);
+	}
+	sva_free(&tmp);
+	return dest;
 }
 
 static bool build_ffmpeg(Target_t *target)
@@ -581,12 +599,9 @@ static bool build_ffmpeg(Target_t *target)
 		goto EXIT_THREAD_AND_CLEANUP;
 	}
 
-	printf("[\e[32mRUN\e[0m] ");
-	for (size_t idx = 0; argv[idx]; idx++) {
-		if (idx) printf(" ");
-		printf("'%s'", argv[idx]);
-	}
-	printf("\n");
+	SVA_t command = {};
+	argv2str(&command, argv);
+	printf("[\e[32mRUN\e[0m] %s\n", command.p);
 
 	pid_t pid = fork();
 	if (!pid) {
@@ -605,15 +620,14 @@ static bool build_ffmpeg(Target_t *target)
 	ret = read_ffmpeg_output(target, pid, pipefd[0], pipefd[2]);
 	// waitpid(pid, &ret, 0);
 	// ret = WIFEXITED(ret) && WEXITSTATUS(ret) == 0;
-	if (!ret) {
-		printf("[\e[31mFAILD\e[0m] ");
-		for (size_t idx = 0; argv[idx]; idx++) {
-			if (idx) printf(" ");
-			printf("'%s'", argv[idx]);
-		}
-		printf("\n");
+	if (ret != 0) {
+		sva_sprintfcat(&target->log, "\n[INFO] 退出状态：code %d\n", ret);
+		sva_sprintfcat(&target->log, "[COMMAND] %.*s\n", (int)command.len, command.p);
+		printf("[\e[31mFAILD\e[0m] %s\n", target->name.p);
 		remove(target->name.p);
-	}
+		ret = false;
+	} else ret = true;
+	sva_free(&command);
 
 EXIT_THREAD_AND_CLEANUP:
 	for (size_t i = 0; i < countof(pipefd); i++) {
@@ -720,7 +734,13 @@ int main(int argc, char *argv[])
 	if (proc_limit > 1) target_buildlist_for_pthread(list, proc_limit, true);
 	else target_buildlist(list);
 
-	printf("所有任务执行完成\n");
+	int completed = 0, faild = 0;
+	for (Target_t *p = list; p; p = p->next) {
+		if (p->type != TY_NORM) continue;
+		if (p->status == TS_SUCCESS) completed++;
+		else if (p->status == TS_FAILD) faild++;
+	}
+	printf("所有任务执行完成，%d 成功，%d 失败\n", completed, faild);
 	if (print_list) target_printlist(list, 0b110);
 	else target_printlist(list, 0);
 	target_freelist(list);
