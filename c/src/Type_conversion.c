@@ -1,10 +1,12 @@
 #include <dirent.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdcountof.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <poll.h>
 #include "../include/target_list.h"
 
 // #define EXPERIMENT_FFMPEG_AI_CODE
@@ -12,7 +14,7 @@
 #ifndef EXPERIMENT_FFMPEG_AI_CODE
 #include <fcntl.h>
 #include <stdlib.h>
-#include <errno.h>
+// #include <errno.h>
 #else
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -493,6 +495,53 @@ done:
 #endif
 
 
+static int read_ffmpeg_output(Target_t *target, int pid, int subout, int suberr)
+{
+	if (!target || subout < 0 || suberr < 0) return 1;
+	struct pollfd fds[2] = {
+		{ .fd = subout, .events = POLLIN, },
+		{ .fd = suberr, .events = POLLIN, },
+	};
+	char buffer[2*PATH_MAX];
+	/* 单位：微秒μs */
+	uint64_t duration_total = 0,
+		 duration_now = 0;
+	bool active = true;
+	int ret = 0;
+	while (active && (waitpid(pid, &ret, WNOHANG) > 0 ? !WIFEXITED(ret) : true)
+	       && poll(fds, countof(fds), 1e3) != -1) {
+		for (size_t i = 0; i < countof(fds); i++) {
+			if (!(fds[i].revents & POLLIN)) continue;
+			ssize_t size = read(fds[i].fd, buffer, sizeof(buffer));
+			if (i == 1) {
+				/* STDERR转日志 */
+				sva_append(&target->log, (SV_t){.p=buffer,.len=size});
+				continue;
+			}
+			if ((size_t)size >= sizeof(buffer)) buffer[--size] = 0;
+			SV_t line = {}, left = (SV_t){.p=buffer,.len=size};
+			char c = 0;
+			while (sv_forline(&line, &left)) {
+				if (sscanf(line.p, "progress=en%c", &c) == 1 && c == 'd') {
+					active = false;
+					break;
+				}
+				if (sscanf(line.p, "out_time_us=%lu", &duration_now) < 1) continue;
+				target->progress = (double)duration_now/duration_total;
+			}
+		}
+		if (duration_total) continue;
+		SV_t line = {}, left = sv_from_sva(&target->log);
+		int h = 0, m = 0, s = 0, cs = 0;
+		for (int i = 0; i < 50 && sv_forline(&line, &left); i++) {
+			if (sscanf(line.p, " Duration: %d:%2d:%2d.%2d,", &h, &m, &s, &cs) < 4) continue;
+			duration_total = (h*3600+m*60+s)*1000000L+cs*10000L;
+			break;
+		}
+	}
+	return WIFEXITED(ret) && WEXITSTATUS(ret) == 0;
+}
+
 static bool build_ffmpeg(Target_t *target)
 {
 	if (!target || !target->depend_len
@@ -500,30 +549,17 @@ static bool build_ffmpeg(Target_t *target)
 #ifdef EXPERIMENT_FFMPEG_AI_CODE
 	return transcode_av(target->dependencies[0]->name.p, target->name.p);
 #else
-	int i = 0;
-	for (Target_t *p = target; p; p = p->prev) i++;
-	Path_t logfile = {};
 	SV_t name = sv_from_sva(&target->name);
-	SV_t basename = path_stemname(name);
-	if (!basename.len) basename = path_basename(name);
-	sva_sprintfcat(sva_from_sv(&logfile, path_father(name)),
-		       "/Log%03d_%.*s.txt", i, (int)basename.len, basename.p);
-	path_normalize(&logfile);
 
-	i = open(logfile.p, O_CREAT|O_TRUNC|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
-	if (i == -1) {
-		sva_from_cstr(&target->log, strerror(errno));
-		return false;
-	}
 	char *argv1[] = {
-		"ffmpeg", "-hide_banner", "-y",
+		"ffmpeg", "-hide_banner", "-y", "-progress", "pipe:1", "-nostats",
 		"-i", target->dependencies[0]->name.p,
 		target->name.p,
 		NULL,
 	};
 	/* 3gp参数 */
 	char *argv2[] = {
-		"ffmpeg", "-hide_banner", "-y",
+		"ffmpeg", "-hide_banner", "-y", "-progress", "pipe:1", "-nostats",
 		"-i", target->dependencies[0]->name.p,
 		"-r", "12", "-b:v", "400k", "-s", "352x288",
 		"-ab", "12.2k", "-ac", "1", "-ar", "8000",
@@ -532,6 +568,18 @@ static bool build_ffmpeg(Target_t *target)
 	};
 	char **argv = sv_case_end_with(name, sv_from_lstr(".3gp"))
 		? argv2 : argv1;
+
+	/* STDOUT 0:读端 1:写端 | STDERR 2:读端 3:写端 */
+	int pipefd[4] = {-1, -1, -1, -1};
+	int ret = false;
+	if (pipe(pipefd) == -1) {
+		perror("pipe#1");
+		goto EXIT_THREAD_AND_CLEANUP;
+	}
+	if (pipe(pipefd+2) == -1) {
+		perror("pipe#2");
+		goto EXIT_THREAD_AND_CLEANUP;
+	}
 
 	printf("[\e[32mRUN\e[0m] ");
 	for (size_t idx = 0; argv[idx]; idx++) {
@@ -542,23 +590,22 @@ static bool build_ffmpeg(Target_t *target)
 
 	pid_t pid = fork();
 	if (!pid) {
-		dup2(i, STDOUT_FILENO);
-		dup2(i, STDERR_FILENO);
-		// 奇怪，关掉stdin后就会发生奇怪的事情(ffmpeg运行失败等)
-		// close(STDIN_FILENO);
-		close(i);
-		// ffmpeg -hide_banner -y -i "INPUT" {OPTION} "OUTPUT" > Log001_xxx.txt
+		dup2(pipefd[1], STDOUT_FILENO);
+		dup2(pipefd[3], STDERR_FILENO);
+		for (size_t i = 0; i < countof(pipefd); i++) close(pipefd[i]);
 		execvp("ffmpeg", argv);
 		perror("execvp");
 		exit(1);
 	}
-	close(i);
+	close(pipefd[1]);
+	pipefd[1] = -1;
+	close(pipefd[3]);
+	pipefd[3] = -1;
 
-	int ret = 0;
-	waitpid(pid, &ret, 0);
-	ret = WIFEXITED(ret) && WEXITSTATUS(ret) == 0;
-	if (ret) remove(logfile.p);
-	else {
+	ret = read_ffmpeg_output(target, pid, pipefd[0], pipefd[2]);
+	// waitpid(pid, &ret, 0);
+	// ret = WIFEXITED(ret) && WEXITSTATUS(ret) == 0;
+	if (!ret) {
 		printf("[\e[31mFAILD\e[0m] ");
 		for (size_t idx = 0; argv[idx]; idx++) {
 			if (idx) printf(" ");
@@ -567,7 +614,11 @@ static bool build_ffmpeg(Target_t *target)
 		printf("\n");
 		remove(target->name.p);
 	}
-	sva_free(&logfile);
+
+EXIT_THREAD_AND_CLEANUP:
+	for (size_t i = 0; i < countof(pipefd); i++) {
+		if (pipefd[i] >= 0) close(pipefd[i]);
+	}
 	return ret;
 #endif
 }
@@ -620,9 +671,12 @@ static Target_t *action_file(Target_t *list, SV_t full_path)
 
 int main(int argc, char *argv[])
 {
+	SV_t exe_name = path_basename(sv_from_cstr(argv[0]));
 	SV_t inputdir = {};
 	int opt;
-	while ((opt = getopt(argc, argv, "t:d:h")) != -1) {
+	bool print_list = false;
+	int proc_limit = sysconf(_SC_NPROCESSORS_ONLN) / 2;
+	while ((opt = getopt(argc, argv, "ht:d:l:p")) != -1) {
 		switch (opt) {
 		case 't':
 			output_type = path_basename(sv_from_cstr(optarg));
@@ -630,10 +684,25 @@ int main(int argc, char *argv[])
 		case 'd':
 			inputdir = sv_from_cstr(optarg);
 			break;
+		case 'l':
+			sscanf(optarg, "%d", &proc_limit);
+			if (proc_limit <= 0) proc_limit = 1;
+			break;
+		case 'p':
+			print_list = true;
+			break;
 		case '?':
 		case 'h':
 		default:
-			printf("本程序基于ffmpeg，转换格式时需要安装ffmpeg\n参数：Type_conversion [-t <目标格式>] [-d <文件夹>] [-h]帮助\n");
+			printf("本程序基于ffmpeg，转换格式时需要安装ffmpeg\n"
+			       "Usage: %.*s [OPTIONS]\n"
+			       "OPTIONS:\n"
+			       "    -t <FMT>  指定目标格式\n"
+			       "    -d <PATH> 输入文件夹\n"
+			       "    -l <NUM>  设置任务并行上限\n"
+			       "    -p        结束后打印任务列表\n"
+			       "    -h        打印帮助\n",
+			       (int)exe_name.len, exe_name.p);
 			return 0;
 			break;
 		}
@@ -647,12 +716,13 @@ int main(int argc, char *argv[])
 	Target_t *list = NULL;
 	list = target_fordir(list, NULL, inputdir, rule_fordir, action_file);
 
-	int cpus = sysconf(_SC_NPROCESSORS_ONLN) / 2;
-	if (cpus > 0) target_buildlist_for_pthread(list, cpus, true);
+	printf("[INFO] 并行上限: %d\n", proc_limit);
+	if (proc_limit > 1) target_buildlist_for_pthread(list, proc_limit, true);
 	else target_buildlist(list);
 
 	printf("所有任务执行完成\n");
-	target_printlist(list, 0);
+	if (print_list) target_printlist(list, 0b110);
+	else target_printlist(list, 0);
 	target_freelist(list);
 	sva_free(&output_dir);
 	return 0;
