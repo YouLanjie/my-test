@@ -1785,6 +1785,8 @@ static void scene_init(Runtimedata_t *rt, bool add_three_body)
 		obj_set_color(star.obj, RAND_COLOR);
 		da_append(&rt->objs, &star);
 	}
+#undef l_star_create
+#undef RAND_COLOR
 #undef RAND_VEC
 #undef RAND12
 #undef RAND01

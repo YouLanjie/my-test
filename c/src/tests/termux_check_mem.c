@@ -28,9 +28,12 @@
 typedef struct {
 	size_t rss;    // kb
 	size_t swap;   // kb
+	size_t pss;    // kb, optional
+	size_t swappss;    // kb, optional
 	size_t total;  // kb
 	char comm[NAME_MAX];
 	int pid;
+	bool has_pss;
 } Process_t;
 
 /* 用于qsort排序比较 */
@@ -84,21 +87,50 @@ size_t read_meminfo()
 	return mem_available;
 }
 
+/* 尝试读取PSS */
+static void read_status_pss(Process_t *proc)
+{
+	if (!proc) return;
+	char buff[NAME_MAX];
+	sprintf(buff, "/proc/%d/smaps_rollup", proc->pid);
+	FILE *fp = fopen(buff, "r");
+	if (!fp) {
+		/* 针对三星特殊结构文件 */
+		sprintf(buff, "/proc/%d/smaps_simple", proc->pid);
+		fp = fopen(buff, "r");
+	}
+	if (!fp) return;
+	proc->pss = proc->swappss = 0;
+	while (fgets(buff, sizeof(buff), fp) != NULL) {
+		if (proc->pss || !sscanf(buff, "Pss: %ld ", &proc->pss))
+			sscanf(buff, "SwapPss: %ld ", &proc->swappss);
+		if (proc->pss && proc->swappss) break;
+	}
+	fclose(fp);
+	// proc->total = proc->pss + proc->swappss;
+	proc->has_pss = true;
+	return;
+}
+
+/* 计数，0关闭，1开启，2每进程均读取 */
+static int flg_enable_pss = 0;
 /* 读取每个进程的状态信息 */
 void read_status(Process_t *proc)
 {
 	if (!proc) return;
+	proc->has_pss = false;
 	sprintf(proc->comm, "/proc/%d/status", proc->pid);
 	FILE *fp = fopen(proc->comm, "r");
 	if (!fp) return;
 	proc->rss = proc->swap = 0;
 	while (fgets(proc->comm, sizeof(proc->comm), fp) != NULL) {
-		if (sscanf(proc->comm, "VmRSS: %ld ", &proc->rss));
-		else sscanf(proc->comm, "VmSwap: %ld ", &proc->swap);
+		if (proc->rss || !sscanf(proc->comm, "VmRSS: %ld ", &proc->rss))
+			sscanf(proc->comm, "VmSwap: %ld ", &proc->swap);
 		if (proc->rss && proc->swap) break;
 	}
 	fclose(fp);
 	proc->total = proc->rss + proc->swap;
+	if (flg_enable_pss>1) read_status_pss(proc);
 	return;
 }
 
@@ -244,6 +276,8 @@ int monitor(struct timespec delay, size_t len, bool auto_kill)
 		sprintf(buffer_content, "[%s] 当前内存使用率 %.1f%% (阈值 %.1f%%)",
 			buffer_title, pmem, MINPMEM);
 		for (size_t i = 0; i < countof(proc_list); i++) {
+			if (flg_enable_pss && !proc_list[i].has_pss)
+				read_status_pss(&proc_list[i]);
 			char *p = "";
 #ifndef DEBUG
 			if (auto_kill && proc_list[i].total >= MINKILLMEM) {
@@ -287,14 +321,21 @@ void print_top(Process_t proc_list[], size_t len)
 	sysinfo(&info);
 	const double total_mem = (info.totalram+info.totalswap)/1024.;
 
+	for (size_t i = 0; flg_enable_pss && i < len; i++) {
+		if (!proc_list[i].has_pss) read_status_pss(&proc_list[i]);
+	}
 	printf("Top %ld:\n", len);
 	for (size_t i = 0; i < len; i++) {
-		proc_summary.rss += proc_list[i].rss;
-		proc_summary.swap += proc_list[i].swap;
-		printf("[%4.1f%%] %.1lfMB (rss:%.1f ,swap:%.1f) (pid:%d) %s\n",
-		       100.*proc_list[i].total/total_mem, proc_list[i].total/1024.,
-		       proc_list[i].rss/1024., proc_list[i].swap/1024.,
-		       proc_list[i].pid, proc_list[i].comm);
+		Process_t * const p = &proc_list[i];
+		proc_summary.rss += p->has_pss ? p->pss : p->rss;
+		proc_summary.swap += p->has_pss ? p->swappss : p->swap;
+		printf(p->has_pss
+		       ? "[%4.1f%%] %.1lfMB (pss:%.1f ,spss:%.1f) (pid:%d) %s\n"
+		       : "[%4.1f%%] %.1lfMB (rss:%.1f ,swap:%.1f) (pid:%d) %s\n",
+		       100.*p->total/total_mem, p->total/1024.,
+		       (p->has_pss?p->pss:p->rss)/1024.,
+		       (p->has_pss?p->swappss:p->swap)/1024.,
+		       p->pid, p->comm);
 	}
 	proc_summary.total += proc_summary.rss+proc_summary.swap;
 	printf("SUMMARY:\n"
@@ -447,7 +488,7 @@ int main(int argc, char *argv[])
 	bool flg_rish = false;
 	bool flg_proxy = false;
 	char rish_path[PATH_MAX] = "";
-	while ((ch = getopt(argc, argv, "ht:n:wmks:Spf")) != -1) {
+	while ((ch = getopt(argc, argv, "ht:n:wmks:SpfP")) != -1) {
 		switch (ch) {
 		case '?':
 		case 'h':
@@ -461,7 +502,8 @@ int main(int argc, char *argv[])
 			       "    -k        指定-m时自动暂停/杀死超限进程（仅termux）\n"
 			       "    -s <FILE> 在rish(shizuku)里运行，要指定rish路径\n"
 			       "    -p        在rish运行时，使用消息代理(配合-m)\n"
-			       "    -f        读取cmdline(仅第一个参数)\n",
+			       "    -f        读取cmdline(仅第一个参数)\n"
+			       "    -P        读取PSS(smaps等)，会显著拖慢速度\n",
 			       argc>0?argv[0]:"memcheck");
 			return 0;
 			break;
@@ -494,6 +536,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'f':
 			flg_read_cmdline = true;
+			break;
+		case 'P':
+			flg_enable_pss++;
 			break;
 		}
 	}

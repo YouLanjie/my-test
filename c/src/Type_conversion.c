@@ -252,17 +252,22 @@ int main(int argc, char *argv[])
 	if (proc_limit > 1) target_buildlist_for_pthread(list, proc_limit, true);
 	else target_buildlist(list);
 
-	int completed = 0, faild = 0;
+	int total = 0, completed = 0, faild = 0, skiped = 0;
 	for (Target_t *p = list; p; p = p->next) {
 		if (p->type != TY_NORM) continue;
-		if (p->status == TS_SUCCESS) completed++;
+		total++;
+		if (p->time_stop == p->time_start) {
+			skiped++;
+			p->status = TS_SKIP;
+		} else if (p->status == TS_SUCCESS) completed++;
 		else if (p->status == TS_FAILD) faild++;
 	}
-	printf("所有任务执行完成，%d 成功，%d 失败\n", completed, faild);
-	if (print_list) target_printlist(list, 0b110);
+	printf("[INFO] 所有任务执行完成，全 %d 个，%d 完成，%d 跳过，%d 失败\n",
+	       total, completed, skiped, faild);
+	if (print_list) target_printlist(list, 0b110|1<<7);
 	else target_printlist(list, 0);
 	target_freelist(list);
 	sva_free(&output_dir);
-	return 0;
+	return (total>0 && faild==total) ? 2 : (faild<=0 ? 0 : 1);
 }
 
