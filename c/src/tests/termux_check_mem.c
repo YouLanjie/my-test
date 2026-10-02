@@ -33,7 +33,7 @@ typedef struct {
 	size_t total;  // kb
 	char comm[NAME_MAX];
 	int pid;
-	bool has_pss;
+	int has_pss;
 } Process_t;
 
 /* 用于qsort排序比较 */
@@ -101,14 +101,16 @@ static void read_status_pss(Process_t *proc)
 	}
 	if (!fp) return;
 	proc->pss = proc->swappss = 0;
+	proc->has_pss = 0;
 	while (fgets(buff, sizeof(buff), fp) != NULL) {
-		if (proc->pss || !sscanf(buff, "Pss: %ld ", &proc->pss))
-			sscanf(buff, "SwapPss: %ld ", &proc->swappss);
-		if (proc->pss && proc->swappss) break;
+		if (!(proc->has_pss&0b01) && sscanf(buff, "Pss: %ld ", &proc->pss))
+			proc->has_pss |= 0b01;
+		else if (!(proc->has_pss&0b10) && sscanf(buff, "SwapPss: %ld ", &proc->swappss))
+			proc->has_pss|=0b10;
+		if (proc->has_pss == 0b11) break;
 	}
 	fclose(fp);
-	// proc->total = proc->pss + proc->swappss;
-	proc->has_pss = true;
+	if (proc->has_pss == 0b11) proc->total = proc->pss + proc->swappss;
 	return;
 }
 
@@ -118,15 +120,16 @@ static int flg_enable_pss = 0;
 void read_status(Process_t *proc)
 {
 	if (!proc) return;
-	proc->has_pss = false;
+	proc->has_pss = 0;
 	sprintf(proc->comm, "/proc/%d/status", proc->pid);
 	FILE *fp = fopen(proc->comm, "r");
 	if (!fp) return;
 	proc->rss = proc->swap = 0;
+	int stat = 0;
 	while (fgets(proc->comm, sizeof(proc->comm), fp) != NULL) {
-		if (proc->rss || !sscanf(proc->comm, "VmRSS: %ld ", &proc->rss))
-			sscanf(proc->comm, "VmSwap: %ld ", &proc->swap);
-		if (proc->rss && proc->swap) break;
+		if (!(stat&0b01) && sscanf(proc->comm, "VmRSS: %ld ", &proc->rss)) stat |= 0b01;
+		else if (!(stat&0b10) && sscanf(proc->comm, "VmSwap: %ld ", &proc->swap)) stat|=0b10;
+		if (stat == 0b11) break;
 	}
 	fclose(fp);
 	proc->total = proc->rss + proc->swap;
@@ -327,14 +330,12 @@ void print_top(Process_t proc_list[], size_t len)
 	printf("Top %ld:\n", len);
 	for (size_t i = 0; i < len; i++) {
 		Process_t * const p = &proc_list[i];
-		proc_summary.rss += p->has_pss ? p->pss : p->rss;
-		proc_summary.swap += p->has_pss ? p->swappss : p->swap;
-		printf(p->has_pss
-		       ? "[%4.1f%%] %.1lfMB (pss:%.1f ,spss:%.1f) (pid:%d) %s\n"
-		       : "[%4.1f%%] %.1lfMB (rss:%.1f ,swap:%.1f) (pid:%d) %s\n",
+		proc_summary.rss += p->has_pss&0b01 ? p->pss : p->rss;
+		proc_summary.swap += p->has_pss&0b10 ? p->swappss : p->swap;
+		printf("[%4.1f%%] %.1lfMB (%s:%.1f ,%s:%.1f) (pid:%d) %s\n",
 		       100.*p->total/total_mem, p->total/1024.,
-		       (p->has_pss?p->pss:p->rss)/1024.,
-		       (p->has_pss?p->swappss:p->swap)/1024.,
+		       p->has_pss&0b01?"pss":"rss", (p->has_pss&0b01?p->pss:p->rss)/1024.,
+		       p->has_pss&0b10?"spss":"swap", (p->has_pss&0b10?p->swappss:p->swap)/1024.,
 		       p->pid, p->comm);
 	}
 	proc_summary.total += proc_summary.rss+proc_summary.swap;
