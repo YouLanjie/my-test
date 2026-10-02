@@ -1584,7 +1584,7 @@ static void set_camera_forward(Runtimedata_t *rt)
 	printf("请输入相机要看向的方向，留空跳过(格式：x,y,z)：\n");
 	if (!fgets(buf, sizeof(buf)-1, stdin)) return;
 	for (char *p = buf; *p; p++) if (strchr("{}[]()<>,", *p)) *p = ' ';
-	if (sscanf(buf, " %lf %lf %lf", &v2.x, &v2.y, &v2.z) == 3 && vec_len(v2) != 0) {
+	if (sscanf(buf, " %lg %lg %lg", &v2.x, &v2.y, &v2.z) == 3 && vec_len(v2) != 0) {
 		v1 = vec_direct(ca->forward);
 		v2 = vec_direct(v2);
 		camera_rotate_about_point(ca, rt->follow->center, vec_cross_product(v1, v2),
@@ -1594,7 +1594,7 @@ static void set_camera_forward(Runtimedata_t *rt)
 	printf("请输入相机竖直方向，留空跳过(格式：x,y,z)：\n");
 	if (!fgets(buf, sizeof(buf)-1, stdin)) return;
 	for (char *p = buf; *p; p++) if (strchr("{}[]()<>,", *p)) *p = ' ';
-	if (sscanf(buf, " %lf %lf %lf", &v2.x, &v2.y, &v2.z) != 3) return;
+	if (sscanf(buf, " %lg %lg %lg", &v2.x, &v2.y, &v2.z) != 3) return;
 	if (vec_len(v2) == 0) return;
 	Vec_t v3 = vec_cross_product((v1=vec_direct(ca->up)), (v2=vec_direct(v2)));
 	if (vec_len(v3) == 0) return;
