@@ -544,7 +544,7 @@ int main(int argc, char *argv[])
 		}
 	}
 	if (flg_rish) {
-		if (!run_in_rish(argc, argv, rish_path, flg_proxy))
+		if (!run_in_rish(argc, argv, rish_path, flg_proxy && flg_monitor))
 			return 127;
 		return 0;
 	}

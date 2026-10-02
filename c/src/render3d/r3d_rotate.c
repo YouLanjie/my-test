@@ -17,7 +17,7 @@ const double G = 6.6743e-11;
 const double SCALE = 1e3;    /* 将距离换算成 1单位 = 1km */
 #define pow2(x) ((x)*(x))
 #define sec2day(sec) ((sec)/60./60./24.)
-#define syslog(rt, fmt, ...) sva_sprintfcat(&(rt)->logs, "[T+%8.3fd] "fmt"\n", (rt)->gtime/(24.*60*60) __VA_OPT__(,) __VA_ARGS__)
+#define syslog(rt, fmt, ...) sva_sprintfcat(&(rt)->logs, "[T+%9.0fs] "fmt"\n", (rt)->gtime __VA_OPT__(,) __VA_ARGS__)
 #define UI_ALPHA 200
 
 /* 宏编译条件 */
@@ -67,7 +67,15 @@ typedef struct {
 	bool pause;
 	bool print_busy;
 	bool use_rk4;
+	bool fixed_about_point;
 } Runtimedata_t;
+
+static double get_nowtime()
+{
+	struct timespec t = {};
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return t.tv_sec + t.tv_nsec/1e9;
+}
 
 /**
  * @brief 分页器
@@ -99,7 +107,15 @@ static void print_pager(const char *headline, SV_t content, int mode)
 #ifdef FLG_BENCHTEST
 		int ch = 'c';
 #else
-		int ch = _getch();
+		const double delay = 0.6;
+		double t0 = get_nowtime(), t1;
+		int ch = 0, ch2 = 0;
+		/* 延迟一段时间防止误触
+		 * 效果取决于终端设置的连按延迟 */
+		while ((ch=_getch())>0 && (t1 = get_nowtime()) < t0+delay) {
+			if (!ch2 || ch == ch2) t0 = t1;
+			ch2 = ch;
+		}
 #endif
 		if (ch == 'q') break;
 		if (ch == 'c') mode=-2;
@@ -189,6 +205,15 @@ static void star_pop(Runtimedata_t *rt, Star_t *star, const char *desc)
 	rt->active_cam = rt->follow ? &rt->follow->cam : rt->camera;
 	rt->pause = true;
 	print_pager("发生事件", sv_from_sva(&rt->logs), -1);
+}
+
+static void star_sync_position(Runtimedata_t *rt)
+{
+	if (!rt || !rt->objs.ptr) return;
+	Star_t *objs = rt->objs.ptr;
+	for (size_t i = 0; i < rt->objs.len; i++) {
+		if (objs[i].obj) objs[i].obj->center = objs[i].center;
+	}
 }
 
 /* 清理释放天体、后端、相机资源 */
@@ -282,6 +307,8 @@ static Star_t *get_about_point(Runtimedata_t *rt, Star_t *follow)
 	if (!follow) follow = rt->follow;
 	if (!follow || (size_t)(follow-objs) > rt->objs.len)
 		return &base;
+	if (rt->about_point && follow == rt->follow && rt->fixed_about_point)
+		return rt->about_point;
 
 	size_t n = rt->objs.len;
 	size_t idx_follow = follow - objs;	// 目标索引
@@ -599,10 +626,7 @@ static double physics_update(Runtimedata_t *rt)
 						  acos(vec_point_product(v1, v2)));
 		}
 	}
-	Star_t *objs = rt->objs.ptr;
-	for (size_t i = 0; i < rt->objs.len; i++) {
-		if (objs[i].obj) objs[i].obj->center = objs[i].center;
-	}
+	star_sync_position(rt);
 	return rt->time_scale/rt->fps;
 }
 
@@ -1548,6 +1572,37 @@ static void switch_camera(Runtimedata_t *rt, Camera_t *ca)
 	return;
 }
 
+static void set_camera_forward(Runtimedata_t *rt)
+{
+	if (!rt) return;
+	Camera_t *ca = rt->active_cam;
+	if (!ca || !rt->follow) return;
+	char buf[100] = {};
+	Vec_t v1 = {}, v2 = {};
+	printf("\e[0m\n==== 设定相机朝向 ====\n");
+	// printf("参考数据:\n- [%f,%f,%f]\n", v1.x, v1.y, v1.z);
+	printf("请输入相机要看向的方向，留空跳过(格式：x,y,z)：\n");
+	if (!fgets(buf, sizeof(buf)-1, stdin)) return;
+	for (char *p = buf; *p; p++) if (strchr("{}[]()<>,", *p)) *p = ' ';
+	if (sscanf(buf, " %lf %lf %lf", &v2.x, &v2.y, &v2.z) == 3 && vec_len(v2) != 0) {
+		v1 = vec_direct(ca->forward);
+		v2 = vec_direct(v2);
+		camera_rotate_about_point(ca, rt->follow->center, vec_cross_product(v1, v2),
+					  acos(vec_point_product(v1, v2)));
+	}
+
+	printf("请输入相机竖直方向，留空跳过(格式：x,y,z)：\n");
+	if (!fgets(buf, sizeof(buf)-1, stdin)) return;
+	for (char *p = buf; *p; p++) if (strchr("{}[]()<>,", *p)) *p = ' ';
+	if (sscanf(buf, " %lf %lf %lf", &v2.x, &v2.y, &v2.z) != 3) return;
+	if (vec_len(v2) == 0) return;
+	Vec_t v3 = vec_cross_product((v1=vec_direct(ca->up)), (v2=vec_direct(v2)));
+	if (vec_len(v3) == 0) return;
+	v2 = vec_direct(vec_cross_product(v2, v3));
+	camera_rotate_about_point(ca, rt->follow->center, vec_cross_product(v1, v2),
+				  acos(vec_point_product(v1, v2)));
+}
+
 static bool input_handle(Runtimedata_t *rt)
 {
 	if (!rt) return false;
@@ -1558,6 +1613,7 @@ static bool input_handle(Runtimedata_t *rt)
 	case '\t': setup(rt, 1); break;
 	case '~': setup(rt, 0); break;
 	case '`': sync_cam_size_scale(rt); break;
+	case '@': set_camera_forward(rt); break;
 	case 'f':
 		rt->follow = choose_star(rt, "跟随", rt->follow);
 		if (!rt->follow) {
@@ -1576,6 +1632,14 @@ static bool input_handle(Runtimedata_t *rt)
 	case 't': rt->destination_to = choose_star(rt, "驶向", rt->destination_to); break;
 	case 'F': rt->look_to = choose_star(rt, "看向", rt->look_to); break;
 	case 'T': rt->rotate_cam_with_spd = !rt->rotate_cam_with_spd; break;
+	case '!':
+		rt->about_point = choose_star(rt, "固定为中心", rt->about_point);
+		rt->fixed_about_point = rt->about_point;
+		if (!rt->about_point) {
+			syslog(rt, "取消环绕中心强制固定");
+			rt->about_point = get_about_point(rt, rt->follow);
+		} else syslog(rt, "强制切换固定天体环绕中心为'%s'", rt->about_point->name.p);
+		break;
 	case '$':
 		rt->use_rk4 = !rt->use_rk4;
 		rt->time_scale_limit = rt->use_rk4?4096:2048;
@@ -1815,20 +1879,33 @@ static bool scene_init_from_dumped_txt(Runtimedata_t *rt, const char *filename)
 	double radius = 0;
 	double Px = 0, Py = 0, Pz = 0;
 	double Vx = 0, Vy = 0, Vz = 0;
+	double gtime = 0;
+	double dv = 0;
+	uint32_t seed = 0;
 	Color_t c;
 	Star_t star;
 	while (fgets(buf, sizeof(buf), fp)) {
 		ret = sscanf(buf, " [%lu] %s (%lgkg/r=%lgkm) 位置(km): {%lf,%lf,%lf} 速度(km/s): {%lf,%lf,%lf} (#%2hhX%2hhX%2hhX%2hhX)",
 			     &idx, name, &mass, &radius, &Px, &Py, &Pz, &Vx, &Vy, &Vz,
 			     &c.r, &c.g, &c.b, &c.a);
-		if (ret < 10) continue;
-		count++;
-		star = star_create(name, mass, radius, (Vec_t){Px,Py,Pz}, (Vec_t){Vx,Vy,Vz}, NULL);
-		if (ret >= 14) obj_set_color(star.obj, c);
-		da_append(&rt->objs, &star);
+		if (ret >= 10) {
+			count++;
+			star = star_create(name, mass, radius, (Vec_t){Px,Py,Pz}, (Vec_t){Vx,Vy,Vz}, NULL);
+			if (ret >= 14) obj_set_color(star.obj, c);
+			da_append(&rt->objs, &star);
+			continue;
+		}
+		if (sscanf(buf, "游戏时间: T+%lf s, 折合约 T+47.3 d", &gtime)) {
+		} else if (sscanf(buf, "操作累计dv: %lf km/s", &dv)) {
+		} else sscanf(buf, "初始化种子: %u", &seed);
 	}
 	fclose(fp);
 	if (count <= 0) return false;
+
+	if (seed) rt->seed = seed;
+	rt->dv = dv;
+	rt->gtime = gtime;
+	rt->pause = true;
 
 	Star_t *objs = rt->objs.ptr;
 	for (size_t i = 0; i < rt->objs.len; i++) {
@@ -1924,6 +2001,8 @@ static void game_loop(Runtimedata_t *rt)
 			syslog(rt, "天体'%s'被'%s'捕获(%s)(原运行在'%s'),累计dv:%.3gkm/s",
 			       rt->follow->name.p, rt->about_point->name.p, buf.p,
 			       last_about_point->name.p, rt->dv);
+			rt->pause = true;
+			print_pager("发生事件", sv_from_sva(&rt->logs), -1);
 		}
 		if (!rt->about_point) break;
 		const bool cond1 = rt->follow && last_follow == rt->follow && rt->about_point;
@@ -2067,7 +2146,7 @@ static void game_loop(Runtimedata_t *rt)
 				if (fabs(ret3.theta/M_PI*180.) < 10) {
 					printf(" L:%.2fs", time_left);
 					/* 自动暂停 */
-					if (rt->throttle_on&1 && rt->time_scale>2 && time_left-rt->time_scale < 0) {
+					if (rt->throttle_on&1 && rt->time_scale>1 && time_left-rt->time_scale < 0) {
 						// rt->pause = true;
 						rt->time_scale /= 2;
 					}
@@ -2078,15 +2157,15 @@ static void game_loop(Runtimedata_t *rt)
 				}
 			} else if (ret.e > 1 && ret.Tp < 30*24*60*60) {
 				printf(" L:%.2fs", ret.Tp);
+				if (rt->time_scale > 4
+				    && rt->destination_to==rt->about_point && ret.e > 1
+				    && vertical_speed > 0 && ret.Tp - 5*rt->time_scale < 0) {
+					rt->time_scale /= 2;
+					if (rt->time_scale <= 4) rt->time_scale = 1;
+				}
 			}
-			if (ret.rp<=rt->about_point->radius && rt->time_scale > 1) {
-				rt->time_scale = 1;
-				rt->pause = true;
-			}
-			const bool cond = (ret.rp<=rt->about_point->radius && vertical_speed > 0)
-				|| (rt->destination_to==rt->about_point && ret.e > 1
-				    && vertical_speed > 0 && ret.Tp - rt->time_scale < 0);
-			if ((rt->time_scale > 2 && cond) || (rt->time_scale > 32 && cond2)) {
+			if ((ret.rp<=rt->about_point->radius && vertical_speed > 0 && rt->time_scale > 1)
+			    || (rt->time_scale > 32 && cond2)) {
 				rt->time_scale = 1;
 				rt->pause = true;
 			}
@@ -2217,6 +2296,7 @@ int main(int argc, char *argv[])
 #endif
 
 	printf("\e[2J");
+	star_sync_position(&rt);
 	game_loop(&rt);
 
 #ifdef FLG_BENCHTEST
@@ -2228,8 +2308,9 @@ int main(int argc, char *argv[])
 	fprintf(stderr, "-- [性能测试] 现总能量：%.10g\n", compute_system_energy(&rt));
 #else
 	if (rt.logs.p) {
-		printf("\e[0m\n航行日志：\n%s", rt.logs.p);
-		printf("初始化种子: %d\n", rt.seed);
+		printf("\e[0m\n\e[J航行日志：\n%s", rt.logs.p);
+		// printf("初始化种子: %d\n", rt.seed);
+		dump_stars(&rt, NULL, true);
 	}
 #endif
 
