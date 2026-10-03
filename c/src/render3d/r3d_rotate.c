@@ -73,7 +73,8 @@ typedef struct {
 	bool print_busy;
 	bool use_rk4;
 	bool fixed_about_point;
-	bool need_notification;
+	bool ignore_safety;
+	uint8_t need_notification;
 } Runtimedata_t;
 
 static double get_nowtime()
@@ -100,6 +101,9 @@ static void print_pager(const char *headline, SV_t content, int mode)
 	const int pager_lines = 25;
 	int total_lines = sv_countlines(content);
 	int count = 0, start = 1;
+
+	const double delay = 0.6;
+	double t0 = get_nowtime(), t1;
 	while (sv_forline(&line, &left)) {
 		if (mode!=-1 || total_lines-count < pager_lines)
 			printf("> %.*s\n", (int)line.len, line.p);
@@ -113,8 +117,6 @@ static void print_pager(const char *headline, SV_t content, int mode)
 #ifdef FLG_BENCHTEST
 		int ch = 'c';
 #else
-		const double delay = 0.6;
-		double t0 = get_nowtime(), t1;
 		int ch = 0, ch2 = 0;
 		/* 延迟一段时间防止误触
 		 * 效果取决于终端设置的连按延迟 */
@@ -209,8 +211,7 @@ static void star_pop(Runtimedata_t *rt, Star_t *star, const char *desc)
 		*objs[i] = da_get(&rt->objs, idxes[i]);
 	}
 	rt->active_cam = rt->follow ? &rt->follow->cam : rt->camera;
-	rt->pause = true;
-	rt->need_notification = true;
+	rt->need_notification++;
 }
 
 static void star_sync_position(Runtimedata_t *rt)
@@ -219,6 +220,20 @@ static void star_sync_position(Runtimedata_t *rt)
 	Star_t *objs = rt->objs.ptr;
 	for (size_t i = 0; i < rt->objs.len; i++) {
 		if (objs[i].obj) objs[i].obj->center = objs[i].center;
+	}
+}
+
+static void rt_sync_cam_config(Runtimedata_t *rt)
+{
+	if (!rt || !rt->objs.ptr) return;
+	Star_t *objs = rt->objs.ptr;
+	for (size_t i = 0; i < rt->objs.len; i++) {
+		if (!objs[i].obj) continue;
+		objs[i].cam = *rt->camera;    /* 同步相机配置 */
+		const double distance = objs[i].radius*10;
+		const Vec_t direct = vec_mul(vec_direct(objs[i].cam.forward), -distance);
+		objs[i].cam.dept = 5*distance;
+		objs[i].cam.position = vec_add(objs[i].center, direct);
 	}
 }
 
@@ -583,7 +598,7 @@ static void physics_update_step(Runtimedata_t *rt, double time_scale)
 	Vec_t *acc = rt->accel.ptr;
 	Vec_t diff;
 	for (size_t i = 0; i < rt->objs.len; i++) {
-		objs[i].speed = vec_add(objs[i].speed, vec_mul(acc[i], time_scale));
+;		objs[i].speed = vec_add(objs[i].speed, vec_mul(acc[i], time_scale));
 		diff = vec_mul(objs[i].speed, time_scale);
 		objs[i].center = vec_add(objs[i].center, diff);
 		objs[i].cam.position = vec_add(objs[i].cam.position, diff);
@@ -1616,6 +1631,7 @@ static bool input_handle(Runtimedata_t *rt)
 	case '~': setup(rt, 0); break;
 	case '`': sync_cam_size_scale(rt); break;
 	case '@': set_camera_forward(rt); break;
+	case '#': rt->ignore_safety = !rt->ignore_safety; break;
 	case 'f':
 		rt->follow = choose_star(rt, "跟随", rt->follow);
 		if (!rt->follow) {
@@ -1646,10 +1662,13 @@ static bool input_handle(Runtimedata_t *rt)
 		rt->use_rk4 = !rt->use_rk4;
 		rt->time_scale_limit = rt->use_rk4?4096:2048;
 		break;
+	case '"':
+		print_pager("航行日志", sv_from_sva(&rt->logs), -1);
+		rt->need_notification = 0;
+		break;
 	case '|': dump_stars(rt, NULL, false); break;
 	case '?': voyage_helper(rt); break;
 	case 'M': print_qrh(false); break;
-	case '"': print_pager("航行日志", sv_from_sva(&rt->logs), -1); break;
 	case '\'': rt->print_busy = !rt->print_busy; break;
 	case 'i': rt->axis = !rt->axis; break;
 	case 'I': rt->guidline = !rt->guidline; break;
@@ -1740,23 +1759,21 @@ static bool input_handle(Runtimedata_t *rt)
 	return true;
 }
 
-static void scene_init(Runtimedata_t *rt, bool add_three_body)
-{
-	if (!rt) return;
-	double rand_num = 0;
 #define RAND01 ((double)rand()/RAND_MAX)
 #define RAND12 (1+RAND01)
 #define RAND_VEC(k) vec_mul((Vec_t){1-2*RAND01, 1-2*RAND01, 1-2*RAND01}, RAND12*(k))
 #define RAND_COLOR ((Color_t){100+RAND01*155,100+RAND01*155,100+RAND01*155,-1})
 #define l_star_create(name, mass, radius, r, v, u)	\
 	do {								\
-		rand_num = 2*M_PI*RAND01;				\
+		double rand_num = 2*M_PI*RAND01;			\
 		star = star_create(name, mass, radius,			\
 				   vec_rotate((Vec_t){r,0,0}, u, rand_num),\
 				   vec_rotate((Vec_t){0,v,0}, u, rand_num),\
 				   NULL);			\
 	} while(0)
-
+static void scene_init_solar(Runtimedata_t *rt)
+{
+	if (!rt) return;
 	Star_t star = {};
 	Star_t *center = NULL;
 	l_star_create("地球", 5.965e24, 6371, -149.6e6, -29.78, ((Vec_t){0,0,1}));
@@ -1823,48 +1840,50 @@ static void scene_init(Runtimedata_t *rt, bool add_three_body)
 	star.self_omiga = 2*M_PI/(25.4*60*60);
 	obj_set_color(star.obj, (Color_t){-1,-1,0,-1});
 	da_append(&rt->objs, &star);
+}
+static void scene_init_three_body(Runtimedata_t *rt)
+{
+	if (!rt) return;
+	Star_t star = {};
+	Star_t *center = NULL;
+	/* 安置在太阳系外4光年 */
+	l_star_create("!?强强?!", 5.965e24*(10*RAND01+0.3), 6371*RAND12, 4*365*24*60*60*3e5, RAND12*5, ((Vec_t){0,0,1}));
+	star.self_rotate = vec_direct(RAND_VEC(1));
+	star.self_omiga = 2*M_PI/(24*RAND12*60*60);
+	obj_set_color(star.obj, RAND_COLOR);
+	da_append(&rt->objs, &star);
+	center = da_get(&rt->objs, rt->objs.len-1);
 
-	if (add_three_body) {
-		/* 安置在太阳系外4光年 */
-		l_star_create("!?强强?!", 5.965e24*(10*RAND01+0.3), 6371*RAND12, 4*365*24*60*60*3e5, RAND12*5, ((Vec_t){0,0,1}));
-		star.self_rotate = vec_direct(RAND_VEC(1));
-		star.self_omiga = 2*M_PI/(24*RAND12*60*60);
-		obj_set_color(star.obj, RAND_COLOR);
-		da_append(&rt->objs, &star);
-		center = da_get(&rt->objs, rt->objs.len-1);
+	star = star_create("sun1", 1e31*(RAND12 - 0.5), RAND12*7e5, RAND_VEC(RAND12*1e8), RAND_VEC(5), center);
+	star.self_rotate = vec_direct(RAND_VEC(1));
+	star.self_omiga = 2*M_PI/(100*RAND12*60*60);
+	obj_set_color(star.obj, RAND_COLOR);
+	da_append(&rt->objs, &star);
 
-		star = star_create("sun1", 1e31*(RAND12 - 0.5), RAND12*7e5, RAND_VEC(RAND12*1e8), RAND_VEC(5), center);
-		star.self_rotate = vec_direct(RAND_VEC(1));
-		star.self_omiga = 2*M_PI/(100*RAND12*60*60);
-		obj_set_color(star.obj, RAND_COLOR);
-		da_append(&rt->objs, &star);
+	star = star_create("sun2", 5e31*(RAND12 - 0.5), RAND12*7e5, RAND_VEC(RAND12*1e8), RAND_VEC(5), center);
+	star.self_rotate = vec_direct(RAND_VEC(1));
+	star.self_omiga = 2*M_PI/(100*RAND12*60*60);
+	obj_set_color(star.obj, RAND_COLOR);
+	da_append(&rt->objs, &star);
 
-		star = star_create("sun2", 5e31*(RAND12 - 0.5), RAND12*7e5, RAND_VEC(RAND12*1e8), RAND_VEC(5), center);
-		star.self_rotate = vec_direct(RAND_VEC(1));
-		star.self_omiga = 2*M_PI/(100*RAND12*60*60);
-		obj_set_color(star.obj, RAND_COLOR);
-		da_append(&rt->objs, &star);
-
-		star = star_create("sun3", 1e32*(RAND12 - 0.5), RAND12*7e5, RAND_VEC(RAND12*1e8), RAND_VEC(5), center);
-		star.self_rotate = vec_direct(RAND_VEC(1));
-		star.self_omiga = 2*M_PI/(100*RAND12*60*60);
-		obj_set_color(star.obj, RAND_COLOR);
-		da_append(&rt->objs, &star);
-	}
+	star = star_create("sun3", 1e32*(RAND12 - 0.5), RAND12*7e5, RAND_VEC(RAND12*1e8), RAND_VEC(5), center);
+	star.self_rotate = vec_direct(RAND_VEC(1));
+	star.self_omiga = 2*M_PI/(100*RAND12*60*60);
+	obj_set_color(star.obj, RAND_COLOR);
+	da_append(&rt->objs, &star);
+	return;
+}
 #undef l_star_create
 #undef RAND_COLOR
 #undef RAND_VEC
 #undef RAND12
 #undef RAND01
-	Star_t *objs = rt->objs.ptr;
-	for (size_t i = 0; i < rt->objs.len; i++) {
-		if (!objs[i].obj) continue;
-		objs[i].cam = *rt->camera;    /* 同步相机配置 */
-		const double distance = objs[i].radius*10;
-		const Vec_t direct = vec_mul(vec_direct(objs[i].cam.forward), -distance);
-		objs[i].cam.dept = 5*distance;
-		objs[i].cam.position = vec_add(objs[i].center, direct);
-	}
+static void scene_init(Runtimedata_t *rt, int add_three_body)
+{
+	if (!rt) return;
+	if (add_three_body < 2) scene_init_solar(rt);
+	if (add_three_body) scene_init_three_body(rt);
+	rt_sync_cam_config(rt);
 }
 
 /* 导入天体场景（暂缺失自转、颜色等配置） */
@@ -1909,16 +1928,7 @@ static bool scene_init_from_dumped_txt(Runtimedata_t *rt, const char *filename)
 	rt->gtime = gtime;
 	rt->pause = true;
 
-	Star_t *objs = rt->objs.ptr;
-	for (size_t i = 0; i < rt->objs.len; i++) {
-		if (!objs[i].obj) continue;
-		objs[i].cam = *rt->camera;    /* 同步相机配置 */
-		const double distance = objs[i].radius*10;
-		const Vec_t direct = vec_mul(vec_direct(objs[i].cam.forward), -distance);
-		objs[i].cam.dept = 5*distance;
-		objs[i].cam.position = vec_add(objs[i].center, direct);
-	}
-
+	rt_sync_cam_config(rt);
 	printf("[INFO] 共导入%d个天体\n", count);
 	dump_stars(rt, NULL, false);
 	return true;
@@ -1994,9 +2004,10 @@ static void game_loop(Runtimedata_t *rt)
 			if (!input_handle(rt)) break;
 		if (rt->backend->get_input && (rt->inp = rt->backend->get_input(rt->backend)))
 			if (!input_handle(rt)) break;
-		if (rt->need_notification) {
+		if (rt->need_notification && !rt->ignore_safety) {
+			rt->pause = true;
 			print_pager("日志:发生事件", sv_from_sva(&rt->logs), -1);
-			rt->need_notification = false;
+			rt->need_notification = 0;
 		}
 		if (!rt->pause) physics_update(rt);
 		if (rt->follow) ret = get_orbital_parameters(rt->follow, rt->about_point);
@@ -2007,8 +2018,7 @@ static void game_loop(Runtimedata_t *rt)
 			rtlog(rt, "天体'%s'被'%s'捕获(%s)(原运行在'%s'),累计dv:%.3gkm/s",
 			      rt->follow->name.p, rt->about_point->name.p, buf.p,
 			      last_about_point->name.p, rt->dv);
-			rt->pause = true;
-			rt->need_notification = true;
+			rt->need_notification++;
 		}
 		if (!rt->about_point) break;
 		const bool cond1 = rt->follow && last_follow == rt->follow && rt->about_point;
@@ -2028,7 +2038,7 @@ static void game_loop(Runtimedata_t *rt)
 			}
 			if (cond2) {
 				rtlog(rt, "近远地点高度交换");
-				if (rt->time_scale >= 2) rt->pause = true;
+				if (rt->time_scale >= 2) rt->need_notification++;
 			}
 			format_orbital_parameters(rt, &buf, ret);
 			rtlog(rt, "%s[%s]:%s(%s),dv:%.3gkm/s",
@@ -2151,9 +2161,8 @@ static void game_loop(Runtimedata_t *rt)
 					(rt->throttle_on&0b10?-1:1)*(ret3.v-vec_len(v))/(0.1*rt->throttle/SCALE): 0;
 				if (fabs(ret3.theta/M_PI*180.) < 10) {
 					printf(" L:%.2fs", time_left);
-					/* 自动暂停 */
+					/* 自动降低倍速 */
 					if (rt->throttle_on&1 && rt->time_scale>1 && time_left-rt->time_scale < 0) {
-						// rt->pause = true;
 						rt->time_scale /= 2;
 					}
 				}
@@ -2163,20 +2172,24 @@ static void game_loop(Runtimedata_t *rt)
 				}
 			} else if (ret.e > 1 && ret.Tp < 30*24*60*60) {
 				printf(" L:%.2fs", ret.Tp);
-				if (rt->time_scale > 4
+				if (!rt->ignore_safety
+				    && rt->time_scale > 4
 				    && rt->destination_to==rt->about_point && ret.e > 1
 				    && vertical_speed > 0 && ret.Tp - 5*rt->time_scale < 0) {
 					rt->time_scale /= 2;
 					if (rt->time_scale <= 4) rt->time_scale = 1;
 				}
 			}
-			if ((ret.rp<=rt->about_point->radius && vertical_speed > 0 && rt->time_scale > 1)
-			    || (rt->time_scale > 32 && cond2)) {
+			if (!rt->ignore_safety
+			    && ((ret.rp<=rt->about_point->radius && vertical_speed > 0 && rt->time_scale > 1)
+				|| (rt->time_scale > 32 && cond2))) {
 				rt->time_scale = 1;
 				rt->pause = true;
 			}
 		}
 		if (rt->pause) printf(" [已暂停]");
+		if (rt->ignore_safety) printf(" <不安全>");
+		if (rt->need_notification) printf(" [!%d]", rt->need_notification);
 		if (rt->print_busy) printf(" (%5.1f%%/%dfps)", busy, (int)(busy<100?rt->fps:rt->fps*100/busy));
 		busy = (busy + (1-(sleep_fixed_step(1./rt->fps))/(1./rt->fps)) * 100)/2;
 #ifdef FLG_BENCHTEST
@@ -2193,6 +2206,7 @@ static void argv_help(char *argv)
 	       "    -h        打印此信息\n"
 	       "    -t        增设三体天体\n"
 	       "    -i <FILE> 导入指定txt文件数据\n"
+	       "    -o <FILE> 程序运行结束后自动导出日志数据的文件\n"
 	       "    -s <SEED> 指定初始化种子\n"
 	       "    -p        初始化后导出数据并退出\n"
 	       "    -M        打印内置操作手册\n",
@@ -2204,16 +2218,17 @@ int main(int argc, char *argv[])
 	Runtimedata_t rt = {0};
 	rt.seed = time(NULL);
 	char *import_filename = NULL;
+	char *output_filename = NULL;
 	bool init_only = false;
-	bool add_three_body = false;
-	while ((rt.inp=getopt(argc, argv, "hHtps:i:")) != -1) {
+	int add_three_body = 0;
+	while ((rt.inp=getopt(argc, argv, "hHtps:i:o:")) != -1) {
 		switch (rt.inp) {
 		case 'H':
 			print_qrh(true);
 			return 0;
 			break;
 		case 't':
-			add_three_body = true;
+			add_three_body++;
 			break;
 		case 'p':
 			init_only = true;
@@ -2223,6 +2238,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'i':
 			import_filename = optarg;
+			break;
+		case 'o':
+			output_filename = optarg;
 			break;
 		case 'h':
 			argv_help(argv[0]);
@@ -2313,10 +2331,23 @@ int main(int argc, char *argv[])
 	fprintf(stderr, "-- [性能测试] 原总能量：%.10g\n", TOTAL_ENEGRY);
 	fprintf(stderr, "-- [性能测试] 现总能量：%.10g\n", compute_system_energy(&rt));
 #else
-	if (rt.logs.p) {
+	while (rt.logs.p) {
 		printf("\e[0m\n\e[J航行日志：\n%s", rt.logs.p);
-		// printf("初始化种子: %d\n", rt.seed);
 		dump_stars(&rt, NULL, true);
+		if (!output_filename) break;
+		FILE *fp = fopen(output_filename, "a");
+		if (!fp) {
+			fprintf(stderr, "[ERR] 无法打开输出文件'%s'\n", output_filename);
+			break;
+		}
+		fprintf(fp,
+			"[INFO] 保存时间:%ld\n"
+			"==== 航行日志 ====\n%s",
+			time(NULL), rt.logs.p);
+		dump_stars(&rt, fp, true);
+		fprintf(fp, "\n");
+		fclose(fp);
+		break;
 	}
 #endif
 
