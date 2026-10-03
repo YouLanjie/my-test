@@ -1929,6 +1929,7 @@ static bool scene_init_from_dumped_txt(Runtimedata_t *rt, const char *filename)
 	rt->pause = true;
 
 	rt_sync_cam_config(rt);
+	rtlog(rt, "成功载入存档(seed=%u,dv=%gkm/s)", seed, dv);
 	printf("[INFO] 共导入%d个天体\n", count);
 	dump_stars(rt, NULL, false);
 	return true;
