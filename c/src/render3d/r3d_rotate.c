@@ -17,7 +17,10 @@ const double G = 6.6743e-11;
 const double SCALE = 1e3;    /* 将距离换算成 1单位 = 1km */
 #define pow2(x) ((x)*(x))
 #define sec2day(sec) ((sec)/60./60./24.)
-#define syslog(rt, fmt, ...) sva_sprintfcat(&(rt)->logs, "[T+%9.0fs] "fmt"\n", (rt)->gtime __VA_OPT__(,) __VA_ARGS__)
+#define rtlog(rt, fmt, ...) \
+	sva_sprintfcat(&(rt)->logs, "[T+%3dd %02d:%02d:%04.1f] "fmt"\n", \
+		       (int)sec2day((rt)->gtime), (int)fmod((rt)->gtime/60./60., 24), \
+		       (int)fmod((rt)->gtime/60., 60), fmod((rt)->gtime, 60) __VA_OPT__(,) __VA_ARGS__)
 #define UI_ALPHA 200
 
 /* 宏编译条件 */
@@ -47,6 +50,7 @@ typedef struct {
 	Camera_t *active_cam;
 	SVA_t logs;    /* 日志文本 */
 	DA_t objs;
+	DA_t accel;
 	Star_t *destination_to;
 	Star_t *look_to;
 	Star_t *follow;
@@ -56,6 +60,7 @@ typedef struct {
 	double gtime;
 	double time_scale;
 	double time_scale_limit;
+	double accel_last_upeate_time;
 	uint32_t seed;
 	int32_t  inp;
 	uint8_t throttle;    /* 1% = 0.1m/s^2 */
@@ -68,6 +73,7 @@ typedef struct {
 	bool print_busy;
 	bool use_rk4;
 	bool fixed_about_point;
+	bool need_notification;
 } Runtimedata_t;
 
 static double get_nowtime()
@@ -185,10 +191,10 @@ static void star_pop(Runtimedata_t *rt, Star_t *star, const char *desc)
 		"被空气迎头痛击",
 		"被送到了奥库瑞姆之家",
 	};
-	syslog(rt, "天体'%s'%s，凶手是'%s'",
-	       star->name.p ? star->name.p : "未知天体",
-	       hints[rand()%countof(hints)],
-	       desc ? desc : "虚空");
+	rtlog(rt, "天体'%s'%s，凶手是'%s'",
+	      star->name.p ? star->name.p : "未知天体",
+	      hints[rand()%countof(hints)],
+	      desc ? desc : "虚空");
 	/* 修正各指针 */
 	Star_t **objs[] = {&rt->follow, &rt->look_to, &rt->destination_to, &rt->about_point};
 	size_t idxes[countof(objs)] = {};
@@ -204,7 +210,7 @@ static void star_pop(Runtimedata_t *rt, Star_t *star, const char *desc)
 	}
 	rt->active_cam = rt->follow ? &rt->follow->cam : rt->camera;
 	rt->pause = true;
-	print_pager("发生事件", sv_from_sva(&rt->logs), -1);
+	rt->need_notification = true;
 }
 
 static void star_sync_position(Runtimedata_t *rt)
@@ -228,6 +234,7 @@ static void cleanup(Runtimedata_t *rt)
 	rt->camera  = NULL;
 	sva_free(&rt->logs);
 	da_free(&rt->objs, star_free);
+	da_free(&rt->accel, NULL);
 }
 
 static void sync_cam_size_scale(Runtimedata_t *rt)
@@ -282,6 +289,7 @@ static bool setup(Runtimedata_t *rt, int mode)
 	rt->camera->dept = 100*SCALE;
 	rt->active_cam = rt->camera;
 	rt->objs.size = sizeof(Star_t);
+	rt->accel.size = sizeof(Vec_t);
 	/* 设置帧率、运行倍率 */
 	rt->fps = 40;
 	rt->time_scale_limit = 2048;
@@ -289,8 +297,84 @@ static bool setup(Runtimedata_t *rt, int mode)
 	return true;
 }
 
+static void rt_star_impact(Runtimedata_t *rt, Star_t *s1, Star_t *s2)
+{
+	if (!rt || !s1 || !s2) return;
+	Star_t *stars = rt->objs.ptr;
+	if (!stars || s1 == s2
+	    || s1 < stars || s1 >= stars+rt->objs.len
+	    || s2 < stars || s2 >= stars+rt->objs.len)
+		return;
+
+	/* 确保s2是被删除项(质量小) */
+	if (s1->mass <= s2->mass) {
+		Star_t *tmp = s2;
+		s2 = s1;
+		s1 = tmp;
+	}
+	s1->mass += s2->mass;
+#define star_impact_xyz(xyz) (s1->mass*s1->speed.xyz + s2->mass*s2->speed.xyz)/(s1->mass+s2->mass)
+	s1->speed = (Vec_t){
+		.x = star_impact_xyz(x),
+		.y = star_impact_xyz(y),
+		.z = star_impact_xyz(z),
+	};
+#undef star_impact_xyz
+	SVA_t buf = {};
+	sva_sprintf(&buf, "来自`%s`(+%gkg)大地的爱",
+		    s1->name.p?s1->name.p:"未知天体",
+		    s2->mass);
+	star_pop(rt, s2, buf.p);
+	sva_free(&buf);
+}
+
+/* 计算加速度，顺便调用碰撞处理 */
+static void rt_compute_acceleration(Runtimedata_t *rt)
+{
+	if (!rt) return;
+	while (rt->accel.len < rt->objs.len) {
+		da_append(&rt->accel, &(Vec_t){});
+		rt->accel_last_upeate_time = -1;
+	}
+	if (rt->accel_last_upeate_time > rt->gtime || !rt->accel.ptr)
+		return;
+	Vec_t *acc = rt->accel.ptr;
+	if (!acc) return;
+
+	Star_t * const objs = rt->objs.ptr;
+	const size_t len = rt->objs.len;
+	Vec_t diff;
+	double r2 = 0;
+	double a = 0;
+	memset(acc, 0, rt->accel.len*rt->accel.size);
+	for (size_t i = 0; i < len; i++) {
+		if (!objs[i].obj) continue;
+		// 对于每个天体
+		for (size_t j = i+1; j < len; j++) {
+			if (!objs[j].obj) continue;
+			// 计算它与它往后所有天体的加速度
+			diff = vec_sub(objs[i].center, objs[j].center);    /* j -> i */
+			r2 = (pow2(diff.x) + pow2(diff.y) + pow2(diff.z)) * pow2(SCALE);
+			if (r2 > 0) a = G/r2/SCALE;
+			diff = vec_direct(diff);
+			// LOG("\e[0m[%ld] a = %.2lf Tm/(kg * s^2)\n", j, r2);
+			// a = G*M/(r^2)
+			acc[i] = vec_add(acc[i], vec_mul(diff, -a * objs[j].mass));
+			acc[j] = vec_add(acc[j], vec_mul(diff,  a * objs[i].mass));
+
+			/* 检查碰撞 */
+			if (r2 >= pow(objs[i].radius + objs[j].radius, 2) * pow2(SCALE))
+				continue;
+			rt_star_impact(rt, objs+i, objs+j);
+			rt_compute_acceleration(rt);
+			return;
+		}
+	}
+	return;
+}
+
 /* 根据引力影响范围自动获取速度参考系星体
- * (ai生成)
+ * (ai生成，原理我也不清楚，总之能用)
  * 根据潮汐摄动比自动获取速度参考系星体 */
 static Star_t *get_about_point(Runtimedata_t *rt, Star_t *follow)
 {
@@ -314,29 +398,10 @@ static Star_t *get_about_point(Runtimedata_t *rt, Star_t *follow)
 	size_t idx_follow = follow - objs;	// 目标索引
 
 	// 1. 预先计算每个天体受到的总引力加速度（矢量）
-	const size_t len = rt->objs.len % 1024;
-	Vec_t acc_total[len] = {};
-
-	for (size_t i = 0; i < n; i++) {
-		if (!objs[i].obj)
-			continue;
-		Vec_t acc = { 0.0, 0.0, 0.0 };
-		for (size_t k = 0; k < n; k++) {
-			if (k == i || !objs[k].obj)
-				continue;
-			Vec_t diff =
-			    vec_sub(objs[k].center, objs[i].center);
-			double r2 =
-			    (pow2(diff.x) + pow2(diff.y) +
-			     pow2(diff.z)) * pow2(SCALE);
-			if (r2 < 1e-18)
-				continue;
-			double r = sqrt(r2);
-			double factor = G * objs[k].mass / (r2 * r);	// a = GM/r^3 * r_vec
-			acc = vec_add(acc, vec_mul(diff, factor));
-		}
-		acc_total[i] = acc;
-	}
+	rt_compute_acceleration(rt);
+	if (rt->accel.len < rt->objs.len) return &base;
+	Vec_t *acc_total = rt->accel.ptr;
+	if (!acc_total) return &base;
 
 	// 2. 寻找最小摄动比
 	double min_ratio = 1e100;
@@ -494,7 +559,6 @@ static void physics_update_step_rk4(Runtimedata_t *rt, double time_scale)
 		rt->dv += fabs(thrust_acc * dt);
 	}
 	// ---- 碰撞检测与合并（与原逻辑相同） ----
-	Star_t *crash[2] = { NULL };
 	for (int i = 0; i < n; i++) {
 		for (int j = i + 1; j < n; j++) {
 			Vec_t diff =
@@ -502,35 +566,10 @@ static void physics_update_step_rk4(Runtimedata_t *rt, double time_scale)
 			double r2 = pow2(diff.x) + pow2(diff.y) + pow2(diff.z);
 			double sum_r = objs[i].radius + objs[j].radius;
 			if (r2 < sum_r * sum_r) {
-				crash[0] = &objs[i];
-				crash[1] = &objs[j];
-				break;
+				rt_star_impact(rt, &objs[i], &objs[j]);
+				return;
 			}
 		}
-		if (crash[0])
-			break;
-	}
-	if (crash[0] && crash[1] && crash[0] != crash[1]) {
-		// 按质量排序，大质量保留
-		if (crash[0]->mass <= crash[1]->mass) {
-			Star_t *tmp = crash[0];
-			crash[0] = crash[1];
-			crash[1] = tmp;
-		}
-		// 动量守恒合并
-		crash[0]->mass += crash[1]->mass;
-		crash[0]->speed =
-		    vec_mul(vec_add
-			    (vec_mul(crash[0]->speed, crash[0]->mass),
-			     vec_mul(crash[1]->speed, crash[1]->mass)),
-			    1.0 / crash[0]->mass);
-		// 记录并移除被合并天体
-		SVA_t buf = { };
-		sva_sprintf(&buf, "碰撞合并: %s(%gkg) + %s(%gkg)",
-			    crash[0]->name.p, crash[1]->mass, crash[1]->name.p,
-			    crash[1]->mass);
-		star_pop(rt, crash[1], buf.p);
-		sva_free(&buf);
 	}
 }
 
@@ -538,60 +577,17 @@ static void physics_update_step(Runtimedata_t *rt, double time_scale)
 {
 	if (!rt || rt->objs.len == 0 || time_scale == 0) return;
 	time_scale /= rt->fps;
+	rt_compute_acceleration(rt);
+	if (!rt->accel.ptr || rt->accel.len < rt->objs.len) return;
 	Star_t *objs = rt->objs.ptr;
-	Star_t *crash[2] = {NULL};
-	const size_t len = rt->objs.len % 1024;
-	Vec_t acc[len] = {};
+	Vec_t *acc = rt->accel.ptr;
 	Vec_t diff;
-	double r2 = 0;
-	double a = 0;
-	for (size_t i = 0; i < len; i++) {
-		if (!objs[i].obj) continue;
-		// 对于每个天体
-		for (size_t j = i+1; j < len; j++) {
-			if (!objs[j].obj) continue;
-			// 计算它与它往后所有天体的加速度
-			diff = vec_sub(objs[i].center, objs[j].center);    /* j -> i */
-			r2 = (pow2(diff.x) + pow2(diff.y) + pow2(diff.z)) * pow2(SCALE);
-			if (r2 < pow(objs[i].radius + objs[j].radius, 2) * pow2(SCALE)) {
-				crash[0] = objs+i;
-				crash[1] = objs+j;
-			}
-			if (r2 > 0) a = G/r2/SCALE;
-			diff = vec_direct(diff);
-			// LOG("\e[0m[%ld] a = %.2lf Tm/(kg * s^2)\n", j, r2);
-			// a = G*M/(r^2)
-			acc[i] = vec_add(acc[i], vec_mul(diff, -a * objs[j].mass));
-			acc[j] = vec_add(acc[j], vec_mul(diff,  a * objs[i].mass));
-		}
-	}
-	for (size_t i = 0; i < len; i++) {
+	for (size_t i = 0; i < rt->objs.len; i++) {
 		objs[i].speed = vec_add(objs[i].speed, vec_mul(acc[i], time_scale));
 		diff = vec_mul(objs[i].speed, time_scale);
 		objs[i].center = vec_add(objs[i].center, diff);
 		objs[i].cam.position = vec_add(objs[i].cam.position, diff);
 		obj_rotate(objs[i].obj, objs[i].self_rotate, objs[i].self_omiga*time_scale);
-	}
-	if (crash[0] && crash[1] && crash[0] != crash[1]) {
-		if (crash[0]->mass <= crash[1]->mass) {
-			objs = crash[1];
-			crash[1] = crash[0];
-			crash[0] = objs;
-		}
-		crash[0]->mass += crash[1]->mass;
-#define star_impact_xyz(xyz) (crash[0]->mass*crash[0]->speed.xyz + crash[1]->mass*crash[1]->speed.xyz)/(crash[0]->mass+crash[1]->mass)
-		crash[0]->speed = (Vec_t){
-			.x = star_impact_xyz(x),
-			.y = star_impact_xyz(y),
-			.z = star_impact_xyz(z),
-		};
-#undef star_impact_xyz
-		SVA_t buf = {};
-		sva_sprintf(&buf, "来自`%s`(+%gkg)大地的爱",
-			    crash[0]->name.p?crash[0]->name.p:"未知天体",
-			    crash[1]->mass);
-		star_pop(rt, crash[1], buf.p);
-		sva_free(&buf);
 	}
 	if (rt->throttle_on&1 && rt->throttle && rt->follow) {
 		double accel = rt->throttle * 0.1 / SCALE * time_scale * (rt->throttle_on&0b10?-1:1);
@@ -600,16 +596,18 @@ static void physics_update_step(Runtimedata_t *rt, double time_scale)
 	}
 }
 
-static double physics_update(Runtimedata_t *rt)
+static void physics_update(Runtimedata_t *rt)
 {
-	if (!rt || rt->objs.len == 0) return 0;
+	if (!rt || rt->objs.len == 0) return;
 	Vec_t v1 = rt->follow&&rt->rotate_cam_with_spd ? rt->follow->speed : (Vec_t){};
 	double time_scale = rt->time_scale;
 	while ((time_scale-=rt->time_scale_limit) > 0) {
 		if (rt->use_rk4) physics_update_step_rk4(rt, rt->time_scale_limit);
 		else physics_update_step(rt, rt->time_scale_limit);
 	}
-	physics_update_step(rt, time_scale+rt->time_scale_limit);
+	if (rt->use_rk4) physics_update_step_rk4(rt, time_scale+rt->time_scale_limit);
+	else physics_update_step(rt, time_scale+rt->time_scale_limit);
+
 	if (rt->follow) rt->about_point = get_about_point(rt, rt->follow);
 	if (rt->follow && rt->rotate_cam_with_spd) {
 		Vec_t v2 = rt->follow->speed;
@@ -627,7 +625,9 @@ static double physics_update(Runtimedata_t *rt)
 		}
 	}
 	star_sync_position(rt);
-	return rt->time_scale/rt->fps;
+	rt->accel_last_upeate_time = rt->gtime;
+	rt->gtime += rt->time_scale/rt->fps;
+	return;
 }
 
 static Star_t *choose_star(Runtimedata_t *rt, const char *hint, Star_t *old)
@@ -644,7 +644,8 @@ static Star_t *choose_star(Runtimedata_t *rt, const char *hint, Star_t *old)
 	}
 	printf("(当前：%d)请输入要%s物体的id[0~%lu]：",
 	       choice + 1, hint ? hint : "选择", rt->objs.len);
-	if (scanf("%d", &choice) == 0) {
+	char buf[100] = {};
+	if (!fgets(buf, sizeof(buf)-1, stdin) || sscanf(buf, "%d", &choice) != 1) {
 		kbhitGetchar();
 		printf("输入错误，未作任何更改(回车返回)\n");
 		_getch();
@@ -1323,6 +1324,7 @@ static void voyage_helper(Runtimedata_t *rt)
 		} else if ((ca = two_body_closest_approach(from, to, s2)).valid) {
 			printf("实验性计算: '%s' 与 '%s' 将在 %.2f 天后接近至 %.1f km\n",
 			       from->name.p, to->name.p, sec2day(ca.time), ca.distance);
+			printf("[WARN] 该数值仅在二体、三体近似时较为准确\n");
 		}
 	}
 
@@ -1636,9 +1638,9 @@ static bool input_handle(Runtimedata_t *rt)
 		rt->about_point = choose_star(rt, "固定为中心", rt->about_point);
 		rt->fixed_about_point = rt->about_point;
 		if (!rt->about_point) {
-			syslog(rt, "取消环绕中心强制固定");
+			rtlog(rt, "取消环绕中心强制固定");
 			rt->about_point = get_about_point(rt, rt->follow);
-		} else syslog(rt, "强制切换固定天体环绕中心为'%s'", rt->about_point->name.p);
+		} else rtlog(rt, "强制切换固定天体环绕中心为'%s'", rt->about_point->name.p);
 		break;
 	case '$':
 		rt->use_rk4 = !rt->use_rk4;
@@ -1672,7 +1674,7 @@ static bool input_handle(Runtimedata_t *rt)
 		break;
 	case '.':
 		rt->pause = true;
-		rt->gtime += physics_update(rt);
+		physics_update(rt);
 		break;
 	case 'P':
 	case 'p':
@@ -1895,7 +1897,7 @@ static bool scene_init_from_dumped_txt(Runtimedata_t *rt, const char *filename)
 			da_append(&rt->objs, &star);
 			continue;
 		}
-		if (sscanf(buf, "游戏时间: T+%lf s, 折合约 T+47.3 d", &gtime)) {
+		if (sscanf(buf, "游戏时间: T+%lf s, 折合约 T+%*f d", &gtime)) {
 		} else if (sscanf(buf, "操作累计dv: %lf km/s", &dv)) {
 		} else sscanf(buf, "初始化种子: %u", &seed);
 	}
@@ -1992,17 +1994,21 @@ static void game_loop(Runtimedata_t *rt)
 			if (!input_handle(rt)) break;
 		if (rt->backend->get_input && (rt->inp = rt->backend->get_input(rt->backend)))
 			if (!input_handle(rt)) break;
-		if (!rt->pause) rt->gtime += physics_update(rt);
+		if (rt->need_notification) {
+			print_pager("日志:发生事件", sv_from_sva(&rt->logs), -1);
+			rt->need_notification = false;
+		}
+		if (!rt->pause) physics_update(rt);
 		if (rt->follow) ret = get_orbital_parameters(rt->follow, rt->about_point);
 		if (rt->follow && last_follow == rt->follow
 		    && last_about_point && last_about_point->name.p
 		    && last_about_point != rt->about_point) {
 			format_orbital_parameters(rt, &buf, ret);
-			syslog(rt, "天体'%s'被'%s'捕获(%s)(原运行在'%s'),累计dv:%.3gkm/s",
-			       rt->follow->name.p, rt->about_point->name.p, buf.p,
-			       last_about_point->name.p, rt->dv);
+			rtlog(rt, "天体'%s'被'%s'捕获(%s)(原运行在'%s'),累计dv:%.3gkm/s",
+			      rt->follow->name.p, rt->about_point->name.p, buf.p,
+			      last_about_point->name.p, rt->dv);
 			rt->pause = true;
-			print_pager("发生事件", sv_from_sva(&rt->logs), -1);
+			rt->need_notification = true;
 		}
 		if (!rt->about_point) break;
 		const bool cond1 = rt->follow && last_follow == rt->follow && rt->about_point;
@@ -2017,17 +2023,17 @@ static void game_loop(Runtimedata_t *rt)
 			|| ((last_e-1)*(ret.e-1)<0) : false;    /* 轨道类型改变 */
 		if (cond1 && cond4) {
 			if (cond3) {
-				syslog(rt, "油门切换至: %s向推力 %d%% %s",
-				       rt->throttle_on&0b10?"反":"正", rt->throttle, rt->throttle_on&1?"开":"关");
+				rtlog(rt, "油门切换至: %s向推力 %d%% %s",
+				      rt->throttle_on&0b10?"反":"正", rt->throttle, rt->throttle_on&1?"开":"关");
 			}
 			if (cond2) {
-				syslog(rt, "近远地点高度交换");
+				rtlog(rt, "近远地点高度交换");
 				if (rt->time_scale >= 2) rt->pause = true;
 			}
 			format_orbital_parameters(rt, &buf, ret);
-			syslog(rt, "'%s'->'%s':%s(%s,dv:%.3gkm/s)",
-			       rt->follow->name.p, rt->about_point->name.p,
-			       ret.typ, buf.p, rt->dv);
+			rtlog(rt, "%s[%s]:%s(%s),dv:%.3gkm/s",
+			      rt->follow->name.p, rt->about_point->name.p,
+			      ret.typ, buf.p, rt->dv);
 		}
 		last2_e = last_e;
 		last_e = ret.e;
