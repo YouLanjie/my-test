@@ -169,6 +169,22 @@ Path_t *path_relative(Path_t *path, SV_t base)
 	return path;
 }
 
+Path_t *path_quote(Path_t *path)
+{
+	if (!path || !path->p) return NULL;
+	if (!strpbrk(path->p, " \t\r\n\\\"'`!?#$%^&|(){}[]<>~") && path->len != 0) {
+		return path;
+	}
+	sva_replace(path, sv_from_lstr("'"), sv_from_lstr("'\\''"));
+	if (!sva_adjust_minimun(path, path->len+3)) return NULL;
+	memmove(path->p+1, path->p, path->len);
+	path->p[0] = '\'';
+	path->p[path->len] = '\'';
+	path->p[path->len+1] = 0;
+	path->len+=2;
+	return path;
+}
+
 static Path_st_t _path_get_st(SV_t path, int (*stat_func)(const char *restrict file, struct stat *restrict buf))
 {
 	Path_st_t st = {0};

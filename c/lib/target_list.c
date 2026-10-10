@@ -6,6 +6,7 @@
  */
 
 #include "../include/target_list.h"
+#include "../include/dynamic_array.h"
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdcountof.h>
@@ -124,7 +125,7 @@ static void secnanosleep(double sec)
 	       && (rqt=remain,true));
 }
 
-void target_build(Target_t *target)
+static void target_build(Target_t *target, DA_t *stack)
 {
 	if (!target) return;
 	/* 跳过已操作项目 */
@@ -133,13 +134,18 @@ void target_build(Target_t *target)
 	bool isexist    = false;
 	bool need_wait  = false;
 	bool need_build = false;
+	DA_t l_stack = {.size = sizeof(Target_t*)};
 	Path_st_t st = path_get_st(sv_from_sva(&target->name));
 	target->time = st.st.st_mtim.tv_sec + st.st.st_mtim.tv_nsec*1e-9;
 	isexist = st.isexist;
 	if (!st.isexist) need_build = true;
+	if (!stack) stack = &l_stack;
+	da_append(stack, &target);
 	target->time_start = get_nowtime();
 	for (size_t i = 0; i < target->depend_len; i++) {
-		target_build(target->dependencies[i]);
+		if (da_check_in(stack, &target->dependencies[i]))
+			continue;
+		target_build(target->dependencies[i], stack);
 		switch (target->dependencies[i]->status) {
 		case TS_WORKING:
 			need_wait = true;
@@ -156,6 +162,8 @@ void target_build(Target_t *target)
 		case TS_NOCHECK:
 		case TS_FAILD:
 			target->status = TS_FAILD;
+			da_pop(stack, stack->len-1, NULL);
+			da_free(&l_stack, NULL);
 			return;
 			break;
 		}
@@ -164,11 +172,15 @@ void target_build(Target_t *target)
 			secnanosleep(0.01);
 			if (get_nowtime()-target->time_start > target->time_outoftime) {
 				target->status = TS_FAILD;
+				da_pop(stack, stack->len-1, NULL);
+				da_free(&l_stack, NULL);
 				return;
 			}
 			need_wait = false;
 		}
 	}
+	da_pop(stack, stack->len-1, NULL);
+	da_free(&l_stack, NULL);
 	target->time_start = get_nowtime();
 	target->time_stop = target->time_start;
 	if (!need_build) {
@@ -198,18 +210,21 @@ void target_buildlist(Target_t *list)
 	if (!list) return;
 	for (Target_t *p = list; p; p = p->next) {
 		if (p->type != TY_NORM) continue;
-		target_build(p);
+		target_build(p, NULL);
 	}
 }
 
-static size_t target_get_subdeps(Target_t *target)
+static size_t target_get_subdeps(Target_t *target, DA_t *stack)
 {
 	if (!target) return 0;
 	if (!target->dependencies) return 1;
+	if (da_check_in(stack, &target)) return 0;
+	da_append(stack, &target);
 	size_t count = 1;
 	for (size_t i = 0; i < target->depend_len; i++) {
-		count += target_get_subdeps(target->dependencies[i]);
+		count += target_get_subdeps(target->dependencies[i], stack);
 	}
+	da_pop(stack, stack->len-1, NULL);
 	return count;
 }
 
@@ -233,11 +248,13 @@ Target_t *target_sort_by_subdeps(Target_t *list)
 	struct target_subdeps_t *target_list = malloc(len*sizeof(*target_list));
 	if (!target_list) return list;
 	size_t i = 0;
-	for (Target_t *target = list; target; target = target->next) {
+	DA_t stack = {.size=sizeof(Target_t*)};
+	for (Target_t *target = list; target && i < len; target = target->next) {
 		target_list[i].target = target;
-		target_list[i].subdeps = target_get_subdeps(target);
+		target_list[i].subdeps = target_get_subdeps(target, &stack);
 		i++;
 	}
+	da_free(&stack, NULL);
 	qsort(target_list, len, sizeof(*target_list), target_subdeps_cmp);
 	for (i = 0; i < len; i++) {
 		target_list[i].target->prev = i>0 ? target_list[i-1].target : NULL;
@@ -251,7 +268,7 @@ Target_t *target_sort_by_subdeps(Target_t *list)
 void *target_build_for_pthread(void *target)
 {
 	if (!target) return NULL;
-	target_build(target);
+	target_build(target, NULL);
 	pthread_exit(NULL);
 	return NULL;
 }

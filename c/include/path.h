@@ -68,6 +68,8 @@ Path_t *path_join(Path_t *path, SV_t child);
  * 期望base为一个目录，结果会类似于`base/../path`
  * 若path/base为相对、绝对混合路径则会置空path */
 Path_t *path_relative(Path_t *path, SV_t base);
+/* 将path的内容包裹转义成shell参数(自动包裹单引号) */
+Path_t *path_quote(Path_t *path);
 /* 通过lstat()获取文件状态(不跟随符号链接) */
 Path_st_t path_get_st(SV_t path);
 /* 通过lstat()获取文件状态(跟随符号链接) */

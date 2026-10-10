@@ -225,6 +225,14 @@ SV_t sv_memmem(SV_t base, SV_t pat)
  * SVA相关
  * =================== */
 
+/* 检查切片内存是否属于自身 */
+static inline bool sva_check_sv_inside(SVA_t *s, SV_t sv)
+{
+	if (!s || !s->p || !sv.p) return false;
+	return (sv.p >= s->p && sv.p < s->p+s->capacity)
+		|| (sv.len && sv.p+sv.len-1 >= s->p && sv.p+sv.len-1 < s->p+s->capacity);
+}
+
 /* 创建sva_t对象 */
 SVA_t *sva_create(SVA_t *s)
 {
@@ -323,7 +331,7 @@ SVA_t *sva_adjust_minimun(SVA_t *s, size_t size)
 
 SVA_t *sva_append(SVA_t *ret, SV_t sv)
 {
-	if (!ret) return NULL;
+	if (!ret || sva_check_sv_inside(ret, sv)) return NULL;
 	if (!sv.p) return ret;
 	if (!sva_adjust_minimun(ret, ret->len+sv.len+1)) return NULL;
 	memmove(ret->p+ret->len, sv.p, sv.len);
@@ -347,7 +355,7 @@ SVA_t *sva_sprintf(SVA_t *ret, char *fmt, ...)
 		ret->capacity = n + 1;
 		ret->p = realloc(ret->p, ret->capacity);
 	}
-	if (!ret->p) return free(old_p), ret->capacity = 0, NULL;
+	if (!ret->p) return free(old_p), ret->len = 0, ret->capacity = 0, NULL;
 
 	va_start(ap, fmt);
 	n = vsnprintf(ret->p, ret->capacity, fmt, ap);
@@ -376,7 +384,7 @@ SVA_t *sva_sprintfcat(SVA_t *ret, char *fmt, ...)
 		char *old_p = ret->p;
 		ret->capacity = ret->len + n + 1;    /* 扩增式 */
 		ret->p = realloc(ret->p, ret->capacity);
-		if (!ret->p) return free(old_p), ret->capacity = 0, NULL;
+		if (!ret->p) return free(old_p), ret->len = 0, ret->capacity = 0, NULL;
 	}
 
 	va_start(ap, fmt);
@@ -426,22 +434,22 @@ SVA_t *sva_clear(SVA_t *s)
 SVA_t *sva_replace(SVA_t *ret, SV_t pat, SV_t src)
 {
 	if (!ret
-	    || (pat.p > ret->p && pat.p < ret->p+ret->len)
-	    || (pat.p+pat.len > ret->p && pat.p+pat.len < ret->p+ret->len)
-	    || (src.p > ret->p && src.p < ret->p+ret->len)
-	    || (src.p+src.len > ret->p && src.p+src.len < ret->p+ret->len)) return NULL;
+	    || sva_check_sv_inside(ret, pat)
+	    || sva_check_sv_inside(ret, src)) return NULL;
 	if (!pat.p || !pat.len || (!src.p && src.len)
 	    || !ret->len || pat.len > ret->len) return ret;
 	SVA_t tmp = {};
-	SVA_t *dest = pat.len < src.len ? sva_create(&tmp) : ret;
+	const bool need_extend = pat.len < src.len;
+	SVA_t *dest = need_extend ? sva_create(&tmp) : ret;
+	if (need_extend && !tmp.p) return NULL;
 	SV_t cur_read = sv_from_sva(ret);
 	size_t cur_write = 0;
 	const char *cur_last;
-	while (cur_read.len > 0) {
+	while (cur_read.len > 0 && cur_read.p) {
 		cur_last = cur_read.p;
 		cur_read = sv_memmem(cur_read, pat);
 		const char *p = (cur_read.p?cur_read.p:ret->p+ret->len);
-		while (dest != ret
+		while (need_extend
 		       && dest->capacity <= cur_write+(p-cur_last)+src.len
 		       && sva_adjust_minimun(dest, (dest->capacity+1)*2));
 		if (!dest->p) return NULL;
@@ -455,8 +463,8 @@ SVA_t *sva_replace(SVA_t *ret, SV_t pat, SV_t src)
 		if (src.p) memmove(dest->p+cur_write, src.p, src.len);
 		cur_write += src.len;
 	}
-	if (dest != ret) {
-		dest->len = cur_write;
+	dest->len = cur_write;
+	if (need_extend) {
 		sva_free(ret);
 		*ret = tmp;
 	}

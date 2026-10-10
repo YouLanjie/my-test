@@ -8,6 +8,7 @@
 #include "lib/path.c"
 #include "lib/string_view.c"
 #include "lib/target_list.c"
+#include "lib/dynamic_array.c"
 #include <ctype.h>    /* isspace */
 #include <dirent.h>
 #include <dlfcn.h>
@@ -56,6 +57,7 @@ CLIBS_t CLIBS[] = {
 	LIB("cmenu", ((const char *[]){"lib/cmneu.h", NULL}), SOURCE_DIR"cmenu/lib/menu.c"),
 	LIB("cmusicsynth", ((const char *[]){"lib/music_synth.h", NULL}), SOURCE_DIR"musicSynth/lib/*"),
 	LIB("render3d", ((const char *[]){"lib/render3d.h", NULL}),    SOURCE_DIR"render3d/lib/*"),
+	LIB("nbody", ((const char *[]){"libnbody/nbody.h", NULL}),    SOURCE_DIR"render3d/libnbody/*"),
 };
 #undef LIB
 
@@ -147,21 +149,24 @@ static bool build_c2obj(Target_t *target)
 static bool build_obj2elf(Target_t *target)
 {
 	if (!target) return false;
-	SVA_t cmd = {}, obj = {};
-	sva_sprintf(&cmd, "%s -o '%.*s'", "gcc", (int)target->name.len, target->name.p);
+	SVA_t cmd = {}, tmp = {}, links = {};
+	path_quote(sva_from_sva(&tmp, &target->name));
+	sva_sprintf(&cmd, "%s -o %.*s", COMPILOR, (int)tmp.len, tmp.p);
+	/* 根据依赖加载自动链接库 */
 	for (size_t i = 0; i < target->depend_len; i++) {
 		if (!target->dependencies[i]) break;
 		if (target->dependencies[i]->type == TY_PHONY) continue;
-		if (target->dependencies[i]->type == TY_DEP &&
-		    sv_end_with(sv_from_sva(&target->dependencies[i]->name), sv_from_lstr(".a"))) {
+		if (target->dependencies[i]->type != TY_DEP) continue;
+		const bool cond = target->dependencies[i]->type == TY_DEP
+			&& sv_end_with(sv_from_sva(&target->dependencies[i]->name), sv_from_lstr(".a"));
+		if (cond) {
 			const CLIBS_t *lib = target->dependencies[i]->cfgdata;
 			if (!lib) continue;
-			sva_sprintfcat(&obj, " -l%s", lib->libname);
-			continue;
-		}
-		sva_sprintfcat(&cmd, " '%.*s'",
-			       (int)target->dependencies[i]->name.len,
-			       target->dependencies[i]->name.p);
+			sva_sprintf(&tmp, "-l%s", lib->libname);
+		} else sva_from_sva(&tmp, &target->dependencies[i]->name);
+		if (!path_quote(&tmp)) continue;
+		if (cond) sva_sprintfcat(&links, " %s", tmp.p);
+		else sva_sprintfcat(&cmd, " %s", tmp.p);
 	}
 
 	/* 加载flag */
@@ -187,17 +192,18 @@ static bool build_obj2elf(Target_t *target)
 		sva_sprintfcat(&cmd, " -l%.*s", (int)left.len, left.p);
 		count++;
 	}
-	if (obj.p && obj.len) {
-		sva_sprintfcat(&cmd, "%.*s", (int)obj.len, obj.p);
+	if (links.p && links.len) {
+		sva_sprintfcat(&cmd, "%.*s", (int)links.len, links.p);
 	}
 
-	sva_from_sv(&obj, path_father(sv_from_sva(&target->name)));
-	if (obj.p && access(obj.p, F_OK) != 0) {
-		path_mkdir(sv_from_sva(&obj), 0755);
+	sva_from_sv(&tmp, path_father(sv_from_sva(&target->name)));
+	if (tmp.p && access(tmp.p, F_OK) != 0) {
+		path_mkdir(sv_from_sva(&tmp), 0755);
 	}
 
 	EXEC_AND_PRINT();
-	sva_free(&obj);
+	sva_free(&links);
+	sva_free(&tmp);
 	sva_free(&cmd);
 	return ret == 0;
 }
@@ -357,11 +363,11 @@ static void scan_header(Target_t *list, Target_t *target_elf, Target_t *target_c
 		if (!header) {
 			header = target_create(sv_from_sva(&header_path));
 			target_append(list, header);
-			/* 递归扫描文件创建依赖 */
-			scan_header(list, NULL, header);
 		}
 		if (!header) continue;
 		header->type = TY_DEP;
+		/* 递归扫描文件创建依赖 */
+		scan_header(list, target_elf, header);
 		/* c依赖引用的.h文件 */
 		target_depend_append(target_c, header);
 	}

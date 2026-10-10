@@ -11,6 +11,7 @@
 #define _DYNAMIC_ARRAY_H
 
 #include <stddef.h>
+#include <stdbool.h>
 
 typedef struct {
 	void  *ptr;
@@ -30,6 +31,7 @@ DA_t *da_free(DA_t *da, void (*free_function)(void *ptr));
 DA_t *da_pop(DA_t *da, size_t idx, void (*free_function)(void *ptr));
 /* 通过索引id获取对应元素指针 */
 void *da_get(DA_t *da, size_t idx);
+bool da_check_in(DA_t *da, void *element);
 
 #endif //DYNAMIC_ARRAY_H
 

@@ -70,13 +70,14 @@ static SVA_t *argv2str(SVA_t *dest, char *argv[])
 	SVA_t tmp = {};
 	for (size_t idx = 0; argv[idx]; idx++) {
 		if (idx) sva_append(dest, sv_from_lstr(" "));
-		if (!strpbrk(argv[idx], " \t\r\n\\\"'`!?#$%^&|(){}[]<>~") && strlen(argv[idx]) != 0) {
-			sva_sprintfcat(dest, "%s", argv[idx]);
-			continue;
+		path_quote(sva_from_cstr(&tmp, argv[idx]));
+		if (sv_begin_with(sv_from_sva(&tmp), sv_from_lstr("-"))) 
+			sva_append(dest, sv_from_lstr("./"));
+		else if (sv_begin_with(sv_from_sva(&tmp), sv_from_lstr("'-"))) {
+			sva_chop_left(&tmp, 1);
+			sva_append(dest, sv_from_lstr("'./"));
 		}
-		sva_from_cstr(&tmp, argv[idx]);
-		sva_replace(&tmp, sv_from_lstr("'"), sv_from_lstr("'\\''"));
-		sva_sprintfcat(dest, "'%.*s'", (int)tmp.len, tmp.p);
+		sva_append(dest, sv_from_sva(&tmp));
 	}
 	sva_free(&tmp);
 	return dest;

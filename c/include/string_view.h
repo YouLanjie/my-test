@@ -59,7 +59,7 @@ SV_t sv_merge(SV_t base, SV_t slice1, SV_t slice2);
 SV_t sv_memmem(SV_t base, SV_t pat);
 
 
-/* 具有所有权的sv，约定保证p非空时p[len]==0 */
+/* 具有所有权的sv，约定保证p非空时p[len]==0，使用前需初始化 */
 typedef struct {
 	size_t capacity;
 	size_t len;
@@ -87,6 +87,7 @@ SVA_t *sva_smallest(SVA_t *s);
 SVA_t *sva_double(SVA_t *s);
 /* 调整确保内存容量大等于size */
 SVA_t *sva_adjust_minimun(SVA_t *s, size_t size);
+/* 不允许追加来自自身的切片 */
 SVA_t *sva_append(SVA_t *ret, SV_t sv);
 SVA_t *sva_sprintf(SVA_t *ret,char *fmt, ...) __attribute__((format(printf, 2, 3)));
 SVA_t *sva_sprintfcat(SVA_t *ret, char *fmt, ...) __attribute__((format(printf, 2, 3)));

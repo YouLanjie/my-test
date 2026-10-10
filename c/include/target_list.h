@@ -41,7 +41,7 @@ void target_append(Target_t *list, Target_t *target);
 void target_depend_append(Target_t *target, Target_t *dependency);
 Target_t *target_get_by_name(Target_t *list, SV_t name);
 Target_t *target_get_or_create(Target_t *list, SV_t name);
-void target_build(Target_t *target);
+// void target_build(Target_t *target);
 void target_buildlist(Target_t *list);
 void *target_build_for_pthread(void *target);
 void target_buildlist_for_pthread(Target_t *list, int8_t ptr_max, int8_t print_process);

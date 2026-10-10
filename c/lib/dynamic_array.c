@@ -88,5 +88,14 @@ void *da_get(DA_t *da, size_t idx)
 	return DAP(da, idx);
 }
 
+bool da_check_in(DA_t *da, void *element)
+{
+	if (!da || !element) return false;
+	for (size_t i = 0; i < da->len; i++) {
+		if (memcmp(DAP(da, i), element, da->size) == 0) return true;
+	}
+	return false;
+}
+
 #undef DAP
 
