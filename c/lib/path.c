@@ -39,7 +39,7 @@ SV_t path_suffixname(SV_t path)
 
 SV_t path_father(SV_t path)
 {
-	while (path.len > 1 && path.p[path.len-1] == '/') path.len--;
+	while (path.len && path.p[path.len-1] == '/') path.len--;
 	while (path.len && path.p[path.len-1] != '/') sv_chop_right(&path, 1);
 	return path;
 }
@@ -97,9 +97,11 @@ Path_t *path_normalize(Path_t *path)
 	if (path->len >= path->capacity) sva_double(path);
 	path->p[path->len] = 0;
 	_path_tails_process(path, '\0');
-	if (path->len == 0) sva_sprintf(path, "./");
+	if (path->len == 0) sva_sprintf(path, ".");
 	else if (sv_begin_with(sv_from_sva(path), sv_from_lstr("./")) && path->len != 2)
 		sva_chop_left(path, 2);
+	if (path->len > 1 && sv_end_with(sv_from_sva(path), sv_from_lstr("/")))
+		sva_chop_right(path, 1);
 	return path;
 }
 
@@ -114,6 +116,57 @@ Path_t *path_join(Path_t *path, SV_t child)
 		sva_append(path, child);
 	}
 	return path_normalize(path);
+}
+
+Path_t *path_relative(Path_t *path, SV_t base)
+{
+	if (!path || !path->p || !path->len || !base.p || !base.len)
+		return path;
+	if ((path->p[0] == '/' || base.p[0] == '/') && path->p[0] != base.p[0]) {
+		sva_clear(path);
+		return path;
+	}
+	Path_t tmp = {};
+	sva_from_sv(&tmp, base);
+	if (!tmp.p) return NULL;
+	path_normalize(path);
+	path_normalize(&tmp);
+	/* 寻找共同基目录 */
+	size_t idx = 0;
+	while ((idx < path->len && idx < tmp.len && path->p[idx] == tmp.p[idx])
+	       || (idx < path->len && idx == tmp.len && path->p[idx] == '/')
+	       || (idx == path->len && idx < tmp.len && tmp.p[idx] == '/')) {
+		idx++;
+	}
+	if (idx >= path->len && idx >= tmp.len) {
+		sva_from_sv(path, sv_from_lstr("."));
+		sva_free(&tmp);
+		return path;
+	}
+	if (idx && idx <= path->len && path->p[idx-1] != '/') {
+		base = sv_from_sva(&tmp);
+		base.len = idx;
+		base = path_father(base);
+		idx = base.len;
+	}
+	/* 计算需要退出的上级目录数量 */
+	base = sv_from_sva(&tmp);
+	int count_uppper = idx ? 0 : 1;
+	while (base.len && base.len > idx) {
+		base = path_father(base);
+		if (base.len) count_uppper++;
+	}
+	tmp.len = 0;
+	while ((count_uppper--) > 0) {
+		sva_append(&tmp, sv_from_lstr("../"));
+	}
+	/* 拼接原路径共同路径下的子路径 */
+	base = sv_from_sva(path);
+	sv_chop_left(&base, idx);
+	sva_append(&tmp, base);
+	path_normalize(sva_from_sva(path, &tmp));
+	sva_free(&tmp);
+	return path;
 }
 
 static Path_st_t _path_get_st(SV_t path, int (*stat_func)(const char *restrict file, struct stat *restrict buf))

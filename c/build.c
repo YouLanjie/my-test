@@ -642,8 +642,7 @@ int main(int argc, char *argv[])
 			path_normalize(sva_sprintf(&tmp, "%s/%s", pwd.p, argv[i]));
 			path = sv_from_sva(&tmp);
 			if (!sv_begin_with(path, sv_from_sva(&newpwd))) continue;
-			sv_chop_left(&path, newpwd.len);
-			path_normalize(sva_from_sv(&tmp, path));
+			path_relative(sva_from_sv(&tmp, path), sv_from_sva(&newpwd));
 			list = target_fordir(list, NULL, sv_from_sva(&tmp), rule_fordir, action_c_elf);
 			if (mode == 2) break;
 		}
@@ -676,8 +675,7 @@ int main(int argc, char *argv[])
 			ret = 1;
 			break;
 		}
-		sv_chop_left(&path, newpwd.len);
-		path_normalize(sva_from_sv(&tmp, path));
+		path_relative(sva_from_sv(&tmp, path), sv_from_sva(&newpwd));
 
 		path_hander_elf(&tmp);
 		Target_t *target = target_get_by_name(list, sv_from_sva(&tmp));

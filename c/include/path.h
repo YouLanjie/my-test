@@ -43,10 +43,10 @@ SV_t path_stemname(SV_t path);
  * @return 不存在`.`时长度为0 */
 SV_t path_suffixname(SV_t path);
 /**
- * @brief 获得上级路径
+ * @brief 获得逻辑上级路径（仅截取不提供`..`）
  *
- * @param path 要判断的字符串
- * @return 截取后的字符串
+ * @param path 要处理的字符串
+ * @return 截取后的字符串(保留`/`尾缀)
  */
 SV_t path_father(SV_t path);
 /**
@@ -64,6 +64,10 @@ Path_t * path_normalize(Path_t *path);
  * @return 拼接后路径
  */
 Path_t *path_join(Path_t *path, SV_t child);
+/* 获取path相对于base的逻辑相对路径(原地修改)
+ * 期望base为一个目录，结果会类似于`base/../path`
+ * 若path/base为相对、绝对混合路径则会置空path */
+Path_t *path_relative(Path_t *path, SV_t base);
 /* 通过lstat()获取文件状态(不跟随符号链接) */
 Path_st_t path_get_st(SV_t path);
 /* 通过lstat()获取文件状态(跟随符号链接) */
