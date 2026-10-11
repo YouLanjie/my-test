@@ -27,7 +27,7 @@ void print_pager(const char *headline, SV_t content, int mode)
 	SV_t line = {};
 	SV_t left = content;
 	headline = headline?headline:"请输入文本";
-	printf("\e[0m\n\e[2K==== %s ====\n", headline);
+	printf("\e[0m\n\e[J==== %s ====\n", headline);
 	const int pager_lines = 25;
 	int total_lines = sv_countlines(content);
 	int count = 0, start = 1;
@@ -82,9 +82,10 @@ void format_orbital_parameters(Runtimedata_t *rt, SVA_t *dest, struct orbital_pa
 	return;
 }
 
-void print_starinfo(Star_t *star, struct orbital_parameters dat)
+#define printf(fmt, ...) sva_sprintfcat(dest, (fmt) __VA_OPT__(,) __VA_ARGS__)
+static void print_starinfo(SVA_t *dest, Star_t *star, struct orbital_parameters dat)
 {
-	if (!star || !star->obj) return;
+	if (!dest || !star || !star->obj) return;
 	const double Tp = dat.Tp == INFINITY ? 0 : dat.Tp;
 	const double Ta = dat.Ta == INFINITY ? 0 : dat.Ta;
 	printf("围绕天体: %s\n", star->name.p);
@@ -96,14 +97,16 @@ void print_starinfo(Star_t *star, struct orbital_parameters dat)
 	printf("倾角: %.3f deg\n", acos(vec_point_product(dat.u, (Vec_t){0,0,1}))/(2*M_PI)*360.);
 }
 
-void voyage_helper(Runtimedata_t *rt)
+SVA_t *voyage_helper(Runtimedata_t *rt, SVA_t *dest, Star_t *to)
 {
-	if (!rt) return;
-	Star_t *from = rt->follow, *to = NULL;
+	if (!rt || !dest) return NULL;
+	Star_t *from = rt->follow;
 	while (!from && (from = star_choose(rt, "正在驾驶的", NULL)) == NULL)
 		printf("重试...\n");
-	while ((to = star_choose(rt, "要驶入的", NULL)) == NULL)
+	while (!to && (to = star_choose(rt, "要驶入的", NULL)) == NULL)
 		printf("重试...\n");
+
+	sva_clear(dest);
 	if (from->mass > to->mass)
 		printf("[TIPS] from比to重，结果可能不正确\n");
 	if (from == to)
@@ -117,17 +120,20 @@ void voyage_helper(Runtimedata_t *rt)
 	       from->name.p ? from->name.p : "Unknow",
 	       to->name.p ? to->name.p : "Unknow");
 	printf("距离：%.1f km\n", unit2km(distance));
-	printf("相对速度：%.1f km\n", unit2km(vec_len(vec_sub(from->speed, to->speed))));
+	const Vec_t dv = vec_sub(from->speed, to->speed);
+	const double vertical_speed = vec_point_product(vec_direct(direct), dv);
+	printf("相对速度：%.1f km | 垂直速度： %.1f km\n", unit2km(vec_len(dv)), unit2km(vertical_speed));
 	// printf("航向：{%.1f, %.1f, %.1f}\n", direct.x, direct.y, direct.z);
 	printf("理想圆轨线速度：%g km/s, 角速度：%g rad/s\n", unit2km(speed), speed/distance);
-	printf("理想圆轨周期：%.1f s | %.1f d\n", 2*M_PI/(speed/distance), sec2day(2*M_PI/(speed/distance)));
+	const double T = 2*M_PI/(speed/distance);
+	printf("理想圆轨周期：%.1f s | ["GT2YHMS_FMT"]\n", T, gt2yhms_fmt(T));
 
 	/* 驾驶天体中心 */
 	Star_t *s1 = star_get_about_point(rt, from);
 	if (!s1) s1 = to;
 	struct orbital_parameters dat = phy_get_orbital_parameters(from, s1);
 	printf("====== 当前(%s)轨道情况 ======\n", from->name.p);
-	print_starinfo(s1, dat);
+	print_starinfo(dest, s1, dat);
 
 	/* 目标天体中心 */
 	Star_t *s2 = star_get_about_point(rt, to);
@@ -136,11 +142,11 @@ void voyage_helper(Runtimedata_t *rt)
 	if ((s1 == s2 || s3 == s2) && s1 != to && s2 != from) {
 		struct orbital_parameters dat2 = phy_get_orbital_parameters(to, s2);
 		printf("====== 目标(%s)共轨情况 ======\n", to->name.p);
-		print_starinfo(s2, dat2);
+		print_starinfo(dest, s2, dat2);
 		printf("相对倾角: %.4f deg\n", acos(vec_point_product(dat2.u, dat.u))/M_PI*180.);
 		struct hohmann_orbital_parameters ret = phy_get_hohmann_orbit_theta(from, to, s2, NULL);
 		printf("====== 霍曼转移轨道数据 ======\n");
-		printf("半周期: %.3g d\n", sec2day(ret.T));
+		printf("半周期: ["GT2YHMS_FMT"]\n", gt2yhms_fmt(ret.T));
 		printf("提前角度: %.3g deg\n", ret.expect_theta/M_PI*180.);
 		printf("距点火点: %.3g deg\n", ret.theta/M_PI*180.);
 		printf("期望速度: %.3g km/s\n", unit2km(ret.v));
@@ -157,12 +163,9 @@ void voyage_helper(Runtimedata_t *rt)
 			printf("[WARN] 该数值仅在二体、三体近似时较为准确\n");
 		}
 	}
-
-	printf("（回车返回）\n");
-	kbhitGetchar();
-	_getch();
-	return;
+	return dest;
 }
+#undef printf
 
 void set_camera_forward(Runtimedata_t *rt)
 {

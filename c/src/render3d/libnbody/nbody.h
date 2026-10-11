@@ -17,7 +17,7 @@
 
 /* 将距离换算成 1单位 = 1km
  * 可换成其他数字 */
-#define SCALE 1
+#define SCALE 1.0
 /* 引力常量 N*(m^2)/(kg^2) || (m^3)/(kg*s^2) */
 #define G 6.6743e-11
 /* (km^3)/(kg*s^2) */
@@ -28,10 +28,10 @@
 #define pow2(x) ((x)*(x))
 /* 系列单位数值转换宏 */
 /* 距离转换(除法转乘法、编译期常量优化) */
-#define unit2m(n) ((n)*(SCALE*1e3))
-#define m2unit(n) ((n)*(1/(SCALE*1e3)))
 #define unit2km(n) ((n)*SCALE)
 #define km2unit(n) ((n)*(1/SCALE))
+#define unit2m(n) ((n)*(unit2km(1)*1e3))
+#define m2unit(n) ((n)*(km2unit(1)/1e3))
 #define kunit2unit(n) ((n)*1e3)
 /* 时间转换 */
 #define sec2day(sec) ((sec)/60./60./24.)
@@ -67,7 +67,7 @@ typedef struct {
 	Camera_t *camera;
 	Camera_t *active_cam;
 	SVA_t logs;    /* 日志文本 */
-	SVA_t huds;    /* HUD文本缓存 */
+	SVA_t buff;    /* HUD文本缓存 */
 	DA_t objs;
 	DA_t accel;
 	Star_t *destination_to;
@@ -126,8 +126,7 @@ struct hohmann_orbital_parameters {
 double get_nowtime();
 void print_pager(const char *headline, SV_t content, int mode);
 void format_orbital_parameters(Runtimedata_t *rt, SVA_t *dest, struct orbital_parameters ret);
-void print_starinfo(Star_t *star, struct orbital_parameters dat);
-void voyage_helper(Runtimedata_t *rt);
+SVA_t *voyage_helper(Runtimedata_t *rt, SVA_t *dest, Star_t *to);
 void set_camera_forward(Runtimedata_t *rt);
 
 /* 运行时管理 */
@@ -135,8 +134,9 @@ bool rt_setup(Runtimedata_t *rt, int mode);
 void rt_cleanup(Runtimedata_t *rt);
 void rt_sync_cam_size_scale(Runtimedata_t *rt);
 void rt_switch_camera(Runtimedata_t *rt, Camera_t *ca);
-void rt_dump_stars(Runtimedata_t *rt, FILE *output, bool no_inp);
+SVA_t *rt_dump_stars(Runtimedata_t *rt, SVA_t *dest);
 bool rt_load_from_dumped_text(Runtimedata_t *rt, const char *filename);
+int rt_format_huds(Runtimedata_t *rt, SVA_t *dest, struct orbital_parameters ret);
 void rt_exec_cmd(Runtimedata_t *rt, char *cmd);
 
 /* 天体相关 */

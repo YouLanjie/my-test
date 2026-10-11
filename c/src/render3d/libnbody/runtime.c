@@ -65,7 +65,7 @@ void rt_cleanup(Runtimedata_t *rt)
 	rt->backend = NULL;
 	rt->camera  = NULL;
 	sva_free(&rt->logs);
-	sva_free(&rt->huds);
+	sva_free(&rt->buff);
 	da_free(&rt->objs, star_free);
 	da_free(&rt->accel, NULL);
 }
@@ -94,24 +94,23 @@ void rt_switch_camera(Runtimedata_t *rt, Camera_t *ca)
 	return;
 }
 
-void rt_dump_stars(Runtimedata_t *rt, FILE *output, bool no_inp)
+SVA_t *rt_dump_stars(Runtimedata_t *rt, SVA_t *dest)
 {
-	if (!rt || !rt->objs.ptr) return;
-	if (!output) output = stdout;
+	if (!rt || !rt->objs.ptr || !dest) return NULL;
+#define printf(fmt, ...) sva_sprintfcat(dest, (fmt) __VA_OPT__(,) __VA_ARGS__)
 	Star_t *objs = rt->objs.ptr;
-	bool flg = !no_inp && isatty(fileno(output));
-	if (flg) fprintf(output, "\e[0m\n\e[2K");
-	fprintf(output, "===== 数据导出：各星体基本参数 =====\n");
+	sva_clear(dest);
+	printf("===== 数据导出：各星体基本参数 =====\n");
 	Color_t c = COLOR_WHITE;
 	for (size_t i = 0; i < rt->objs.len; i++) {
 		if (!objs[i].obj) continue;
 		if (objs[i].obj->count_point > 1 && objs[i].obj->colors) {
 			c = objs[i].obj->colors[0];
 		}
-		fprintf(output, " [%lu] %s (%gkg/r=%gkm) "
-			"位置(km): {%.3f,%.3f,%.3f} "
-			"速度(km/s): {%.3f,%.3f,%.3f} "
-			"(#%.2X%.2X%.2X%.2X)\n", i+1,
+		printf(" [%lu] %s (%gkg/r=%gkm) "
+		       "位置(km): {%.3f,%.3f,%.3f} "
+		       "速度(km/s): {%.3f,%.3f,%.3f} "
+		       "(#%.2X%.2X%.2X%.2X)\n", i+1,
 		       objs[i].name.p ? objs[i].name.p : "{未命名星体}",
 		       objs[i].mass, unit2km(objs[i].radius),
 		       unit2km(objs[i].center.x),
@@ -122,14 +121,11 @@ void rt_dump_stars(Runtimedata_t *rt, FILE *output, bool no_inp)
 		       unit2km(objs[i].speed.z),
 		       c.r, c.g, c.b, c.a);
 	}
-	fprintf(output, "游戏时间: T+%.1f s, 折合约 T+%.1f d\n", rt->gtime, sec2day(rt->gtime));
-	fprintf(output, "操作累计dv: %.3f km/s\n", unit2km(rt->dv));
-	fprintf(output, "初始化种子: %d\n", rt->seed);
-	if (flg) {
-		fprintf(output, "（回车返回）\n");
-		kbhitGetchar();
-		_getch();
-	}
+	printf("游戏时间: T+%.1f s, 折合约 T+%.1f d\n", rt->gtime, sec2day(rt->gtime));
+	printf("操作累计dv: %.3f km/s\n", unit2km(rt->dv));
+	printf("初始化种子: %d\n", rt->seed);
+#undef printf
+	return dest;
 }
 
 /* 导入天体场景（暂缺失自转、颜色等配置） */
@@ -177,8 +173,126 @@ bool rt_load_from_dumped_text(Runtimedata_t *rt, const char *filename)
 	star_sync_cam_config(rt);
 	rtlog(rt, "成功载入存档(seed=%u,dv=%gkm/s)", seed, dv);
 	printf("[INFO] 共导入%d个天体\n", count);
-	rt_dump_stars(rt, NULL, false);
+	rt_dump_stars(rt, &rt->buff);
+	printf("%.*s\n", (int)rt->buff.len, rt->buff.p);
 	return true;
+}
+
+int rt_format_huds(Runtimedata_t *rt, SVA_t *dest, struct orbital_parameters ret)
+{
+	if (!rt || !dest) return 0;
+	sva_clear(dest);
+
+#define printf(fmt, ...) sva_sprintfcat(dest, (fmt) __VA_OPT__(,) __VA_ARGS__)
+	/* 基础信息 */
+	if (rt->hud_time_simple_format) {
+		printf("[T+%.1fd,", sec2day(rt->gtime));
+	} else {
+		printf("[T+"GT2YHMS_FMT" |", gt2yhms_fmt(rt->gtime));
+	}
+	printf(" x%g, %c%s%d%%%c, dv:%.3gkm/s]",
+	       rt->time_scale,
+	       rt->throttle_on&1?'[':':',
+	       rt->throttle_on&0b10?"-":"",
+	       rt->throttle,
+	       rt->throttle_on&1?']':':',
+	       unit2km(rt->dv));
+	if (rt->follow) {
+		/* 控制天体基本信息 */
+		const char hint[2][4] = { "<{[", ">}]", };
+		const uint8_t hintc = rt->follow==rt->look_to?0:(rt->rotate_cam_with_spd?1:2);
+		printf(" | %s%c%s%c (%.3f km/s)",
+		       rt->follow->name.p ? rt->follow->name.p : "Unknow",
+		       hint[0][hintc],
+		       rt->about_point->name.p ? rt->about_point->name.p : "Unknow",
+		       hint[1][hintc],
+		       unit2km(vec_len(vec_sub(rt->follow->speed, rt->about_point->speed))));
+	}
+	if (!rt->follow || !rt->destination_to) return 0;
+
+	/* 控制天体Ra,Rp情况 */
+	const char *hint1 =
+		ret.rp<=rt->about_point->radius ? "\e[31m"
+		: (ret.rp<=1.2*rt->about_point->radius ? "\e[33m" : "");
+	const char *hint2 = hint1[0] ? "\e[0m" : "";
+	sva_replace(dest, sv_from_lstr("\n"), sv_from_lstr("\\n"));
+	printf(" Rp:%s%.1fkm%s Ra:%.1fkm\n", hint1, unit2km(ret.rp), hint2, unit2km(ret.ra));
+
+	/* 距离目标天体情况 */
+	const Vec_t dist = vec_sub(rt->destination_to->center, rt->follow->center);
+	const Vec_t dv = vec_sub(rt->follow->speed, rt->destination_to->speed);
+	const double vertical_speed = vec_point_product(vec_direct(dist), dv);
+	// 对于打速度印值， <0 表靠近， >0 表远离
+	printf("距%s %.1f km (%.3f km/s)",
+	       rt->destination_to->name.p ? rt->destination_to->name.p : "Unknow",
+	       unit2km(vec_len(dist)),
+	       unit2km(-vertical_speed));
+
+	/* 安全保护 */
+	int ret_code = 0;
+	if (!rt->ignore_safety
+	    && (ret.rp<=rt->about_point->radius && vertical_speed > 0 && rt->time_scale > 1))
+		ret_code |= 1<<2;
+
+	/* 星际航行参数计算 */
+	Star_t *dest_about_point = NULL;
+	int8_t mode = rt->about_point != rt->destination_to && rt->about_point->mass > 1e-3 &&
+		(dest_about_point=star_get_about_point(rt, rt->destination_to)) == rt->about_point;
+
+	if (!mode && dest_about_point && dest_about_point->mass > 1e-3 &&
+	    star_get_about_point(rt, rt->about_point) == dest_about_point) {
+		/* 启用二阶霍曼轨道计算 */
+		mode = 2;
+	}
+	if (!mode && ret.e > 1 && ret.Tp < 2*30*24*60*60) {
+		/* 正在环绕目标天体 */
+		printf(" L:["GT2YHMS_FMT"]", gt2yhms_fmt(ret.Tp));
+		if (!rt->ignore_safety
+		    && rt->time_scale > 1
+		    && rt->destination_to==rt->about_point && ret.e > 1
+		    && vertical_speed > 0 && ret.Tp - rt->time_scale < 0) {
+			ret_code |= 1;
+			if (ret.Tp <= 30) ret_code |= 0b111;
+		}
+	}
+	if (!mode) return ret_code;
+
+	/* 简易霍曼转移轨道计算 */
+	/* 共心状态 */
+	struct orbital_parameters ret2 = phy_get_orbital_parameters(rt->destination_to, dest_about_point);
+	Vec_t u = vec_direct(vec_cross_product(ret.u, ret2.u));
+	/* 相对当前中心速度 */
+	Vec_t v = vec_sub(rt->follow->speed, rt->about_point->speed);
+	double deg_cross = vec_point_product(vec_direct(v),u);
+	deg_cross = 90 - acos(deg_cross)/M_PI*180.;
+	struct hohmann_orbital_parameters ret3 =
+		phy_get_hohmann_orbit_theta(rt->follow, rt->destination_to, dest_about_point, NULL);
+	printf(" %.1f°(%.1f)°/%.1f°",
+	       acos(vec_point_product(ret.u, ret2.u))/(M_PI)*180.,
+	       deg_cross,
+	       ret3.theta/M_PI*180.);
+	if (mode == 2) {
+		/* 二阶偏角 */
+		ret3 = phy_get_hohmann_orbit_theta(rt->follow, rt->destination_to, dest_about_point, rt->about_point);
+		printf(" [%.1f°]", ret3.theta/M_PI*180.);
+	}
+	const double time_left = rt->throttle ?
+		(rt->throttle_on&0b10?-1:1)*(ret3.v-vec_len(v))/throttle2accel(rt->throttle): 0;
+	if (fabs(ret3.theta/M_PI*180.) < 10) {
+		printf(" L:%.2fs", time_left);
+		if (rt->throttle_on&1 && rt->time_scale>1 && time_left-rt->time_scale < 0) {
+			/* 需要降低倍速(减半) */
+			ret_code |= 1;
+		}
+	}
+
+	/* 二体简化模型近似计算最近值(ai生成，仅供参考) */
+	struct close_approach_t ca;
+	if (mode != 2 && (ca=phy_two_body_closest_approach(rt->follow, rt->destination_to, rt->about_point)).valid) {
+		printf(" ETA:%.2fd(%gkm)", sec2day(ca.time), unit2km(ca.distance));
+	}
+	return ret_code;
+#undef printf
 }
 
 /* 期望的命令格式: 'key=value;' */
