@@ -121,7 +121,7 @@ SVA_t *rt_dump_stars(Runtimedata_t *rt, SVA_t *dest)
 		       unit2km(objs[i].speed.z),
 		       c.r, c.g, c.b, c.a);
 	}
-	printf("游戏时间: T+%.1f s, 折合约 T+%.1f d\n", rt->gtime, sec2day(rt->gtime));
+	printf("游戏时间: [T+"GT2YHMS_FMT"]\n", gt2yhms_fmt(rt->gtime));
 	printf("操作累计dv: %.3f km/s\n", unit2km(rt->dv));
 	printf("初始化种子: %d\n", rt->seed);
 #undef printf
@@ -301,21 +301,23 @@ void rt_exec_cmd(Runtimedata_t *rt, char *cmd)
 	if (!rt || !cmd) return;
 	/* 期望运行时间 */
 	double t = 0;
+	double time_scale = 1;
 	/* 期望的速度改变量 */
 	Vec_t dv = {};
 	/* 速度、目标天体序号，顺序排列(与存档所带数字无关) */
 	int idx_follow = 0, idx_dest = 0;
 	char *cur = cmd;
+	rt->throttle_on = 0;
 	rt->throttle = -1;
-	while ((cmd = cur)) {
+	while ((cmd = cur) && *cur) {
 		for (char *p = cur; p && *p; p++) {
 			if (*p != ';' && *p != '\n') continue;
 			*p = 0;
 			cur = p + 1;
 			break;
 		}
-		if (sscanf(cmd, " ts = %lg ", &rt->time_scale) == 1) {
-			if (rt->time_scale <= 1e-4) rt->time_scale = 1;
+		if (sscanf(cmd, " ts = %lg ", &time_scale) == 1) {
+			if (time_scale <= 1e-4) time_scale = 1;
 		} else if (sscanf(cmd, " tsl = %lg ", &rt->time_scale_limit) == 1) {
 			if (rt->time_scale_limit < 1) rt->time_scale_limit = 1024;
 		} else if (sscanf(cmd, " t = %lg ", &t) == 1) {
@@ -326,9 +328,32 @@ void rt_exec_cmd(Runtimedata_t *rt, char *cmd)
 		} else if (sscanf(cmd, " D = %d ", &idx_dest) == 1) {
 		}
 	}
-	if (t <= 0) return;
-	printf("预期运行时间：["GT2YHMS_FMT"]\n", gt2yhms_fmt(t));
-	// throttle2accel
+	// if (t <= 0) return;
+	rt->follow = da_get(&rt->objs, idx_follow-1);
+	rt->destination_to = da_get(&rt->objs, idx_dest-1);
+	printf("预期运行时间：["GT2YHMS_FMT"] (倍速:x%g/%g)\n",
+	       gt2yhms_fmt(t), time_scale, rt->time_scale_limit);
+	t += rt->gtime;
+	const double t0 = get_nowtime();
+	if (vec_len(dv) > 0) {
+		if (!rt->throttle) rt->throttle = 1;
+		rt->time_scale = 1;
+		rt->throttle_on = 1;
+		const double T = vec_len(dv)/throttle2accel(rt->throttle) + rt->gtime;
+		while (rt->gtime < T) phy_update(rt);
+		rt->throttle_on = 0;
+	}
+	rt->time_scale = time_scale;
+	while (rt->gtime < t) phy_update(rt);
+
+	printf("[INFO] 模拟结束\n航行日志：\n%s", rt->logs.len ? rt->logs.p : "- 空 -\n");
+	rt_dump_stars(rt, &rt->buff);
+	printf("%.*s", (int)rt->buff.len, rt->buff.p);
+	if (rt->follow && rt->destination_to) {
+		voyage_helper(rt, &rt->buff, rt->destination_to);
+		printf("航程信息：\n%.*s", (int)rt->buff.len, rt->buff.p);
+	}
+	printf("[INFO] 程序实际运行挂钟时间：%.1f s\n", get_nowtime()-t0);
 	return;
 }
 

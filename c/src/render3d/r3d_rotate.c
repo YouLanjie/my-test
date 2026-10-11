@@ -693,10 +693,23 @@ int main(int argc, char *argv[])
 		return EXIT_SUCCESS;
 	}
 	if (exec_cmd) {
-		if (cond_default_init) rt_exec_cmd(&rt, exec_cmd);
-		else printf("[WARN] 应当加载存档再使用命令模式\n");
+		if (cond_default_init) {
+			printf("[WARN] 应当加载存档再使用命令模式\n");
+			rt_cleanup(&rt);
+			return EXIT_FAILURE;
+		}
+		rt_exec_cmd(&rt, exec_cmd);
+		FILE *fp;
+		if (output_filename && (fp=fopen(output_filename, "a"))) {
+			fprintf(fp,
+				"[INFO] 保存时间:%ld\n"
+				"==== 航行日志 ====\n%s%.*s\n",
+				time(NULL), rt.logs.len ? rt.logs.p : "- 空 -\n",
+				(int)rt.buff.len, rt.buff.p);
+			fclose(fp);
+		}
 		rt_cleanup(&rt);
-		return cond_default_init ? EXIT_FAILURE : EXIT_SUCCESS;
+		return EXIT_SUCCESS;
 	}
 	rt.inp = 'f';
 	input_handle(&rt);
