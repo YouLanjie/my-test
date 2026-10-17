@@ -121,7 +121,8 @@ SVA_t *rt_dump_stars(Runtimedata_t *rt, SVA_t *dest)
 		       unit2km(objs[i].speed.z),
 		       c.r, c.g, c.b, c.a);
 	}
-	printf("游戏时间: [T+"GT2YHMS_FMT"]\n", gt2yhms_fmt(rt->gtime));
+	printf("游戏时间: T+%lfs, [T+"GT2YHMS_FMT"]\n",
+	       rt->gtime, gt2yhms_fmt(rt->gtime));
 	printf("操作累计dv: %.3f km/s\n", unit2km(rt->dv));
 	printf("初始化种子: %d\n", rt->seed);
 #undef printf
@@ -148,6 +149,7 @@ bool rt_load_from_dumped_text(Runtimedata_t *rt, const char *filename)
 	Color_t c;
 	Star_t star;
 	while (fgets(buf, sizeof(buf), fp)) {
+		c = COLOR_WHITE;
 		ret = sscanf(buf, " [%lu] %s (%lgkg/r=%lgkm) 位置(km): {%lf,%lf,%lf} 速度(km/s): {%lf,%lf,%lf} (#%2hhX%2hhX%2hhX%2hhX)",
 			     &idx, name, &mass, &radius, &Px, &Py, &Pz, &Vx, &Vy, &Vz,
 			     &c.r, &c.g, &c.b, &c.a);
@@ -158,7 +160,7 @@ bool rt_load_from_dumped_text(Runtimedata_t *rt, const char *filename)
 			da_append(&rt->objs, &star);
 			continue;
 		}
-		if (sscanf(buf, "游戏时间: T+%lf s, 折合约 T+%*f d", &gtime)) {
+		if (sscanf(buf, "游戏时间: T+ %lf s", &gtime)) {
 		} else if (sscanf(buf, "操作累计dv: %lf km/s", &dv)) {
 		} else sscanf(buf, "初始化种子: %u", &seed);
 	}
@@ -178,6 +180,60 @@ bool rt_load_from_dumped_text(Runtimedata_t *rt, const char *filename)
 	return true;
 }
 
+void rt_logevent(Runtimedata_t *rt)
+{
+	if (!rt) return;
+	rt->loop_stat.ev_swap_rpra = false;
+	rt->loop_stat.obp = (typeof(rt->loop_stat.obp)){};
+
+	if (rt->follow) rt->loop_stat.obp = phy_get_orbital_parameters(rt->follow, rt->about_point);
+	if (rt->follow && rt->loop_stat.follow == rt->follow
+	    && rt->loop_stat.about_point && rt->loop_stat.about_point->name.p
+	    && rt->loop_stat.about_point != rt->about_point) {
+		format_orbital_parameters(rt, &rt->buff, rt->loop_stat.obp);
+		rtlog(rt, "天体'%s'被'%s'捕获(%s)(原运行在'%s'),累计dv:%.3gkm/s",
+		      rt->follow->name.p, rt->about_point->name.p, rt->buff.p,
+		      rt->loop_stat.about_point->name.p, unit2km(rt->dv));
+		rt->need_notification++;
+	}
+	if (!rt->about_point) return;
+	const bool cond1 = rt->follow && rt->loop_stat.follow == rt->follow && rt->about_point;
+	const bool cond2 = cond1 ?    /* 变轨时近远地点高度交换(e变化方向变化) */
+		(rt->throttle_on&1)
+		&& (rt->loop_stat.obp.e < 1 && rt->loop_stat.e1 < 1)
+		&& (rt->loop_stat.e2 > rt->loop_stat.e1 && rt->loop_stat.e1 < rt->loop_stat.obp.e) : false;
+	const bool cond3 = (rt->loop_stat.throttle_on^rt->throttle_on)&1      /* 油门开关 */
+		|| (rt->throttle_on&1 && (rt->loop_stat.throttle_on^rt->throttle_on)&0b10);
+	const bool cond4 = cond1 ? cond2    /* 触发以下任意事件 */
+		|| cond3
+		|| ((rt->loop_stat.e1-1)*(rt->loop_stat.obp.e-1)<0) : false;    /* 轨道类型改变 */
+	if (cond1 && cond4) {
+		if (cond3) {
+			rtlog(rt, "油门切换至: %s向推力 %d%% %s",
+			      rt->throttle_on&0b10?"反":"正", rt->throttle, rt->throttle_on&1?"开":"关");
+		}
+		if (cond2) {
+			rtlog(rt, "近远地点高度交换");
+			if (rt->time_scale >= 2) rt->need_notification++;
+		}
+		format_orbital_parameters(rt, &rt->buff, rt->loop_stat.obp);
+		rtlog(rt, "%s[%s]:%s(%s),dv:%.3gkm/s",
+		      rt->follow->name.p, rt->about_point->name.p,
+		      rt->loop_stat.obp.typ, rt->buff.p, unit2km(rt->dv));
+	}
+	rt->loop_stat.e2 = rt->loop_stat.e1;
+	rt->loop_stat.e1 = rt->loop_stat.obp.e;
+	rt->loop_stat.throttle_on = rt->throttle_on;
+	rt->loop_stat.ev_swap_rpra = cond2;
+
+	rt->loop_stat.about_point = rt->about_point;
+	rt->loop_stat.follow = rt->follow;
+}
+
+/* 返回值：
+ * 1<<0 倍速减半
+ * 1<<1 倍速降为1
+ * 1<<2 暂停游戏 */
 int rt_format_huds(Runtimedata_t *rt, SVA_t *dest, struct orbital_parameters ret)
 {
 	if (!rt || !dest) return 0;
@@ -230,9 +286,9 @@ int rt_format_huds(Runtimedata_t *rt, SVA_t *dest, struct orbital_parameters ret
 
 	/* 安全保护 */
 	int ret_code = 0;
-	if (!rt->ignore_safety
+	if (!rt->ignore_safety && !rt->pause
 	    && (ret.rp<=rt->about_point->radius && vertical_speed > 0 && rt->time_scale > 1))
-		ret_code |= 1<<2;
+		ret_code |= 0b110;
 
 	/* 星际航行参数计算 */
 	Star_t *dest_about_point = NULL;

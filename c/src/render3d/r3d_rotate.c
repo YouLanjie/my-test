@@ -8,6 +8,7 @@
 
 #include "libnbody/nbody.h"
 #include <time.h>
+#include <sys/stat.h>
 
 static void print_qrh(bool no_page)
 {
@@ -59,6 +60,10 @@ static void print_qrh(bool no_page)
  调试  : ' (帧率/负载显示开/关)
  清屏  : c (强制刷新画面)
  退出  : q/Q
+ 强设环绕中心: !
+ 指定相机方向: @
+ 忽略安全警告: #
+ 使用rk4积分:  $
 
 ================================================================================
 [2] UI界面信息解释与使用
@@ -534,14 +539,7 @@ static void game_loop(Runtimedata_t *rt)
 	if (!rt) return;
 	size_t i = 0;
 	double busy = 0;
-	struct orbital_parameters ret = {};
-	double last_e = 0, last2_e = 0;
-	Star_t *last_about_point = NULL,
-	       *last_follow = NULL;
-	int8_t last_throttle_on = false;
 	for (i = 0; i < INT64_MAX; ++i) {
-		last_about_point = rt->about_point;
-		last_follow = rt->follow;
 		if ((rt->inp = kbhitGetchar()))
 			if (!input_handle(rt)) break;
 		if (rt->backend->get_input && (rt->inp = rt->backend->get_input(rt->backend)))
@@ -552,54 +550,22 @@ static void game_loop(Runtimedata_t *rt)
 			rt->need_notification = 0;
 		}
 		if (!rt->pause) phy_update(rt);
-		if (rt->follow) ret = phy_get_orbital_parameters(rt->follow, rt->about_point);
-		if (rt->follow && last_follow == rt->follow
-		    && last_about_point && last_about_point->name.p
-		    && last_about_point != rt->about_point) {
-			format_orbital_parameters(rt, &rt->buff, ret);
-			rtlog(rt, "天体'%s'被'%s'捕获(%s)(原运行在'%s'),累计dv:%.3gkm/s",
-			      rt->follow->name.p, rt->about_point->name.p, rt->buff.p,
-			      last_about_point->name.p, unit2km(rt->dv));
-			rt->need_notification++;
-		}
+		rt_logevent(rt);
 		if (!rt->about_point) break;
-		const bool cond1 = rt->follow && last_follow == rt->follow && rt->about_point;
-		const bool cond2 = cond1 ?    /* 变轨时近远地点高度交换(e变化方向变化) */
-			(rt->throttle_on&1)
-			&& (ret.e < 1 && last_e < 1)
-			&& (last2_e > last_e && last_e < ret.e) : false;
-		const bool cond3 = (last_throttle_on^rt->throttle_on)&1      /* 油门开关 */
-			|| (rt->throttle_on&1 && (last_throttle_on^rt->throttle_on)&0b10);
-		const bool cond4 = cond1 ? cond2    /* 触发以下任意事件 */
-			|| cond3
-			|| ((last_e-1)*(ret.e-1)<0) : false;    /* 轨道类型改变 */
-		if (cond1 && cond4) {
-			if (cond3) {
-				rtlog(rt, "油门切换至: %s向推力 %d%% %s",
-				      rt->throttle_on&0b10?"反":"正", rt->throttle, rt->throttle_on&1?"开":"关");
-			}
-			if (cond2) {
-				rtlog(rt, "近远地点高度交换");
-				if (rt->time_scale >= 2) rt->need_notification++;
-			}
-			format_orbital_parameters(rt, &rt->buff, ret);
-			rtlog(rt, "%s[%s]:%s(%s),dv:%.3gkm/s",
-			      rt->follow->name.p, rt->about_point->name.p,
-			      ret.typ, rt->buff.p, unit2km(rt->dv));
-		}
-		last2_e = last_e;
-		last_e = ret.e;
-		last_throttle_on = rt->throttle_on;
 
 		rt_draw(rt);
 		int ret_code = 0;
-		while ((ret_code = rt_format_huds(rt, &rt->buff, ret))) {
-			if (ret_code & 1<<2) rt->pause = true;
+		for (int count = 0; count < 1024
+		     && (ret_code = rt_format_huds(rt, &rt->buff, rt->loop_stat.obp)); count++) {
 			if (ret_code & 1<<1) rt->time_scale = 1;
 			else if (ret_code & 1) rt->time_scale /= 2;
+			if (ret_code & 1<<2) {
+				rt->pause = true;
+				break;
+			}
 		}
 		if (!rt->ignore_safety && rt->follow && rt->destination_to
-		    && rt->time_scale > 32 && cond2) {
+		    && rt->time_scale > 32 && rt->loop_stat.ev_swap_rpra) {
 			rt->time_scale = 1;
 			rt->pause = true;
 		}
@@ -622,6 +588,7 @@ static void argv_help(char *argv)
 	       "    -h        打印此信息\n"
 	       "    -t        增设三体天体\n"
 	       "    -i <FILE> 导入指定txt文件数据\n"
+	       "    -f <FILE> 指定存档文件（会读写）\n"
 	       "    -o <FILE> 程序运行结束后自动导出日志数据的文件\n"
 	       "    -s <SEED> 指定初始化种子\n"
 	       "    -E <ARGS> 根据参数单次运行模拟并退出(需要配合-i)\n"
@@ -634,12 +601,13 @@ int main(int argc, char *argv[])
 {
 	Runtimedata_t rt = {0};
 	rt.seed = time(NULL);
+	char *save_filename = NULL;
 	char *import_filename = NULL;
 	char *output_filename = NULL;
 	char *exec_cmd = NULL;
 	bool init_only = false;
 	int add_three_body = 0;
-	while ((rt.inp=getopt(argc, argv, "hHtps:i:o:E:")) != -1) {
+	while ((rt.inp=getopt(argc, argv, "hHtps:i:o:E:f:")) != -1) {
 		switch (rt.inp) {
 		case 'H':
 			print_qrh(true);
@@ -660,6 +628,9 @@ int main(int argc, char *argv[])
 		case 'o':
 			output_filename = optarg;
 			break;
+		case 'f':
+			save_filename = optarg;
+			break;
 		case 'E':
 			exec_cmd = optarg;
 			break;
@@ -677,13 +648,27 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 	srand(rt.seed);
-	const bool cond_default_init = !import_filename
-		|| !rt_load_from_dumped_text(&rt, import_filename);
+
+	/* 存档加载 */
+	bool cond_load_bin = save_filename;
+	if (save_filename && !rt_bin_load(&rt, save_filename)) {
+		struct stat buf = {};
+		if (lstat(save_filename, &buf) == 0 && buf.st_size != 0) {
+			printf("[ERROR] 加载二进制存档'%s'失败\n", save_filename);
+			rt_cleanup(&rt);
+			return EXIT_FAILURE;
+		}
+		cond_load_bin = false;
+	}
+	const bool cond_default_init = !cond_load_bin
+		&& (!import_filename
+		    || !rt_load_from_dumped_text(&rt, import_filename));
 	if (cond_default_init) {
 		if (import_filename)
 			printf("[WARN] 加载'%s'失败，改用加载默认场景\n", import_filename);
 		scene_init(&rt, add_three_body);
 	}
+
 	rt.camera->position = (Vec_t){0, 0, kunit2unit(1e6)};
 	rt.camera->dept = kunit2unit(1e8);
 	if (init_only) {
@@ -693,20 +678,9 @@ int main(int argc, char *argv[])
 		return EXIT_SUCCESS;
 	}
 	if (exec_cmd) {
-		if (cond_default_init) {
-			printf("[WARN] 应当加载存档再使用命令模式\n");
-			rt_cleanup(&rt);
-			return EXIT_FAILURE;
-		}
 		rt_exec_cmd(&rt, exec_cmd);
-		FILE *fp;
-		if (output_filename && (fp=fopen(output_filename, "a"))) {
-			fprintf(fp,
-				"[INFO] 保存时间:%ld\n"
-				"==== 航行日志 ====\n%s%.*s\n",
-				time(NULL), rt.logs.len ? rt.logs.p : "- 空 -\n",
-				(int)rt.buff.len, rt.buff.p);
-			fclose(fp);
+		if (save_filename && !rt_bin_save(&rt, save_filename)) {
+			printf("[ERROR] 存档'%s'保存错误", save_filename);
 		}
 		rt_cleanup(&rt);
 		return EXIT_SUCCESS;
@@ -734,6 +708,9 @@ int main(int argc, char *argv[])
 			(int)rt.buff.len, rt.buff.p);
 		fclose(fp);
 		break;
+	}
+	if (save_filename && !rt_bin_save(&rt, save_filename)) {
+		printf("[ERROR] 存档'%s'保存错误", save_filename);
 	}
 	rt_cleanup(&rt);
 	return EXIT_SUCCESS;

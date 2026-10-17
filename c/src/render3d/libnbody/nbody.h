@@ -49,6 +49,30 @@
 #define UI_ALPHA 200
 
 
+struct orbital_parameters {
+	char *typ;    /* 轨道类型字符串 */
+	double a;     /* 半轴长 */
+	double e;     /* 偏心率 */
+	double rp;    /* 近地点 */
+	double ra;    /* 远地点 */
+	double r;     /* 当前半径 */
+	double d_rp;  /* 距近地点 */
+	double d_ra;  /* 距远地点 */
+	double T;     /* 周期(秒) */
+	double Tp;    /* 距离抵达近地点时间 */
+	double Ta;    /* 距离抵达远地点时间 */
+	Vec_t point_rp;
+	Vec_t point_ra;
+	Vec_t u;    /* 轨道平面法向量(r * v) */
+};
+
+struct hohmann_orbital_parameters {
+	double theta;    /* 剩余角度，为0时最佳(rad) */
+	double expect_theta;    /* 期望角度提前量(rad) */
+	double T;    /* 半周期 */
+	double v;    /* 期望速度unit/s */
+};
+
 typedef struct {
 	SVA_t name;
 	Obj_t *obj;
@@ -60,7 +84,6 @@ typedef struct {
 	Vec_t center;         /* 中心位置 */
 	Camera_t cam;         /* 随身相机 */
 } Star_t;
-
 
 typedef struct {
 	RenderBackend_t *backend;
@@ -95,31 +118,16 @@ typedef struct {
 	bool hud_time_simple_format;
 	bool ignore_safety;
 	uint8_t need_notification;
+	struct {
+		Star_t *about_point;
+		Star_t *follow;
+		double e1;
+		double e2;
+		int8_t throttle_on;
+		bool ev_swap_rpra;
+		struct orbital_parameters obp;    /* 存储环绕参数 */
+	} loop_stat;    /* 存储游戏循环的上次、当前状态，日志用 */
 } Runtimedata_t;
-
-struct orbital_parameters {
-	char *typ;    /* 轨道类型字符串 */
-	double a;     /* 半轴长 */
-	double e;     /* 偏心率 */
-	double rp;    /* 近地点 */
-	double ra;    /* 远地点 */
-	double r;     /* 当前半径 */
-	double d_rp;  /* 距近地点 */
-	double d_ra;  /* 距远地点 */
-	double T;     /* 周期(秒) */
-	double Tp;    /* 距离抵达近地点时间 */
-	double Ta;    /* 距离抵达远地点时间 */
-	Vec_t point_rp;
-	Vec_t point_ra;
-	Vec_t u;    /* 轨道平面法向量(r * v) */
-};
-
-struct hohmann_orbital_parameters {
-	double theta;    /* 剩余角度，为0时最佳(rad) */
-	double expect_theta;    /* 期望角度提前量(rad) */
-	double T;    /* 半周期 */
-	double v;    /* 期望速度unit/s */
-};
 
 
 /* 辅助函数 */
@@ -136,8 +144,11 @@ void rt_sync_cam_size_scale(Runtimedata_t *rt);
 void rt_switch_camera(Runtimedata_t *rt, Camera_t *ca);
 SVA_t *rt_dump_stars(Runtimedata_t *rt, SVA_t *dest);
 bool rt_load_from_dumped_text(Runtimedata_t *rt, const char *filename);
+void rt_logevent(Runtimedata_t *rt);
 int rt_format_huds(Runtimedata_t *rt, SVA_t *dest, struct orbital_parameters ret);
 void rt_exec_cmd(Runtimedata_t *rt, char *cmd);
+bool rt_bin_save(Runtimedata_t *rt, const char *filename);
+bool rt_bin_load(Runtimedata_t *rt, const char *filename);
 
 /* 天体相关 */
 Star_t star_create(char *name, double mass, double radius, Vec_t position, Vec_t speed, Star_t *about_point);

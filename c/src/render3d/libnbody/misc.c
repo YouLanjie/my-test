@@ -89,7 +89,7 @@ static void print_starinfo(SVA_t *dest, Star_t *star, struct orbital_parameters 
 	const double Tp = dat.Tp == INFINITY ? 0 : dat.Tp;
 	const double Ta = dat.Ta == INFINITY ? 0 : dat.Ta;
 	printf("围绕天体: %s\n", star->name.p);
-	printf("轨道类型: %s (%.3f) \t| 周期: %g d\n", dat.typ, dat.e, sec2day(dat.T));
+	printf("轨道类型: %s (%.3f) \t| 周期: ["GT2YHMS_FMT"]\n", dat.typ, dat.e, gt2yhms_fmt(dat.T));
 	printf("当前高度: %.1f km \t| 半长轴: %.1f km\n", unit2km(dat.r), unit2km(dat.a));
 	printf("近地点: %.1f km \t| 远地点: %.1f km\n", unit2km(dat.rp), unit2km(dat.ra));
 	printf("距离近地点: ["GT2YHMS_FMT"] %.1f km\n", gt2yhms_fmt(Tp), unit2km(dat.d_rp));
@@ -119,14 +119,17 @@ SVA_t *voyage_helper(Runtimedata_t *rt, SVA_t *dest, Star_t *to)
 	printf("'%s' -> '%s'\n",
 	       from->name.p ? from->name.p : "Unknow",
 	       to->name.p ? to->name.p : "Unknow");
-	printf("距离：%.1f km\n", unit2km(distance));
+	printf("距离：%.1f km {%.3f,%.3f,%.3f}\n", unit2km(distance),
+	       unit2km(direct.x), unit2km(direct.y), unit2km(direct.z));
 	const Vec_t dv = vec_sub(from->speed, to->speed);
 	const double vertical_speed = vec_point_product(vec_direct(direct), dv);
-	printf("相对速度：%.1f km | 垂直速度： %.1f km\n", unit2km(vec_len(dv)), unit2km(vertical_speed));
+	printf("相对速度：%.1f km {%.3f,%.3f,%.3f}\n", unit2km(vec_len(dv)),
+	       unit2km(dv.x), unit2km(dv.y), unit2km(dv.z));
+	printf("垂直速度：%.1f km\n", unit2km(vertical_speed));
 	// printf("航向：{%.1f, %.1f, %.1f}\n", direct.x, direct.y, direct.z);
 	printf("理想圆轨线速度：%g km/s, 角速度：%g rad/s\n", unit2km(speed), speed/distance);
 	const double T = 2*M_PI/(speed/distance);
-	printf("理想圆轨周期：%.1f s | ["GT2YHMS_FMT"]\n", T, gt2yhms_fmt(T));
+	printf("理想圆轨周期：["GT2YHMS_FMT"]\n", gt2yhms_fmt(T));
 
 	/* 驾驶天体中心 */
 	Star_t *s1 = star_get_about_point(rt, from);
