@@ -391,24 +391,58 @@ void rt_exec_cmd(Runtimedata_t *rt, char *cmd)
 	       gt2yhms_fmt(t), time_scale, rt->time_scale_limit);
 	t += rt->gtime;
 	const double t0 = get_nowtime();
-	if (vec_len(dv) > 0) {
+	double t_acc = 0;
+	if (vec_len(dv) > 0 && rt->follow) {
 		if (!rt->throttle) rt->throttle = 1;
-		rt->time_scale = 1;
-		rt->throttle_on = 1;
-		const double T = vec_len(dv)/throttle2accel(rt->throttle) + rt->gtime;
-		while (rt->gtime < T) phy_update(rt);
-		rt->throttle_on = 0;
-	}
-	rt->time_scale = time_scale;
-	while (rt->gtime < t) phy_update(rt);
+		rt->time_scale = 32;
+		// rt->throttle_on = 1;
+		t_acc = vec_len(dv)/throttle2accel(rt->throttle);
+		printf("[INFO] 预期加速时间：%g s (dv=%gkm/s)\n", t_acc, vec_len(dv));
+		t_acc += rt->gtime;
+		rt_switch_camera(rt, &rt->follow->cam);
+		if (rt->active_cam) rt->active_cam->forward = vec_direct(dv);
+	} else rt->time_scale = time_scale;
 
-	printf("[INFO] 模拟结束\n航行日志：\n%s", rt->logs.len ? rt->logs.p : "- 空 -\n");
-	rt_dump_stars(rt, &rt->buff);
-	printf("%.*s", (int)rt->buff.len, rt->buff.p);
+	int ret_code;
+	bool flg_break = false;
+	while (rt->gtime < t && !flg_break) {
+		if (rt->throttle_on) {
+			if (rt->gtime >= t_acc) {
+				rt->throttle_on = 0;
+				rt->time_scale = time_scale;
+			} else if (rt->gtime+rt->time_scale >= t_acc && rt->time_scale >= 0.01) {
+				rt->time_scale /= 2;
+			}
+		}
+		phy_update(rt);
+		rt_logevent(rt);
+
+		for (int count = 0; count < 1024
+		     && (ret_code = rt_format_huds(rt, &rt->buff, rt->loop_stat.obp)); count++) {
+			if (ret_code & 1<<1) rt->time_scale = 1;
+			else if (ret_code & 1) rt->time_scale /= 2;
+			if (ret_code & 1<<2 || rt->need_notification) {
+				printf("[INFO] 因触发自动暂停事件而结束模拟\n");
+				flg_break = true;
+				break;
+			}
+		}
+		// printf("%s\n", rt->buff.p);
+
+		if (rt->gtime < t_acc && !rt->throttle_on) {
+			rt->throttle_on = 1;
+		}
+	}
+
+	printf("[INFO] 模拟结束\n[INFO] HUD显示：\n%s\n[INFO] 航行日志：\n%s",
+	       rt->buff.p ? rt->buff.p : "- 空 -",
+	       rt->logs.len ? rt->logs.p : "- 空 -\n");
 	if (rt->follow && rt->destination_to) {
 		voyage_helper(rt, &rt->buff, rt->destination_to);
-		printf("航程信息：\n%.*s", (int)rt->buff.len, rt->buff.p);
+		printf("[IFNO] 航程信息：\n%.*s", (int)rt->buff.len, rt->buff.p);
 	}
+	rt_dump_stars(rt, &rt->buff);
+	printf("%.*s", (int)rt->buff.len, rt->buff.p);
 	printf("[INFO] 程序实际运行挂钟时间：%.1f s\n", get_nowtime()-t0);
 	return;
 }

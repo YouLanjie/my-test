@@ -137,6 +137,7 @@ SVA_t *voyage_helper(Runtimedata_t *rt, SVA_t *dest, Star_t *to)
 	struct orbital_parameters dat = phy_get_orbital_parameters(from, s1);
 	printf("====== 当前(%s)轨道情况 ======\n", from->name.p);
 	print_starinfo(dest, s1, dat);
+	const Vec_t dv1 = vec_sub(from->speed, s1->speed);
 
 	/* 目标天体中心 */
 	Star_t *s2 = star_get_about_point(rt, to);
@@ -152,14 +153,18 @@ SVA_t *voyage_helper(Runtimedata_t *rt, SVA_t *dest, Star_t *to)
 		printf("半周期: ["GT2YHMS_FMT"]\n", gt2yhms_fmt(ret.T));
 		printf("提前角度: %.3g deg\n", ret.expect_theta/M_PI*180.);
 		printf("距点火点: %.3g deg\n", ret.theta/M_PI*180.);
-		printf("期望速度: %.3g km/s\n", unit2km(ret.v));
+		const Vec_t dv2 = vec_mul(vec_direct(dv1), ret.v-vec_len(dv1));
+		printf("期望速度: %.3g km/s | dv={%.3f,%.3f,%.3f}\n", unit2km(ret.v),
+		       unit2km(dv2.x), unit2km(dv2.y), unit2km(dv2.z));
 		struct close_approach_t ca;
 		if (s1 != s2) {
 			ret = phy_get_hohmann_orbit_theta(from, to, s2, s1);
 			printf("====== 次级霍曼轨道数据 ======\n");
 			printf("提前角度: %.3g deg\n", ret.expect_theta/M_PI*180.);
 			printf("距点火点: %.3g deg\n", ret.theta/M_PI*180.);
-			printf("期望速度: %.3g km/s\n", unit2km(ret.v));
+			const Vec_t dv2 = vec_mul(vec_direct(dv1), ret.v-vec_len(dv1));
+			printf("期望速度: %.3g km/s | dv={%.3f,%.3f,%.3f}\n", unit2km(ret.v),
+			       unit2km(dv2.x), unit2km(dv2.y), unit2km(dv2.z));
 		} else if ((ca = phy_two_body_closest_approach(from, to, s2)).valid) {
 			printf("实验性计算: '%s' 与 '%s' 将在 %.2f 天后接近至 %.1f km\n",
 			       from->name.p, to->name.p, sec2day(ca.time), unit2km(ca.distance));

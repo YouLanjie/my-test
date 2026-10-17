@@ -196,6 +196,7 @@ static void phy_update_step(Runtimedata_t *rt, double time_scale)
 	}
 	if (rt->throttle_on&1 && rt->throttle && rt->follow) {
 		double accel = throttle2accel(rt->throttle) * time_scale * (rt->throttle_on&0b10?-1:1);
+		/* 加速方向取决于活动相机前向方向 */
 		rt->follow->speed = vec_add(rt->follow->speed, vec_mul(vec_direct(rt->active_cam->forward), accel));
 		rt->dv += fabs(accel);
 	}

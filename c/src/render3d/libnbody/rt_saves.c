@@ -52,9 +52,10 @@ static bool read_header(Runtimedata_t *rt, struct save_header *header)
 	if (header->star_num <= 0)
 		return false;
 	rt->gtime = lef2h(header->gtime);
-	rt->dv = lef2h(header->dv);
+	rt->dv = km2unit(lef2h(header->dv));
 	rt->seed = le64toh(header->seed);
 	header->star_num = le64toh(header->star_num);
+	header->save_time = le64toh(header->save_time);
 	return true;
 }
 
@@ -73,7 +74,7 @@ static struct save_star {
 	double omiga;    /* 自转速度 */
 	uint64_t name_len;
 	uint8_t color[4];    /* 颜色码 */
-	uint8_t padding[4];    /* 显式对齐80字节 */
+	uint8_t padding[4];    /* 显式对齐余下4字节 */
 } create_save_star(Star_t *star)
 {
 	struct save_star dat = {
@@ -99,7 +100,7 @@ static struct save_star {
 	dat.color[1] = c.g;
 	dat.color[2] = c.b;
 	dat.color[3] = c.a;
-	dat.name_len = h2lef(star->name.len);
+	dat.name_len = htole64(star->name.len);
 	return dat;
 }
 
@@ -167,9 +168,9 @@ bool rt_bin_load(Runtimedata_t *rt, const char *filename)
 			ret = false;
 			/* 限制名字长度 */
 			const uint64_t len = le64toh(star.name_len) % 1024;
-			if (!len) break;
-			char buf[len+10] = {};
-			if (fread(buf, 1, len, fp) < len) break;
+			char buf[len+20];
+			sprintf(buf, "未命名天体%lu", i);
+			if (len && (fread(buf, 1, len, fp) < len || (buf[len]=0))) break;
 			if (!read_star(rt, &star, buf)) break;
 			ret = true;
 		}
@@ -178,6 +179,7 @@ bool rt_bin_load(Runtimedata_t *rt, const char *filename)
 			break;
 		}
 		char buf[] = MAGIC_LOG;
+		/* 若无有效日志块则直接跳过 */
 		if (fread(buf, 1, sizeof(buf), fp) != sizeof(buf)
 		    || memcmp(buf, (char[])MAGIC_LOG, sizeof(buf)) != 0)
 			break;
