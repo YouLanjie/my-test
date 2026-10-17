@@ -439,7 +439,7 @@ void rt_exec_cmd(Runtimedata_t *rt, char *cmd)
 	       rt->logs.len ? rt->logs.p : "- 空 -\n");
 	if (rt->follow && rt->destination_to) {
 		voyage_helper(rt, &rt->buff, rt->destination_to);
-		printf("[IFNO] 航程信息：\n%.*s", (int)rt->buff.len, rt->buff.p);
+		printf("[INFO] 航程信息：\n%.*s", (int)rt->buff.len, rt->buff.p);
 	}
 	rt_dump_stars(rt, &rt->buff);
 	printf("%.*s", (int)rt->buff.len, rt->buff.p);

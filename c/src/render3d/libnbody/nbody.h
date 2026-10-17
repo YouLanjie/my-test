@@ -37,8 +37,10 @@
 #define sec2day(sec) ((sec)/60./60./24.)
 #define GT2YHMS_FMT "%3dd %02d:%02d:%04.1f"
 #define gt2yhms_fmt(gt)\
-	(int)sec2day(gt), (int)fmod((gt)/60./60., 24), \
-	(int)fmod((gt)/60., 60), fmod((gt), 60)
+	(int)sec2day(gt), \
+	((isnormal(gt) && (gt)>=0) ? (int)fmod((gt)/60./60., 24): 0), \
+	((isnormal(gt) && (gt)>=0) ? (int)fmod((gt)/60., 60) : 0), \
+	((isnormal(gt) && (gt)>=0) ? fmod((gt), 60) : 0)
 /* 将推力值转换为加速度(km/s^2)
  * 1% = 0.1m/s^2 = 0.1/1e3 km/s^2 */
 #define throttle2accel(thr) m2unit(thr*0.1)

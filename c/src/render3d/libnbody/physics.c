@@ -383,8 +383,10 @@ phy_get_hohmann_orbit_theta(Star_t *follow, Star_t *destination_to,
 	}
 	/* 算法借用自get_orbital_parameters()
 	 * 计算在霍曼轨道速度下的双曲线曲率 */
+	/* 日地速度 */
 	const Vec_t v1 = vec_direct(vec_sub(about_point->speed, dest_about_point->speed));
-	const Vec_t v2 = vec_mul(v1, ret.v);
+	/* 将当前位置的地卫速度倍乘到目标速度 */
+	const Vec_t v2 = vec_mul(vec_direct(vec_sub(follow->speed, about_point->speed)), ret.v);
 	const double e = vec_len(vec_mul(vec_sub(vec_mul(r3, vec_point_product(v2,v2)-mu2/vec_len(r3)),
 						 vec_mul(v2, vec_point_product(r3,v2))), 1/mu2));
 	ret.expect_theta = asin(1/e);
