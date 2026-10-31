@@ -7,6 +7,7 @@
 
 #include "../include/path.h"
 #include <dirent.h>
+#include <errno.h>
 
 SV_t path_basename(SV_t path)
 {
@@ -118,17 +119,36 @@ Path_t *path_join(Path_t *path, SV_t child)
 	return path_normalize(path);
 }
 
-Path_t *path_relative(Path_t *path, SV_t base)
+Path_t *path_getcwd(Path_t *dest)
+{
+	if (!dest) return NULL;
+	sva_adjust_minimun(dest, 125);
+	if (!dest->p || !dest->capacity) return NULL;
+	while (!getcwd(dest->p, dest->capacity)) {
+		if (errno != EAGAIN) {
+			return NULL;
+		}
+		if (!sva_double(dest) || !dest->p || !dest->capacity) return NULL;
+	}
+	dest->len = strlen(dest->p);
+	return dest;
+}
+
+Path_t *path_relative_cwd(Path_t *path, SV_t base, SV_t cwd)
 {
 	if (!path || !path->p || !path->len || !base.p || !base.len)
 		return path;
-	if ((path->p[0] == '/' || base.p[0] == '/') && path->p[0] != base.p[0]) {
-		sva_clear(path);
-		return path;
-	}
 	Path_t tmp = {};
 	sva_from_sv(&tmp, base);
 	if (!tmp.p) return NULL;
+	/* 混合路径，尝试使用CWD补全 */
+	if ((path->p[0] == '/' || base.p[0] == '/') && path->p[0] != base.p[0]
+	    && (!cwd.p || !cwd.len || *cwd.p != '/'
+		|| !sva_prepend(sva_prepend(path->p[0] == '/' ? &tmp : path, sv_from_lstr("/")), cwd))) {
+		sva_free(&tmp);
+		sva_clear(path);
+		return NULL;
+	}
 	path_normalize(path);
 	path_normalize(&tmp);
 	/* 寻找共同基目录 */
@@ -167,6 +187,15 @@ Path_t *path_relative(Path_t *path, SV_t base)
 	path_normalize(sva_from_sva(path, &tmp));
 	sva_free(&tmp);
 	return path;
+}
+
+Path_t *path_relative_abs(Path_t *path, SV_t base)
+{
+	Path_t cwd = {};
+	path_getcwd(&cwd);
+	Path_t *ret = path_relative_cwd(path, base, sv_from_sva(&cwd));
+	sva_free(&cwd);
+	return ret;
 }
 
 Path_t *path_quote(Path_t *path)

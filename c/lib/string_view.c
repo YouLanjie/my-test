@@ -7,6 +7,7 @@
 
 #include "../include/string_view.h"
 #include <stdlib.h>
+#include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
 
@@ -300,6 +301,7 @@ SVA_t *sva_smallest(SVA_t *s)
 SVA_t *sva_double(SVA_t *s)
 {
 	if (!s || s->capacity == 0 || s->p == NULL) return NULL;
+	if (s->capacity >= SIZE_MAX/2) return NULL;
 	s->capacity *= 2;
 	char *old_p = s->p;
 	s->p = realloc(s->p, s->capacity);
@@ -331,10 +333,32 @@ SVA_t *sva_adjust_minimun(SVA_t *s, size_t size)
 
 SVA_t *sva_append(SVA_t *ret, SV_t sv)
 {
-	if (!ret || sva_check_sv_inside(ret, sv)) return NULL;
-	if (!sv.p) return ret;
+	if (!ret) return NULL;
+	if (!sv.p && sv.len) return NULL;
+	if (!sv.len) return ret;
+	if (ret->len >= SIZE_MAX - sv.len) return NULL;
+	const bool inside = sva_check_sv_inside(ret, sv);
+	const size_t offset = inside ? sv.p - ret->p : 0;
 	if (!sva_adjust_minimun(ret, ret->len+sv.len+1)) return NULL;
+	if (inside) sv.p = ret->p+offset;
 	memmove(ret->p+ret->len, sv.p, sv.len);
+	ret->len += sv.len;
+	ret->p[ret->len] = 0;
+	return ret;
+}
+
+SVA_t *sva_prepend(SVA_t *ret, SV_t sv)
+{
+	if (!ret) return NULL;
+	if (!sv.p && sv.len) return NULL;
+	if (!sv.len) return ret;
+	if (ret->len >= SIZE_MAX - sv.len) return NULL;
+	const bool inside = sva_check_sv_inside(ret, sv);
+	const size_t offset = inside ? sv.p - ret->p : 0;
+	if (!sva_adjust_minimun(ret, ret->len+sv.len+1)) return NULL;
+	if (ret->len) memmove(ret->p+sv.len, ret->p, ret->len);
+	if (inside) sv.p = ret->p+offset+sv.len;
+	memmove(ret->p, sv.p, sv.len);
 	ret->len += sv.len;
 	ret->p[ret->len] = 0;
 	return ret;

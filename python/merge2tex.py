@@ -324,7 +324,7 @@ class Config:
 #${template.body}
 
 \theendnotes
-#${template.cols.end}
+#${template.cols.end}#${template.ruler2}
 \end{document}
 """
     latex_template_toc = r"""#${template.toc_cols.begin}
@@ -340,12 +340,32 @@ class Config:
 字体大小：卷:#${setting.fontsizes.sections.section}pt,章:#${setting.fontsizes.sections.subsection}pt,节:#${setting.fontsizes.sections.subsubsection}pt,正文:#${setting.fontsize}pt,页脚:#${setting.fontsizes.footer}pt
 字词统计：#${counter.words}""".splitlines()) + "\n\n【页面设置结束】"
     latex_template_fgruler = r"""
-\usepackage[type=user]{fgruler}
-\fgrulerdefuser{
-    \ifnum\value{page}<3\relax
-        \fgrulertype{\fgrulerunit}{alledges}
-    \fi
-}
+\usepackage{layouts}
+\usepackage[type=none]{fgruler}
+"""
+    latex_template_fgruler2 = r"""
+
+% \newpage
+\fgruler*{alledges}
+\fgruler*{alledgesT}
+
+\noindent
+\ruler[cm]{taperight}{\textwidth}
+
+\noindent
+\ruler[in]{taperight}{\textwidth}
+
+以下是页面尺寸信息
+
+\begin{multicols}{2}
+\begin{itemize}
+\printinunitsof{cm}
+\item 页面宽度：\prntlen{\paperwidth}
+\item 页面高度：\prntlen{\paperheight}
+\item 文本宽度：\prntlen{\textwidth}
+\item 文本宽度：\prntlen{\textheight}
+\end{itemize}
+\end{multicols}
 """
     latex_template_setfont = [r"""\setmainfont{#${setting.fontname}}
 \setCJKmainfont{#${setting.fontname}}
@@ -458,6 +478,7 @@ class Config:
         k["template.mktoc"] = Template2(self.latex_template_toc).safe_substitute(k) \
                 if k["setting.mktoc"] else ""
         k["template.ruler"] = self.latex_template_fgruler if k["setting.ruler"] else ""
+        k["template.ruler2"] = self.latex_template_fgruler2 if k["setting.ruler"] else ""
         k["template.fontname"] = org2.tex_escape(str(k["setting.fontname"]))
         k["template.gen_info"] = Template2(self.latex_template_info).safe_substitute(k) \
                 if k["setting.gen_info"] else ""

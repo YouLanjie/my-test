@@ -87,8 +87,10 @@ SVA_t *sva_smallest(SVA_t *s);
 SVA_t *sva_double(SVA_t *s);
 /* 调整确保内存容量大等于size */
 SVA_t *sva_adjust_minimun(SVA_t *s, size_t size);
-/* 不允许追加来自自身的切片 */
+/* 允许追加来自自身的切片 */
 SVA_t *sva_append(SVA_t *ret, SV_t sv);
+/* 在sva头部追加sv的内容，允许追加来自自身的切片 */
+SVA_t *sva_prepend(SVA_t *ret, SV_t sv);
 SVA_t *sva_sprintf(SVA_t *ret,char *fmt, ...) __attribute__((format(printf, 2, 3)));
 SVA_t *sva_sprintfcat(SVA_t *ret, char *fmt, ...) __attribute__((format(printf, 2, 3)));
 #define sva_cmp(s1, s2) sv_cmp(sv_from_sva(s1), sv_from_sva(s2))

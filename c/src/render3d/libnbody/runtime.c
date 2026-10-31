@@ -394,7 +394,7 @@ void rt_exec_cmd(Runtimedata_t *rt, char *cmd)
 	double t_acc = 0;
 	if (vec_len(dv) > 0 && rt->follow) {
 		if (!rt->throttle) rt->throttle = 1;
-		rt->time_scale = 32;
+		rt->time_scale = 0.001;
 		// rt->throttle_on = 1;
 		t_acc = vec_len(dv)/throttle2accel(rt->throttle);
 		printf("[INFO] 预期加速时间：%g s (dv=%gkm/s)\n", t_acc, vec_len(dv));
@@ -429,7 +429,9 @@ void rt_exec_cmd(Runtimedata_t *rt, char *cmd)
 		}
 		// printf("%s\n", rt->buff.p);
 
+		/* 先经历短暂的一次回合再执行加速操作以式日志正常工作 */
 		if (rt->gtime < t_acc && !rt->throttle_on) {
+			rt->time_scale = time_scale > 32 ? 32 : time_scale;
 			rt->throttle_on = 1;
 		}
 	}

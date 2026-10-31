@@ -64,10 +64,16 @@ Path_t * path_normalize(Path_t *path);
  * @return 拼接后路径
  */
 Path_t *path_join(Path_t *path, SV_t child);
+/* 获取程序当前cwd */
+Path_t *path_getcwd(Path_t *dest);
 /* 获取path相对于base的逻辑相对路径(原地修改)
  * 期望base为一个目录，结果会类似于`base/../path`
- * 若path/base为相对、绝对混合路径则会置空path */
-Path_t *path_relative(Path_t *path, SV_t base);
+ * 若path/base为相对、绝对混合路径则会尝试使用cwd修补，失败则置空path */
+Path_t *path_relative_cwd(Path_t *path, SV_t base, SV_t cwd);
+/* path_relative_cwd别名但直接忽略cwd */
+#define path_relative(path, base) path_relative_cwd((path), (base), (SV_t){})
+/* 调用path_relative_cwd，内部自动查询cwd并填入 */
+Path_t *path_relative_abs(Path_t *path, SV_t base);
 /* 将path的内容包裹转义成shell参数(自动包裹单引号) */
 Path_t *path_quote(Path_t *path);
 /* 通过lstat()获取文件状态(不跟随符号链接) */

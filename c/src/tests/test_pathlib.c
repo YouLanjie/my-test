@@ -9,19 +9,22 @@
 
 int main(int argc, char *argv[])
 {
+	Path_t cwd = {};
         Path_t path = {};
         Path_t last = {};
+	path_getcwd(&cwd);
+	printf("CWD: '%s'\n", cwd.p);
         for (int i = 0; i < argc; i++) {
                 sva_from_cstr(&path, argv[i]);
                 path_normalize(&path);
                 SV_t sv = path_basename(sv_from_sva(&path));
                 SV_t stem = path_stemname(sv_from_sva(&path));
-                printf("ARGV[%d] '%s' \e[2m(BASENAME:'%.*s' STEM:'%.*s')\e[0m\n",
+                printf("\e[1mARGV[%d]\e[0m \e[33m'%s'\e[0m \e[2m(BASENAME:'%.*s' STEM:'%.*s')\e[0m\n",
                        i, path.p, (int)sv.len, sv.p,
                        (int)stem.len, stem.p);
 		if (last.p) {
-			path_relative(&last, sv_from_sva(&path));
-			if (last.len) printf("    -> ARGV[%d] '%s'\n", i-1, last.p);
+			path_relative_cwd(&last, sv_from_sva(&path), sv_from_sva(&cwd));
+			if (last.len) printf("    \e[36m-> ARGV[%d]\e[0m \e[33m'%s'\e[0m\n", i-1, last.p);
 		}
 		sva_from_sva(&last, &path);
         }
