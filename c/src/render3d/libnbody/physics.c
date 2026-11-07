@@ -358,7 +358,7 @@ phy_get_hohmann_orbit_theta(Star_t *follow, Star_t *destination_to,
 	const double omiga = M_PI - (sqrt(mu/r2f) / r2f)*T/2;
 	/* 使用了跟踪天体平面 */
 	const double rtheta = vec_angle2d(r1, r2, vec_sub(follow->speed, dest_about_point->speed));
-	const double theta = fmod(rtheta - fmod(omiga, 2*M_PI) + M_PI, 2*M_PI);
+	const double theta = fmod(rtheta - fmod(omiga, 2*M_PI) + M_PI, 2*M_PI) * (r2f>r1f?1.:-1.);
 	struct hohmann_orbital_parameters ret = {
 		.expect_theta = omiga,
 		.theta = (theta<0?theta+2*M_PI:theta)-M_PI,
@@ -368,12 +368,13 @@ phy_get_hohmann_orbit_theta(Star_t *follow, Star_t *destination_to,
 	if (!about_point || about_point->mass <= 0 || about_point == dest_about_point)
 		return ret;
 
+	/* 二阶霍曼计算(日绕地时) */
 	const double mu2 = G_unit*about_point->mass;
 	/* 日卫向量沿日卫速度方向的垂直（径向）向量 */
 	const Vec_t v4 = vec_cross_product(vec_cross_product(r1, vec_sub(follow->speed, dest_about_point->speed)), r1);
 	/* 计算霍曼转移理想速度(对日速度)（速度乘以方向） */
 	const Vec_t v3 = vec_mul(vec_direct(v4), ret.v);
-	/* 日心速度转地心速度 */
+	/* 日心速度转地心速度(日心转绝对再转地心) */
 	ret.v = vec_len(vec_sub(vec_add(v3, dest_about_point->speed), about_point->speed));
 	/* 根据预期剩余速度计算期望速度(对地速度) */
 	const Vec_t r3 = vec_sub(follow->center, about_point->center);
@@ -384,14 +385,14 @@ phy_get_hohmann_orbit_theta(Star_t *follow, Star_t *destination_to,
 	/* 算法借用自get_orbital_parameters()
 	 * 计算在霍曼轨道速度下的双曲线曲率 */
 	/* 日地速度 */
-	const Vec_t v1 = vec_direct(vec_sub(about_point->speed, dest_about_point->speed));
+	const Vec_t v1 = vec_mul(vec_direct(vec_sub(about_point->speed, dest_about_point->speed)), r2f>r1f?1.:-1.);
 	/* 将当前位置的地卫速度倍乘到目标速度 */
 	const Vec_t v2 = vec_mul(vec_direct(vec_sub(follow->speed, about_point->speed)), ret.v);
 	const double e = vec_len(vec_mul(vec_sub(vec_mul(r3, vec_point_product(v2,v2)-mu2/vec_len(r3)),
 						 vec_mul(v2, vec_point_product(r3,v2))), 1/mu2));
 	ret.expect_theta = asin(1/e);
 	ret.theta = fmod(vec_angle2d(vec_sub(follow->speed, about_point->speed), v1, vec_mul(r3,-1))
-			 -asin(1/e)+M_PI, 2*M_PI)-M_PI;
+			 -ret.expect_theta+M_PI, 2*M_PI)-M_PI;
 	return ret;
 }
 

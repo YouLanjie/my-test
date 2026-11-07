@@ -300,7 +300,7 @@ int rt_format_huds(Runtimedata_t *rt, SVA_t *dest, struct orbital_parameters ret
 		/* 启用二阶霍曼轨道计算 */
 		mode = 2;
 	}
-	if (!mode && ret.e > 1 && ret.Tp < 2*30*24*60*60) {
+	if (!mode && ret.e > 1 && ret.Tp < 12*30*24*60*60) {
 		/* 正在环绕目标天体 */
 		printf(" L:["GT2YHMS_FMT"]", gt2yhms_fmt(ret.Tp));
 		if (!rt->ignore_safety
