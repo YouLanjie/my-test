@@ -62,6 +62,11 @@ void print_pager(const char *headline, SV_t content, int mode)
 				count = 0;
 				printf("\e[31m-- 已经到顶咯\e[0m\n==== %s ====\n", headline);
 			}
+		} else if (ch == 'U') {
+			mode = -2;
+			printf("\e[31m-- 打印全文\e[0m\n==== %s ====\n", headline);
+			left = content;
+			count = 0;
 		}
 		start = count+1;
 	}
@@ -130,6 +135,12 @@ SVA_t *voyage_helper(Runtimedata_t *rt, SVA_t *dest, Star_t *to)
 	printf("理想圆轨线速度：%g km/s, 角速度：%g rad/s\n", unit2km(speed), speed/distance);
 	const double T = 2*M_PI/(speed/distance);
 	printf("理想圆轨周期：["GT2YHMS_FMT"]\n", gt2yhms_fmt(T));
+	printf("== 航行能力：\n燃料:%.6g/%.6gkg [%.1f%%] || 消耗/喷气速度:%.3gkg/s,%.3gkm/s\n"
+	       "当前最大加速度:%.3gm/s² || 可用dv:%.3gkm/s\n",
+	       from->fuel_mass, from->fuel_cap, from->fuel_mass/from->fuel_cap*100.,
+	       from->fuel_flow, from->fuel_spd*1e-3,
+	       from->fuel_flow*from->fuel_spd/from->mass,
+	       from->fuel_spd*1e-3*log(from->mass/(from->mass-from->fuel_mass)));
 
 	/* 驾驶天体中心 */
 	Star_t *s1 = star_get_about_point(rt, from);
@@ -137,12 +148,13 @@ SVA_t *voyage_helper(Runtimedata_t *rt, SVA_t *dest, Star_t *to)
 	struct orbital_parameters dat = phy_get_orbital_parameters(from, s1);
 	printf("====== 当前(%s)轨道情况 ======\n", from->name.p);
 	print_starinfo(dest, s1, dat);
-	const Vec_t dv1 = vec_sub(from->speed, s1->speed);
+	if (from == to) return dest;
 
 	/* 目标天体中心 */
 	Star_t *s2 = star_get_about_point(rt, to);
 	/* 驾驶天体中心的中心 */
 	Star_t *s3 = s1 != s2 ? star_get_about_point(rt, s1) : NULL;
+	const Vec_t dv1 = vec_sub(from->speed, s1->speed);
 	if ((s1 == s2 || s3 == s2) && s1 != to && s2 != from) {
 		struct orbital_parameters dat2 = phy_get_orbital_parameters(to, s2);
 		printf("====== 目标(%s)共轨情况 ======\n", to->name.p);

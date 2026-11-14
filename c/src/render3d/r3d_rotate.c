@@ -220,12 +220,14 @@ static bool input_handle(Runtimedata_t *rt)
 		}
 		rt_switch_camera(rt, &rt->follow->cam);
 		rt->about_point = star_get_about_point(rt, rt->follow);
-		Vec_t direct = rt->about_point ? vec_sub(rt->follow->speed, rt->about_point->speed) : rt->follow->speed;
-		if (vec_len(direct) == 0) direct = rt->active_cam->forward;
-		direct = vec_direct(direct);
+		Vec_t v = rt->about_point ? vec_sub(rt->follow->speed, rt->about_point->speed) : rt->follow->speed;
+		if (vec_len(v) == 0) v = rt->active_cam->forward;
+		v = vec_direct(v);
 		const double distance = vec_len(vec_sub(rt->active_cam->position, rt->follow->center));
-		rt->active_cam->position = vec_add(rt->follow->center, vec_mul(direct, -distance));
-		camera_look_no_hold(rt->active_cam, rt->follow->center);
+		rt->active_cam->position = vec_add(rt->follow->center, vec_mul(v, -distance));
+		const Vec_t up = vec_direct(vec_cross_product(rt->about_point ? vec_sub(rt->follow->center, rt->about_point->center) : rt->follow->center, v));
+		if (vec_len(up) > 0) camera_look(rt->active_cam, rt->follow->center, up);
+		else camera_look_no_hold(rt->active_cam, rt->follow->center);
 		break;
 	case 't': rt->destination_to = star_choose(rt, "驶向", rt->destination_to); break;
 	case 'F': rt->look_to = star_choose(rt, "看向", rt->look_to); break;
@@ -327,25 +329,10 @@ static bool input_handle(Runtimedata_t *rt)
 	case '>': cam_rotate(v_up, -M_PI/4);break;
 #undef cam_rotate
 	}
-	if (!rt->follow) return true;
-
-	/* 手动加速,并记录操作dv(禁止暂停加速) */
-	const double accel = !rt->pause ? throttle2accel(rt->throttle)/rt->fps : 0;
-#define accelerate(var, k) rt->follow->speed = vec_add(rt->follow->speed, vec_mul((var), (k))), rt->dv += accel
-	switch (rt->inp) {
-	case 'n': accelerate(v_forward, accel); break;
-	case 'N': accelerate(v_forward, 10*accel); break;
-	case 'b': accelerate(v_forward, -accel); break;
-	case 'B': accelerate(v_forward, -10*accel); break;
-	case 'w': accelerate(v_up, accel); break;
-	case 's': accelerate(v_up, -accel); break;
-	case 'a': accelerate(v_right, -accel); break;
-	case 'd': accelerate(v_right, accel); break;
-#undef accelerate
-	}
 #undef v_forward
 #undef v_up
 #undef v_right
+	if (!rt->follow) return true;
 	return true;
 }
 
@@ -372,14 +359,14 @@ static void scene_init_solar(Runtimedata_t *rt)
 	da_append(&rt->objs, &star);
 	center = da_get(&rt->objs, rt->objs.len-1);
 
-	star = star_create("地球小卫星", 1, 0.5, (Vec_t){12000,0,0}, vec_xyzl(0, 1, 0.8, 5.75993), center);
+	star = star_create("地球小卫星", 1e3, 10e-3, (Vec_t){12000,0,0}, vec_xyzl(0, 1, 0.8, 5.75993), center);
 	obj_set_color(star.obj, (Color_t){-1,30,30,200});
 	da_append(&rt->objs, &star);
 
 	// GM = Rv^2
 	// > sqrt((6.67*10^-11) * (5.965*10^24) / (11000*1000))/1000
 	// 6.0141159707
-	star = star_create("地球大卫星", 1e10, 450, (Vec_t){-42164,0,0}, vec_xyzl(0, -1, 0, 3.07282), center);
+	star = star_create("地球大卫星", 20e3, 50e-3, (Vec_t){-42164,0,0}, vec_xyzl(0, -1, 0, 3.07282), center);
 	obj_set_color(star.obj, (Color_t){0,-1,30,200});
 	da_append(&rt->objs, &star);
 
@@ -674,6 +661,9 @@ int main(int argc, char *argv[])
 	if (init_only) {
 		rt_dump_stars(&rt, &rt.buff);
 		printf("%.*s\n", (int)rt.buff.len, rt.buff.p);
+		if (rt.logs.p && rt.logs.len) {
+			printf("航行日志：\n%s", rt.logs.p);
+		}
 		rt_cleanup(&rt);
 		return EXIT_SUCCESS;
 	}

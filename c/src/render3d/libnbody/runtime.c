@@ -102,28 +102,39 @@ SVA_t *rt_dump_stars(Runtimedata_t *rt, SVA_t *dest)
 	sva_clear(dest);
 	printf("===== 数据导出：各星体基本参数 =====\n");
 	Color_t c = COLOR_WHITE;
+	double dv = 0;
 	for (size_t i = 0; i < rt->objs.len; i++) {
-		if (!objs[i].obj) continue;
-		if (objs[i].obj->count_point > 1 && objs[i].obj->colors) {
-			c = objs[i].obj->colors[0];
+		Star_t * const s = objs+i;
+		if (!s->obj) continue;
+		if (s->obj->count_point > 1 && s->obj->colors) {
+			c = s->obj->colors[0];
 		}
 		printf(" [%lu] %s (%gkg/r=%gkm) "
 		       "位置(km): {%.3f,%.3f,%.3f} "
 		       "速度(km/s): {%.3f,%.3f,%.3f} "
-		       "(#%.2X%.2X%.2X%.2X)\n", i+1,
-		       objs[i].name.p ? objs[i].name.p : "{未命名星体}",
-		       objs[i].mass, unit2km(objs[i].radius),
-		       unit2km(objs[i].center.x),
-		       unit2km(objs[i].center.y),
-		       unit2km(objs[i].center.z),
-		       unit2km(objs[i].speed.x),
-		       unit2km(objs[i].speed.y),
-		       unit2km(objs[i].speed.z),
+		       "(#%.2X%.2X%.2X%.2X)", i+1,
+		       s->name.p ? s->name.p : "{未命名星体}",
+		       s->mass, unit2km(s->radius),
+		       unit2km(s->center.x),
+		       unit2km(s->center.y),
+		       unit2km(s->center.z),
+		       unit2km(s->speed.x),
+		       unit2km(s->speed.y),
+		       unit2km(s->speed.z),
 		       c.r, c.g, c.b, c.a);
+		dv += s->dv;
+		/* 若大概是初始化状态则忽略 */
+		if (s->dv <= 0 && s->fuel_cap == s->mass/2.) {
+			printf("\n");
+			continue;
+		}
+		printf(" [fuel=%.5g/%.5gkg,flow=%.5gkg/s,spd=%.5gm/s,dv=%.3fkm/s]\n",
+		       s->fuel_mass, s->fuel_cap,
+		       s->fuel_flow, s->fuel_spd,
+		       unit2km(s->dv));
 	}
-	printf("游戏时间: T+%lfs, [T+"GT2YHMS_FMT"]\n",
-	       rt->gtime, gt2yhms_fmt(rt->gtime));
-	printf("操作累计dv: %.3f km/s\n", unit2km(rt->dv));
+	printf("游戏时间: T+%lfs, [T+"GT2YHMS_FMT"]\n", rt->gtime, gt2yhms_fmt(rt->gtime));
+	printf("操作累计dv: %.3f km/s\n", unit2km(dv));
 	printf("初始化种子: %d\n", rt->seed);
 #undef printf
 	return dest;
@@ -143,20 +154,29 @@ bool rt_load_from_dumped_text(Runtimedata_t *rt, const char *filename)
 	double radius = 0;
 	double Px = 0, Py = 0, Pz = 0;
 	double Vx = 0, Vy = 0, Vz = 0;
-	double gtime = 0;
+	double fuel_mass = 0, fuel_cap = 0, fuel_flow = 0, fuel_spd = 0;
 	double dv = 0;
+	double gtime = 0;
 	uint32_t seed = 0;
 	Color_t c;
 	Star_t star;
 	while (fgets(buf, sizeof(buf), fp)) {
 		c = COLOR_WHITE;
-		ret = sscanf(buf, " [%lu] %s (%lgkg/r=%lgkm) 位置(km): {%lf,%lf,%lf} 速度(km/s): {%lf,%lf,%lf} (#%2hhX%2hhX%2hhX%2hhX)",
+		ret = sscanf(buf, " [%lu] %s (%lgkg/r=%lgkm) 位置(km): {%lf,%lf,%lf} 速度(km/s): {%lf,%lf,%lf} (#%2hhX%2hhX%2hhX%2hhX) "
+			     "[ fuel = %lg / %lg kg , flow = %lg kg/s , spd = %lg m/s , dv = %lf km/s ]",
 			     &idx, name, &mass, &radius, &Px, &Py, &Pz, &Vx, &Vy, &Vz,
-			     &c.r, &c.g, &c.b, &c.a);
-		if (ret >= 10) {
+			     &c.r, &c.g, &c.b, &c.a, &fuel_mass, &fuel_cap, &fuel_flow, &fuel_spd, &dv);
+		if (ret >= 14) {
 			count++;
 			star = star_create(name, mass, radius, (Vec_t){Px,Py,Pz}, (Vec_t){Vx,Vy,Vz}, NULL);
-			if (ret >= 14) obj_set_color(star.obj, c);
+			obj_set_color(star.obj, c);
+			if (ret >= 19) {
+				star.fuel_mass = fuel_mass;
+				star.fuel_cap = fuel_cap;
+				star.fuel_flow = fuel_flow;
+				star.fuel_spd = fuel_spd;
+				star.dv = dv;
+			}
 			da_append(&rt->objs, &star);
 			continue;
 		}
@@ -168,7 +188,6 @@ bool rt_load_from_dumped_text(Runtimedata_t *rt, const char *filename)
 	if (count <= 0) return false;
 
 	if (seed) rt->seed = seed;
-	rt->dv = km2unit(dv);
 	rt->gtime = gtime;
 	rt->pause = true;
 
@@ -180,51 +199,90 @@ bool rt_load_from_dumped_text(Runtimedata_t *rt, const char *filename)
 	return true;
 }
 
+static void rt_log_follow_status(Runtimedata_t *rt)
+{
+	if (!rt || !rt->follow) return;
+	const char *about_point_name = rt->about_point && rt->about_point->name.p
+		? rt->about_point->name.p : "未知天体";
+	rtlog(rt, "%s[%s]:累计dv:%.3gkm/s, 剩余燃料:%.3gkg, 可用dv:%.3gkm/s",
+	      rt->follow->name.p, about_point_name,
+	      unit2km(rt->follow->dv), rt->follow->fuel_mass,
+	      rt->follow->fuel_spd*1e-3*log(rt->follow->mass/(rt->follow->mass-rt->follow->fuel_mass)));
+	/* 需要m/s转km/s */
+}
+
+/* 执行 dv(unit/s) 所需时间，秒；不可达返回 INFINITY */
+static double rt_star_time_for_dv(Runtimedata_t *rt, double dv)
+{
+	if (!rt || !rt->follow || !rt->throttle || dv == 0) return 0;
+	const Star_t *s = rt->follow;
+	if (s->fuel_flow <= 0 || s->fuel_spd <= 0) return INFINITY;
+	if (s->fuel_mass <= 0) return INFINITY;
+
+	const double sign = (rt->throttle_on&0b10?-1:1) * (dv>0?1:-1);
+	const double m0  = s->mass;
+	const double dry = m0 - s->fuel_mass;
+	if (dry <= 0) return INFINITY;
+	dv = unit2m(fabs(dv));
+
+	/* 燃料不够 */
+	double dv_max = s->fuel_spd * log(m0 / dry);
+	if (dv > dv_max) return INFINITY;
+
+	double mdot = s->fuel_flow * rt->throttle / 100.0;
+	if (mdot <= 0) return INFINITY;
+
+	double m_end  = m0 * exp(-dv / s->fuel_spd);
+	double m_burn = m0 - m_end;
+	return m_burn / mdot * sign;
+}
+
 void rt_logevent(Runtimedata_t *rt)
 {
 	if (!rt) return;
 	rt->loop_stat.ev_swap_rpra = false;
 	rt->loop_stat.obp = (typeof(rt->loop_stat.obp)){};
 
+	if (!rt->about_point) return;
 	if (rt->follow) rt->loop_stat.obp = phy_get_orbital_parameters(rt->follow, rt->about_point);
-	if (rt->follow && rt->loop_stat.follow == rt->follow
+	const bool cond_capture = rt->follow && rt->loop_stat.follow == rt->follow
 	    && rt->loop_stat.about_point && rt->loop_stat.about_point->name.p
-	    && rt->loop_stat.about_point != rt->about_point) {
-		format_orbital_parameters(rt, &rt->buff, rt->loop_stat.obp);
-		rtlog(rt, "天体'%s'被'%s'捕获(%s)(原运行在'%s'),累计dv:%.3gkm/s",
-		      rt->follow->name.p, rt->about_point->name.p, rt->buff.p,
-		      rt->loop_stat.about_point->name.p, unit2km(rt->dv));
+	    && rt->loop_stat.about_point != rt->about_point;
+	if (cond_capture) {
+		rtlog(rt, "天体'%s'被'%s'捕获, 原运行在'%s'",
+		      rt->follow->name.p, rt->about_point->name.p,
+		      rt->loop_stat.about_point->name.p);
 		rt->need_notification++;
 	}
-	if (!rt->about_point) return;
-	const bool cond1 = rt->follow && rt->loop_stat.follow == rt->follow && rt->about_point;
-	const bool cond2 = cond1 ?    /* 变轨时近远地点高度交换(e变化方向变化) */
+	const bool cond_common_follow = rt->follow && rt->loop_stat.follow == rt->follow;
+	const bool cond_rpra_swap = cond_common_follow ?    /* 变轨时近远地点高度交换(e变化方向变化) */
 		(rt->throttle_on&1)
 		&& (rt->loop_stat.obp.e < 1 && rt->loop_stat.e1 < 1)
 		&& (rt->loop_stat.e2 > rt->loop_stat.e1 && rt->loop_stat.e1 < rt->loop_stat.obp.e) : false;
-	const bool cond3 = (rt->loop_stat.throttle_on^rt->throttle_on)&1      /* 油门开关 */
+	const bool cond_set_throttle = (rt->loop_stat.throttle_on^rt->throttle_on)&1      /* 油门开关 */
 		|| (rt->throttle_on&1 && (rt->loop_stat.throttle_on^rt->throttle_on)&0b10);
-	const bool cond4 = cond1 ? cond2    /* 触发以下任意事件 */
-		|| cond3
+	const bool cond4 = cond_common_follow ? cond_rpra_swap    /* 触发以下任意事件 */
+		|| cond_set_throttle
+		|| cond_capture
 		|| ((rt->loop_stat.e1-1)*(rt->loop_stat.obp.e-1)<0) : false;    /* 轨道类型改变 */
-	if (cond1 && cond4) {
-		if (cond3) {
+	if (cond_common_follow && cond4) {
+		if (cond_set_throttle) {
 			rtlog(rt, "油门切换至: %s向推力 %d%% %s",
 			      rt->throttle_on&0b10?"反":"正", rt->throttle, rt->throttle_on&1?"开":"关");
 		}
-		if (cond2) {
+		if (cond_rpra_swap) {
 			rtlog(rt, "近远地点高度交换");
 			if (rt->time_scale >= 2) rt->need_notification++;
 		}
 		format_orbital_parameters(rt, &rt->buff, rt->loop_stat.obp);
-		rtlog(rt, "%s[%s]:%s(%s),dv:%.3gkm/s",
-		      rt->follow->name.p, rt->about_point->name.p,
-		      rt->loop_stat.obp.typ, rt->buff.p, unit2km(rt->dv));
+		rtlog(rt, "%s[%s]:%s(%s)", rt->follow->name.p, rt->about_point->name.p,
+		      rt->loop_stat.obp.typ, rt->buff.p);
+		rt_log_follow_status(rt);
 	}
 	rt->loop_stat.e2 = rt->loop_stat.e1;
 	rt->loop_stat.e1 = rt->loop_stat.obp.e;
 	rt->loop_stat.throttle_on = rt->throttle_on;
-	rt->loop_stat.ev_swap_rpra = cond2;
+	rt->loop_stat.ev_swap_rpra = cond_rpra_swap;
 
 	rt->loop_stat.about_point = rt->about_point;
 	rt->loop_stat.follow = rt->follow;
@@ -246,14 +304,15 @@ int rt_format_huds(Runtimedata_t *rt, SVA_t *dest, struct orbital_parameters ret
 	} else {
 		printf("[T+"GT2YHMS_FMT" |", gt2yhms_fmt(rt->gtime));
 	}
-	printf(" x%g, %c%s%d%%%c, dv:%.3gkm/s]",
-	       rt->time_scale,
-	       rt->throttle_on&1?'[':':',
-	       rt->throttle_on&0b10?"-":"",
-	       rt->throttle,
-	       rt->throttle_on&1?']':':',
-	       unit2km(rt->dv));
+	printf(" x%g", rt->time_scale);
 	if (rt->follow) {
+		printf(", %c%s%d%%/%.0f%%%c, dv:%.3gkm/s]",
+		       rt->throttle_on&1?'[':':',
+		       rt->throttle_on&0b10?"-":"",
+		       rt->throttle,
+		       rt->follow->fuel_mass/rt->follow->fuel_cap*100,
+		       rt->throttle_on&1?']':':',
+		       unit2km(rt->follow->dv));
 		/* 控制天体基本信息 */
 		const char hint[2][4] = { "<{[", ">}]", };
 		const uint8_t hintc = rt->follow==rt->look_to?0:(rt->rotate_cam_with_spd?1:2);
@@ -263,6 +322,8 @@ int rt_format_huds(Runtimedata_t *rt, SVA_t *dest, struct orbital_parameters ret
 		       rt->about_point->name.p ? rt->about_point->name.p : "Unknow",
 		       hint[1][hintc],
 		       unit2km(vec_len(vec_sub(rt->follow->speed, rt->about_point->speed))));
+	} else {
+		printf("]");
 	}
 	if (!rt->follow || !rt->destination_to) return 0;
 
@@ -332,8 +393,7 @@ int rt_format_huds(Runtimedata_t *rt, SVA_t *dest, struct orbital_parameters ret
 		ret3 = phy_get_hohmann_orbit_theta(rt->follow, rt->destination_to, dest_about_point, rt->about_point);
 		printf(" [%.1f°]", ret3.theta/M_PI*180.);
 	}
-	const double time_left = rt->throttle ?
-		(rt->throttle_on&0b10?-1:1)*(ret3.v-vec_len(v))/throttle2accel(rt->throttle): 0;
+	const double time_left = rt_star_time_for_dv(rt, ret3.v-vec_len(v));
 	if (fabs(ret3.theta/M_PI*180.) < 10) {
 		printf(" L:%.2fs", time_left);
 		if (rt->throttle_on&1 && rt->time_scale>1 && time_left-rt->time_scale < 0) {
@@ -392,12 +452,17 @@ void rt_exec_cmd(Runtimedata_t *rt, char *cmd)
 	t += rt->gtime;
 	const double t0 = get_nowtime();
 	double t_acc = 0;
+	dv = vec_mul(dv, km2unit(1));
 	if (vec_len(dv) > 0 && rt->follow) {
 		if (!rt->throttle) rt->throttle = 1;
 		rt->time_scale = 0.001;
 		// rt->throttle_on = 1;
-		t_acc = vec_len(dv)/throttle2accel(rt->throttle);
-		printf("[INFO] 预期加速时间：%g s (dv=%gkm/s)\n", t_acc, vec_len(dv));
+		t_acc = rt_star_time_for_dv(rt, vec_len(dv));
+		if (!isnormal(t_acc)) {
+			printf("[WARN] 加速不可达，加速时间置0\n");
+			t_acc = 0;
+		}
+		printf("[INFO] 预期加速时间：%g s (dv=%gkm/s)\n", t_acc, unit2km(vec_len(dv)));
 		t_acc += rt->gtime;
 		rt_switch_camera(rt, &rt->follow->cam);
 		if (rt->active_cam) rt->active_cam->forward = vec_direct(dv);

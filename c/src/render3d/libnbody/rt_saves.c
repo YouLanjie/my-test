@@ -9,6 +9,7 @@
 #include <endian.h>
 
 #define MAGIC_HEADER {'N','B',0,'r','3','d',0,-5,}
+#define MAGIC_VERSION 1
 #define MAGIC_STAR {'S','T','3','d'}
 #define MAGIC_LOG {'r','3','d',0,'L','o','g',0}
 
@@ -26,9 +27,9 @@ union u64f64c8_t {
 /* 存档头 */
 static struct save_header {
 	char magic[8];
+	uint64_t version;
 	uint64_t save_time;
 	double gtime;
-	double dv;
 	uint64_t seed;
 	uint64_t star_num;
 } create_save_header(Runtimedata_t *rt)
@@ -36,8 +37,8 @@ static struct save_header {
 	// static const size_t size = sizeof(struct save_header);
 	return (struct save_header){
 		.magic = MAGIC_HEADER,
+		.version = MAGIC_VERSION,
 		.gtime = h2lef(rt ? rt->gtime : 0),
-		.dv    = h2lef(rt ? unit2km(rt->dv) : 0),
 		.seed  = htole64(rt ? rt->seed : 0),
 		.save_time = htole64(time(NULL)),
 		.star_num  = htole64(rt ? rt->objs.len : 0),
@@ -47,12 +48,12 @@ static struct save_header {
 static bool read_header(Runtimedata_t *rt, struct save_header *header)
 {
 	if (!rt || !header) return false;
-	if (memcmp(header->magic, (char[])MAGIC_HEADER, sizeof(header->magic)) != 0)
+	if (memcmp(header->magic, (char[])MAGIC_HEADER, sizeof(header->magic)) != 0
+	    || header->version != MAGIC_VERSION)
 		return false;
 	if (header->star_num <= 0)
 		return false;
 	rt->gtime = lef2h(header->gtime);
-	rt->dv = km2unit(lef2h(header->dv));
 	rt->seed = le64toh(header->seed);
 	header->star_num = le64toh(header->star_num);
 	header->save_time = le64toh(header->save_time);
@@ -72,6 +73,11 @@ static struct save_star {
 	double u_y;
 	double u_z;
 	double omiga;    /* 自转速度 */
+	double dv;
+	double fuel_mass;
+	double fuel_cap;
+	double fuel_flow;
+	double fuel_spd;
 	uint64_t name_len;
 	uint8_t color[4];    /* 颜色码 */
 	uint8_t padding[4];    /* 显式对齐余下4字节 */
@@ -95,6 +101,11 @@ static struct save_star {
 	dat.u_y = h2lef(star->self_rotate.y);
 	dat.u_z = h2lef(star->self_rotate.z);
 	dat.omiga = h2lef(star->self_omiga);
+	dat.dv = h2lef(star->dv);
+	dat.fuel_mass = h2lef(star->fuel_mass);
+	dat.fuel_cap  = h2lef(star->fuel_cap);
+	dat.fuel_flow = h2lef(star->fuel_flow);
+	dat.fuel_spd  = h2lef(star->fuel_spd);
 	Color_t c = star->obj && star->obj->colors ? star->obj->colors[0] : COLOR_WHITE;
 	dat.color[0] = c.r;
 	dat.color[1] = c.g;
@@ -111,6 +122,11 @@ static bool read_star(Runtimedata_t *rt, struct save_star *star, char *name)
 	if (memcmp(star->padding, (char[])MAGIC_STAR, sizeof(star->padding)) != 0)
 		return false;
 	Star_t s = star_create(name, lef2h(star->m), lef2h(star->r), f2vec(star->p), f2vec(star->v), NULL);
+	s.dv = lef2h(star->dv);
+	s.fuel_mass = lef2h(star->fuel_mass);
+	s.fuel_cap  = lef2h(star->fuel_cap);
+	s.fuel_flow = lef2h(star->fuel_flow);
+	s.fuel_spd  = lef2h(star->fuel_spd);
 	s.self_rotate = f2vec(star->u);
 	s.self_omiga = lef2h(star->omiga);
 	Color_t c = {

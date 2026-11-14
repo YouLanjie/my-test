@@ -43,7 +43,7 @@
 	((isnormal(gt) && (gt)>=0) ? fmod((gt), 60) : 0)
 /* 将推力值转换为加速度(km/s^2)
  * 1% = 0.1m/s^2 = 0.1/1e3 km/s^2 */
-#define throttle2accel(thr) m2unit(thr*0.1)
+// #define throttle2accel(thr) m2unit(thr*0.1)
 
 #define rtlog(rt, fmt, ...) \
 	sva_sprintfcat(&(rt)->logs, "[T+" GT2YHMS_FMT "] " fmt "\n", \
@@ -81,6 +81,11 @@ typedef struct {
 	double radius;
 	double mass;          /* 质量(kg) */
 	double self_omiga;    /* 自转速度(rad/s) */
+	double dv;            /* 已经消耗的dv */
+	double fuel_mass;     /* 剩余燃料质量 */
+	double fuel_cap;      /* 原总燃料质量 */
+	double fuel_flow;     /* 节流阀喷出燃料质量速度上限(kg/s) */
+	double fuel_spd;      /* 排气速度(m/s) */
 	Vec_t self_rotate;    /* 自转方向 */
 	Vec_t speed;          /* 速度(unit/s) */
 	Vec_t center;         /* 中心位置 */
@@ -100,14 +105,13 @@ typedef struct {
 	Star_t *follow;
 	Star_t *about_point;
 	Obj_t  *axis_helper;
-	double dv;
 	double gtime;
 	double time_scale;
 	double time_scale_limit;
 	double accel_last_upeate_time;
 	uint32_t seed;
 	int32_t  inp;
-	uint8_t throttle;    /* 1% = 0.1m/s^2, 取决于throttle2accel() */
+	uint8_t throttle;    /* 节流阀，取值0-255（超过100表超频） */
 	int8_t throttle_on;    /* <<0位表开关，<<1位表反方向推力 */
 	uint8_t fps;
 	bool rotate_cam_with_spd;

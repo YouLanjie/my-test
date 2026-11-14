@@ -50,6 +50,36 @@ void phy_compute_acceleration(Runtimedata_t *rt)
 	return;
 }
 
+/* 引擎喷气推进计算 */
+static void phy_jet_accelerate(Runtimedata_t *rt, double dt)
+{
+	if (!rt || dt <= 0 || !rt->follow) return;
+	if (rt->follow->mass*0.98 <= rt->follow->fuel_mass) {
+		rt->follow->fuel_mass = rt->follow->mass*0.95;
+	}
+	if (!(rt->throttle_on&1 && rt->throttle
+	      && rt->follow->fuel_flow > 0 && rt->follow->fuel_spd > 0
+	      && rt->follow->fuel_mass > 0)) {
+		return;
+	}
+	/* 新引入的考虑燃料质量损失的推力模型 */
+	Star_t * const s = rt->follow;
+	const double throttle_frac = rt->throttle/100.;
+
+	/* 燃料消耗(kg) */
+	const double dm = fmin(s->fuel_flow * throttle_frac * dt, s->fuel_mass);
+	/* 推力大小(N) == kg/s * m/s == kg*m/s^2 */
+	const double F = (dm / dt) * s->fuel_spd;
+	s->fuel_mass -= dm;
+	s->mass -= dm;
+
+	const double accel = (m2unit(F)/s->mass)*dt;
+	/* 加速方向取决于活动相机前向方向 */
+	s->speed = vec_add(s->speed, vec_mul(vec_direct(rt->active_cam->forward), (rt->throttle_on&0b10?-1:1)*accel));
+	s->dv += accel;
+	return;
+}
+
 /* ai生成的RK4用辅助代码 */
 static void phy_compute_acceleration_rk4(Runtimedata_t *rt, Vec_t *pos, Vec_t *acc)
 {
@@ -57,7 +87,6 @@ static void phy_compute_acceleration_rk4(Runtimedata_t *rt, Vec_t *pos, Vec_t *a
 	Star_t *objs = rt->objs.ptr;
 	memset(acc, 0, sizeof(Vec_t) * n);	// 清空
 
-	// 1. 引力加速度（两两相互作用）
 	for (int i = 0; i < n; i++) {
 		for (int j = i + 1; j < n; j++) {
 			Vec_t diff = vec_sub(pos[i], pos[j]);	// 从j指向i的向量 (unit)
@@ -69,17 +98,6 @@ static void phy_compute_acceleration_rk4(Runtimedata_t *rt, Vec_t *pos, Vec_t *a
 			double a = G_unit / r2;	// 与原始公式一致
 			acc[i] = vec_add(acc[i], vec_mul(dir, -a * objs[j].mass));
 			acc[j] = vec_add(acc[j], vec_mul(dir, a * objs[i].mass));
-		}
-	}
-
-	// 2. 推力加速度（仅作用于跟随天体）
-	if ((rt->throttle_on & 1) && rt->follow) {
-		int idx = rt->follow - objs;
-		if (idx >= 0 && idx < n) {
-			double thrust_acc = throttle2accel(rt->throttle);
-			if (rt->throttle_on & 0b10) thrust_acc = -thrust_acc;	// 反向
-			Vec_t dir = vec_direct(rt->active_cam->forward);
-			acc[idx] = vec_add(acc[idx], vec_mul(dir, thrust_acc));
 		}
 	}
 }
@@ -156,13 +174,9 @@ static void phy_update_step_rk4(Runtimedata_t *rt, double time_scale)
 			   objs[i].self_omiga * dt);
 	}
 
-	// ---- 累计推进Δv（用于显示） ----
-	if ((rt->throttle_on & 1) && rt->follow) {
-		double thrust_acc = throttle2accel(rt->throttle);
-		if (rt->throttle_on & 0b10)
-			thrust_acc = -thrust_acc;
-		rt->dv += fabs(thrust_acc * dt);
-	}
+	// ---- 推进Δv ----
+	phy_jet_accelerate(rt, time_scale);
+
 	// ---- 碰撞检测与合并（与原逻辑相同） ----
 	for (int i = 0; i < n; i++) {
 		for (int j = i + 1; j < n; j++) {
@@ -194,12 +208,7 @@ static void phy_update_step(Runtimedata_t *rt, double time_scale)
 		objs[i].cam.position = vec_add(objs[i].cam.position, diff);
 		obj_rotate(objs[i].obj, objs[i].self_rotate, objs[i].self_omiga*time_scale);
 	}
-	if (rt->throttle_on&1 && rt->throttle && rt->follow) {
-		double accel = throttle2accel(rt->throttle) * time_scale * (rt->throttle_on&0b10?-1:1);
-		/* 加速方向取决于活动相机前向方向 */
-		rt->follow->speed = vec_add(rt->follow->speed, vec_mul(vec_direct(rt->active_cam->forward), accel));
-		rt->dv += fabs(accel);
-	}
+	phy_jet_accelerate(rt, time_scale);
 }
 
 void phy_update(Runtimedata_t *rt)
