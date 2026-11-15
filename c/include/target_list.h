@@ -39,8 +39,12 @@ Target_t *target_free(Target_t *target);
 void target_freelist(Target_t *list);
 void target_append(Target_t *list, Target_t *target);
 void target_depend_append(Target_t *target, Target_t *dependency);
+/* 检查target是否包含dep */
+bool target_check_has_dep(Target_t *target, Target_t *dep);
 Target_t *target_get_by_name(Target_t *list, SV_t name);
 Target_t *target_get_or_create(Target_t *list, SV_t name);
+/* 查找last往后（包括自身）第一个含有dep的节点 */
+Target_t *target_get_by_dep(Target_t *last, Target_t *dep);
 // void target_build(Target_t *target);
 void target_buildlist(Target_t *list);
 void *target_build_for_pthread(void *target);

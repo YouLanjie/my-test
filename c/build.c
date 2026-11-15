@@ -328,6 +328,20 @@ static void autoimport_by_header(Target_t *list, Target_t *target_elf, SV_t matc
 	return;
 }
 
+static void reimport_header(Target_t *list, Target_t *target_elf, Target_t *target_h, DA_t *stack)
+{
+	if (!list || !target_elf || !target_h) return;
+	autoimport_by_header(list, target_elf, sv_from_sva(&target_h->name));
+	da_append(stack, &target_h);
+	for (size_t i = 0; i < target_h->depend_len; i++) {
+		if (da_check_in(stack, &target_h->dependencies[i]))
+			continue;
+		reimport_header(list, target_elf, target_h->dependencies[i], stack);
+	}
+	da_pop(stack, stack->len-1, NULL);
+	return;
+}
+
 /* 扫描c文件寻找include的文件并处理 */
 static void scan_header(Target_t *list, Target_t *target_elf, Target_t *target_c)
 {
@@ -361,13 +375,18 @@ static void scan_header(Target_t *list, Target_t *target_elf, Target_t *target_c
 		if (!path_get_st(sv_from_sva(&header_path)).isfile) continue;
 		header = target_get_by_name(list, sv_from_sva(&header_path));
 		if (!header) {
+			/* 新头文件 */
 			header = target_create(sv_from_sva(&header_path));
 			target_append(list, header);
+			if (!header) continue;
+			header->type = TY_DEP;
+			/* 递归扫描文件创建依赖 */
+			scan_header(list, target_elf, header);
+		} else {
+			DA_t stack = {.size = sizeof(size_t)};
+			reimport_header(list, target_elf, header, &stack);
+			da_free(&stack, NULL);
 		}
-		if (!header) continue;
-		header->type = TY_DEP;
-		/* 递归扫描文件创建依赖 */
-		scan_header(list, target_elf, header);
 		/* c依赖引用的.h文件 */
 		target_depend_append(target_c, header);
 	}

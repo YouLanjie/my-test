@@ -90,12 +90,31 @@ void target_depend_append(Target_t *target, Target_t *dependency)
 	target->dependencies[target->depend_len-1] = dependency;
 }
 
+bool target_check_has_dep(Target_t *target, Target_t *dep)
+{
+	if (!target || !dep || !target->dependencies) return false;
+	for (size_t i = 0; i < target->depend_len; i++) {
+		if (target->dependencies[i] == dep) return true;
+	}
+	return false;
+}
+
 Target_t *target_get_by_name(Target_t *list, SV_t name)
 {
 	while (list && sv_cmp(sv_from_sva(&list->name), name) != 0) {
 		list = list->next;
 	}
 	return list;
+}
+
+Target_t *target_get_by_dep(Target_t *last, Target_t *dep)
+{
+	if (!last || !dep) return NULL;
+	while (last) {
+		if (target_check_has_dep(last, dep)) return last;
+		last = last->next;
+	}
+	return NULL;
 }
 
 Target_t *target_get_or_create(Target_t *list, SV_t name)
